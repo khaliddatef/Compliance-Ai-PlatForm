@@ -1,0 +1,25 @@
+<div
+  class="dropzone"
+  [class.dragging]="dragging"
+  (drop)="onDrop($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave()"
+  tabindex="0"
+  (keydown.enter)="filePicker.click()"
+  (keydown.space)="filePicker.click()"
+>
+  <div class="drop-icon">⇪</div>
+  <p class="title">Drag & drop your documents</p>
+  <p class="hint">Accepted: PDF, DOCX, XLSX</p>
+  <label class="choose">
+    <input
+      #filePicker
+      type="file"
+      multiple
+      accept=".pdf,.docx,.xlsx"
+      (change)="onFileChange($event)"
+      aria-label="Choose files to upload"
+    />
+    Choose files
+  </label>
+</div>

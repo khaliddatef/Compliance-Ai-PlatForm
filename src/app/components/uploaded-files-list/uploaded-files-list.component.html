@@ -1,0 +1,21 @@
+<div class="file-list">
+  <div class="file-card" *ngFor="let file of files">
+    <div class="file-info">
+      <div class="title-row">
+        <span class="name">{{ file.name }}</span>
+        <span class="badge" [class.processing]="file.status === 'processing'" [class.failed]="file.status === 'failed'">
+          {{ statusLabel(file) }}
+        </span>
+      </div>
+      <p class="meta">
+        {{ file.type || 'Document' }} · {{ file.uploadedAt | date: 'short' }}
+      </p>
+      <div class="progress">
+        <div class="bar" [style.width.%]="file.progress"></div>
+      </div>
+    </div>
+    <button class="ghost" type="button" (click)="remove.emit(file.id)">Remove</button>
+  </div>
+
+  <p *ngIf="!files.length" class="empty">No uploads yet. Drop files to start processing.</p>
+</div>

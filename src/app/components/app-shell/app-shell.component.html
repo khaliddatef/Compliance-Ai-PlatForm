@@ -1,0 +1,10 @@
+<div class="app-shell" [class.sidebar-open]="sidebarOpen" [class.mobile]="isMobile">
+  <app-sidebar
+    [open]="sidebarOpen"
+    (closeSidebar)="closeSidebar()"
+  ></app-sidebar>
+  <main class="shell-main">
+    <router-outlet></router-outlet>
+  </main>
+  <div class="sidebar-overlay" *ngIf="isMobile && sidebarOpen" (click)="closeSidebar()" aria-hidden="true"></div>
+</div>

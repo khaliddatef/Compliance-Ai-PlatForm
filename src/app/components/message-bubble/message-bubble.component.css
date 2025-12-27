@@ -1,0 +1,134 @@
+.bubble {
+  display: flex;
+  gap: 10px;
+  max-width: 92%;
+}
+
+.bubble.from-user {
+  flex-direction: row-reverse;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.bubble.from-user .avatar {
+  background: linear-gradient(135deg, var(--accent-500), var(--accent-300));
+  color: white;
+  border: none;
+}
+
+.bubble-body {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: var(--shadow-soft);
+}
+
+.bubble.from-user .bubble-body {
+  background: linear-gradient(135deg, var(--accent-500), var(--accent-300));
+  color: #0b1330;
+  border: none;
+  box-shadow: var(--shadow-raised);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: inherit;
+}
+
+.line {
+  display: flex;
+  gap: 8px;
+  line-height: 1.5;
+}
+
+.bullet-mark {
+  color: var(--accent-600);
+  font-weight: 700;
+}
+
+.bubble.from-user .bullet-mark {
+  color: #0b1330;
+}
+
+.text {
+  color: inherit;
+}
+
+.citation {
+  background: var(--accent-050);
+  border: 1px solid var(--accent-200);
+  color: var(--accent-800);
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.bubble.from-user .citation {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.bubble.from-user .meta {
+  color: rgba(10, 24, 41, 0.85);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tiny {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  padding: 4px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tiny:hover,
+.tiny:focus-visible {
+  background: var(--surface-3);
+  border-color: var(--accent-200);
+}
+
+.tiny.active {
+  border-color: var(--accent-400);
+  background: var(--accent-100);
+}
+
+.bubble.from-user .tiny {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 768px) {
+  .bubble {
+    max-width: 100%;
+  }
+}

@@ -1,0 +1,52 @@
+:host {
+  display: block;
+  height: 100vh;
+  background: linear-gradient(180deg, var(--surface-0) 0%, var(--surface-1) 100%);
+}
+
+.app-shell {
+  display: flex;
+  height: 100%;
+  color: var(--ink-strong);
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+}
+
+.shell-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  padding: 20px;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.shell-main > * {
+  flex: 1;
+  width: 100%;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 18, 43, 0.28);
+  backdrop-filter: blur(2px);
+  z-index: 9;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    overflow: visible;
+  }
+
+  .shell-main {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .shell-main {
+    padding: 10px;
+  }
+}

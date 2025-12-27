@@ -1,0 +1,24 @@
+<section class="docs-page">
+  <header>
+    <p class="eyebrow">Documents</p>
+    <h2>Upload evidence and policies</h2>
+    <p class="lede">
+      Accepted types: PDF, DOCX, XLSX. Files stay local for this mock experience; statuses are simulated.
+    </p>
+  </header>
+
+  <div class="docs-grid">
+    <app-upload-dropzone (filesAdded)="onFiles($event)"></app-upload-dropzone>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow subtle">Library</p>
+          <h3>Uploaded files</h3>
+        </div>
+        <span class="badge">{{ documents.length }}</span>
+      </div>
+      <app-uploaded-files-list [files]="documents" (remove)="remove($event)"></app-uploaded-files-list>
+    </div>
+  </div>
+</section>

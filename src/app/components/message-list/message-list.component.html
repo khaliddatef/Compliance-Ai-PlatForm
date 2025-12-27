@@ -1,0 +1,18 @@
+<div class="message-list" #scrollContainer>
+  <div
+    class="message-row"
+    *ngFor="let message of messages; trackBy: trackById"
+    [class.from-user]="message.role === 'user'"
+  >
+    <app-message-bubble [message]="message"></app-message-bubble>
+  </div>
+
+  <div class="typing" *ngIf="typing">
+    <div class="typing-bubble">
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+    <span class="hint">Assistant is typing…</span>
+  </div>
+</div>

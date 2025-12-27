@@ -1,0 +1,233 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: var(--shadow-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.composer.dragging {
+  border-color: var(--accent-300);
+  background: var(--accent-050);
+  box-shadow: var(--shadow-raised);
+}
+
+.input-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.file-input {
+  display: none;
+}
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--ink-strong);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  box-shadow: var(--shadow-soft);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    margin-bottom: 30px;
+
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  background: var(--surface-3);
+  border-color: var(--accent-200);
+  transform: translateY(-1px);
+}
+
+.icon-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  padding: 12px;
+  background: var(--surface-2);
+  resize: vertical;
+  font: inherit;
+  color: var(--ink-strong);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 20px;
+}
+
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-300);
+  box-shadow: 0 0 0 3px var(--accent-050);
+}
+
+.helper {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.progress-track {
+  flex: 0 0 90px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(135deg, var(--accent-600), var(--accent-400));
+  border-radius: inherit;
+  transition: width 0.15s ease;
+}
+
+.progress-text {
+  min-width: 52px;
+}
+
+.send {
+  border: none;
+  background: linear-gradient(135deg, var(--accent-600), var(--accent-400));
+  color: #0b1330;
+  font-weight: 800;
+  padding: 12px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow-raised);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-bottom: 30px;
+}
+
+.send:hover,
+.send:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
+}
+
+.send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--shadow-soft);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #0b1330;
+  animation: spin 0.8s linear infinite;
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+
+}
+
+.chip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.name {
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.size {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+
+.chip-remove:hover,
+.chip-remove:focus-visible {
+  background: var(--surface-3);
+  color: var(--ink-strong);
+}
+
+@media (max-width: 768px) {
+  .composer {
+    padding: 12px 10px;
+  }
+
+  .input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .send {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

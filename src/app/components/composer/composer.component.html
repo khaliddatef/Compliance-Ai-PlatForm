@@ -1,0 +1,59 @@
+<div
+  class="composer"
+  [class.dragging]="dragging"
+  (drop)="onDrop($event)"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave()"
+>
+  <div class="attachments" *ngIf="attachments.length">
+    <div class="chip" *ngFor="let file of attachments; let i = index">
+      <div class="chip-text">
+        <span class="name">{{ file.name }}</span>
+        <span class="size">{{ formatSize(file.size) }}</span>
+      </div>
+      <button type="button" class="chip-remove" (click)="removeAttachment(i)" aria-label="Remove attachment">×</button>
+    </div>
+  </div>
+
+  <div class="input-row">
+    <button
+      class="icon-btn"
+      type="button"
+      (click)="fileInput.click()"
+      [disabled]="uploading"
+      aria-label="Attach documents"
+    >
+      &#128206;
+    </button>
+    <input
+      #fileInput
+      type="file"
+      multiple
+      accept=".pdf,.docx,.xlsx"
+      class="file-input"
+      (change)="onFileInput($event)"
+    />
+
+    <div class="input-wrap">
+      <textarea
+        [(ngModel)]="draft"
+        (keydown)="handleKeydown($event)"
+        placeholder="Ask about controls, gaps, or evidence you need..."
+        aria-label="Message composer"
+      ></textarea>
+      <div class="helper">Press Enter to send · Shift + Enter for new line</div>
+      <div class="progress" *ngIf="uploading">
+        <div class="progress-track">
+          <div class="progress-bar" [style.width.%]="uploadProgress || 10"></div>
+        </div>
+        <span class="progress-text">{{ uploadProgress ? uploadProgress + '%' : 'Uploading…' }}</span>
+      </div>
+    </div>
+
+    <button class="send" type="button" (click)="submit()" [disabled]="!canSend">
+      <span class="spinner" *ngIf="uploading"></span>
+      <span>{{ uploading ? 'Uploading' : 'Send' }}</span>
+    </button>
+    <!-- <button (click)="reset()">reset</button> -->
+  </div>
+</div>

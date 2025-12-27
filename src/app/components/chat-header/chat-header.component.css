@@ -1,0 +1,110 @@
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-button {
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink-strong);
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+
+.status-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent-200), var(--accent-100));
+  color: var(--accent-800);
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid var(--accent-300);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chip {
+  padding: 8px 12px;
+  background: var(--surface-3);
+  color: var(--ink-strong);
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px dashed var(--border-subtle);
+}
+
+.summary-button {
+  border: 1px solid var(--accent-300);
+  background: var(--accent-050);
+  color: var(--accent-700);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow: var(--shadow-soft);
+}
+
+.summary-button:hover,
+.summary-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-raised);
+  background: var(--accent-100);
+}
+
+@media (max-width: 768px) {
+  .chat-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .summary-button {
+    margin-left: auto;
+  }
+
+  .menu-button {
+    display: inline-flex;
+  }
+}
