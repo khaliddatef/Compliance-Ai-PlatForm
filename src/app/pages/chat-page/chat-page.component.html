@@ -19,7 +19,7 @@
     ></app-composer>
   </section>
 
-  <aside class="panel-wrap" [class.open]="rightPanelOpen">
+  <aside class="panel-wrap" *ngIf="rightPanelOpen">
     <app-right-panel
       [open]="rightPanelOpen"
       [loading]="loadingCompliance"

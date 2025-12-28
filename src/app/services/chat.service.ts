@@ -8,13 +8,10 @@ export class ChatService {
   private readonly storageKey = 'compliance-ai-conversations';
   private readonly hasBrowserStorage = typeof localStorage !== 'undefined';
 
-  // مهم: ده ID الحقيقي اللي بيرجعه الباك لكل محادثة
-  private readonly backendConversationId = signal<string | null>(null);
-
   readonly conversations = signal<Conversation[]>(this.loadInitialConversations());
   readonly activeConversationId = signal<string>(this.conversations()[0]?.id || '');
   readonly activeConversation = computed(() =>
-    this.conversations().find((c) => c.id === this.activeConversationId())
+    this.conversations().find((c) => c.id === this.activeConversationId()),
   );
 
   constructor(private api: ApiService) {
@@ -27,6 +24,7 @@ export class ChatService {
   startNewConversation() {
     const conversation: Conversation = {
       id: crypto.randomUUID(),
+      backendId: null, // ✅ store backend conversation id per chat
       title: 'New compliance chat',
       messages: [
         {
@@ -42,20 +40,13 @@ export class ChatService {
     this.conversations.update((list) => [conversation, ...list]);
     this.activeConversationId.set(conversation.id);
 
-    // reset backend conversation id for a fresh thread
-    this.backendConversationId.set(null);
-
     return conversation;
   }
 
   selectConversation(id: string) {
     if (this.activeConversationId() === id) return;
     const exists = this.conversations().some((c) => c.id === id);
-    if (exists) {
-      this.activeConversationId.set(id);
-      // اختيار محادثة قديمة = نبدأ thread جديدة في الباك (ممكن نطورها بعدين)
-      this.backendConversationId.set(null);
-    }
+    if (exists) this.activeConversationId.set(id);
   }
 
   // دي اللي هتستدعيها من الـ component لما تدوس Send
@@ -80,31 +71,32 @@ export class ChatService {
       timestamp: Date.now(),
     });
 
-    this.api
-      .sendMessage(text, standard, this.backendConversationId() ?? undefined)
-      .subscribe({
-        next: ({ assistantMessage, conversationId }) => {
-          // update backend conversation id (so next message continues same thread)
-          this.backendConversationId.set(conversationId);
+    this.api.sendMessage(text, standard, convo.backendId ?? undefined).subscribe({
+      next: ({ assistantMessage, conversationId }) => {
+        // ✅ save backend conversation id on THIS conversation
+        this.conversations.update((list) =>
+          list.map((c) =>
+            c.id === convo.id ? { ...c, backendId: conversationId } : c,
+          ),
+        );
 
-          // replace typing with real reply
-          this.replaceMessage(convo.id, typingId, {
+        // replace typing with real reply
+        this.replaceMessage(convo.id, typingId, {
           id: typingId,
           role: 'assistant',
           content: assistantMessage,
           timestamp: Date.now(),
-          });
-
-        },
-        error: () => {
-          this.replaceMessage(convo.id, typingId, {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: 'Server error. Please try again.',
-            timestamp: Date.now(),
-          });
-        },
-      });
+        });
+      },
+      error: () => {
+        this.replaceMessage(convo.id, typingId, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Server error. Please try again.',
+          timestamp: Date.now(),
+        });
+      },
+    });
   }
 
   appendMessage(conversationId: string, message: Message) {
@@ -112,6 +104,7 @@ export class ChatService {
       list
         .map((conversation) => {
           if (conversation.id !== conversationId) return conversation;
+
           const title =
             conversation.title === 'New compliance chat' && message.role === 'user'
               ? this.deriveTitle(message.content)
@@ -124,7 +117,7 @@ export class ChatService {
             updatedAt: Date.now(),
           };
         })
-        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .sort((a, b) => b.updatedAt - a.updatedAt),
     );
   }
 
@@ -137,15 +130,29 @@ export class ChatService {
           messages: conversation.messages.map((m) => (m.id === oldId ? nextMsg : m)),
           updatedAt: Date.now(),
         };
-      })
+      }),
     );
   }
 
+  // ✅ UI delete + backend delete (if backendId exists)
   removeConversation(id: string) {
+    const convo = this.conversations().find((c) => c.id === id);
+    const backendId = convo?.backendId ?? null;
+
+    // 1) remove from UI immediately
     this.conversations.update((list) => list.filter((c) => c.id !== id));
+
+    // 2) update active selection if needed
     if (this.activeConversationId() === id) {
       this.activeConversationId.set(this.conversations()[0]?.id || '');
-      this.backendConversationId.set(null);
+    }
+
+    // 3) call backend delete if we have an id
+    if (backendId) {
+      this.api.deleteConversation(backendId).subscribe({
+        next: () => {},
+        error: () => console.warn('Failed to delete conversation on backend'),
+      });
     }
   }
 
@@ -169,6 +176,7 @@ export class ChatService {
 
     const starter: Conversation = {
       id: crypto.randomUUID(),
+      backendId: null, // ✅
       title: 'Launch checklist',
       messages: [
         {

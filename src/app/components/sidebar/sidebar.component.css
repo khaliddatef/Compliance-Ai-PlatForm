@@ -272,6 +272,37 @@
 .sidebar.collapsed .new-chat {
   justify-content: center;
 }
+.conversation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+}
+
+.icon-button.trash {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.65;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.icon-button.trash:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
 
 @media (max-width: 1024px) {
   .sidebar {

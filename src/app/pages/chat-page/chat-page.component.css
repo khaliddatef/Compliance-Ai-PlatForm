@@ -1,20 +1,23 @@
 :host {
   display: block;
   height: 100%;
+  min-height: 0;
 }
 
 .chat-layout {
   display: grid;
-  grid-template-columns: 1fr 330px;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-rows: 1fr;
   gap: 16px;
   width: 100%;
   height: 100%;
   min-height: 0;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .chat-layout.panel-hidden {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .chat-main {
@@ -28,6 +31,7 @@
   box-shadow: var(--shadow-raised);
   min-height: 0;
   height: 100%;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -39,9 +43,14 @@
 
 .panel-wrap {
   width: 330px;
+  max-width: 360px;
   position: sticky;
   top: 0;
   height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
   transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
@@ -56,7 +65,8 @@
 @media (max-width: 1100px) {
   .chat-layout {
     grid-template-columns: 1fr;
-    height: auto;
+    height: 100%;
+    min-height: 0;
   }
 
   .panel-wrap {
@@ -65,9 +75,11 @@
     top: 16px;
     bottom: 16px;
     width: min(360px, 92vw);
+    height: auto;
     transform: translateX(110%);
     z-index: 8;
     opacity: 0;
+    max-height: calc(100vh - 32px);
   }
 
   .panel-wrap.open {

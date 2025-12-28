@@ -42,4 +42,8 @@ export class SidebarComponent {
     this.chatService.selectConversation(conversation.id);
     this.router.navigate(['/']);
   }
+  deleteConversation(conversation: any) {
+  this.chatService.removeConversation(conversation.id);
+}
+
 }

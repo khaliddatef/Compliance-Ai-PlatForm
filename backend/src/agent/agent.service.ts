@@ -1,234 +1,380 @@
 import { Injectable } from '@nestjs/common';
 
-export type AgentCitation = {
-  doc: string;
-  page: number; // chunkIndex+1 (MVP)
-  kind: 'STANDARD' | 'CUSTOMER';
-};
+type ComplianceStatus = 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN';
 
-export type AgentOutput = {
+export type AgentComplianceResponse = {
   reply: string;
-  citations: AgentCitation[];
+  citations: Array<{ doc: string; page: number | null; kind: 'STANDARD' | 'CUSTOMER' }>;
   complianceSummary: {
-    standard: 'ISO' | 'FRA' | 'CBE';
-    status: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT';
-    missing: { title: string; details?: string }[];
-    recommendations: { title: string; details?: string }[];
+    standard: string;
+    status: ComplianceStatus;
+    missing: string[];
+    recommendations: string[];
   };
 };
 
-export type RagHit = {
-  docName: string;
-  chunkIndex: number;
-  text: string;
-  score: number;
-  kind: 'STANDARD' | 'CUSTOMER';
+type CustomerProbe = {
+  // هل فيه دليل Customer فعلاً مرتبط بالسؤال؟
+  hasRelevantCustomerEvidence: boolean;
+
+  // أسماء ملفات العميل الموجودة في الـ customer store (للـ UI / debug)
+  customerDocsSeen: string[];
+
+  // سبب مختصر لو مش موجود/غير مرتبط
+  reason: string;
 };
 
 @Injectable()
 export class AgentService {
   private readonly apiKey = process.env.OPENAI_API_KEY || '';
-  private readonly model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  private readonly model = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 
-  private assertConfigured() {
-    if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing in .env');
+  private assertConfig() {
+    if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing');
   }
 
-  private buildContext(hits: RagHit[], label: string) {
-    if (!hits.length) return `${label}: (no relevant chunks found)\n`;
+  private stdStoreIdFor(standard: 'ISO' | 'FRA' | 'CBE'): string {
+    const key =
+      standard === 'ISO'
+        ? process.env.OPENAI_VECTOR_STORE_STD_ISO
+        : standard === 'FRA'
+          ? process.env.OPENAI_VECTOR_STORE_STD_FRA
+          : process.env.OPENAI_VECTOR_STORE_STD_CBE;
 
-    // ✅ ارفع السقف بدل 900 — وخلي عدد الـ chunks محدود
-    const top = hits.slice(0, 6);
-
-    const lines = top.map((h, idx) => {
-      const snippet = (h.text || '').replace(/\s+/g, ' ').trim().slice(0, 2400);
-      return [
-        `[#${idx + 1}] KIND=${h.kind} DOC="${h.docName}" CHUNK=${h.chunkIndex} (pseudo-page=${h.chunkIndex + 1}) SCORE=${h.score}`,
-        snippet,
-      ].join('\n');
-    });
-
-    return `${label}:\n${lines.join('\n\n')}\n`;
-  }
-
-  private makeFallback(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
-    why: 'NO_STANDARD' | 'NO_CUSTOMER' | 'WEAK_CUSTOMER';
-    customerDocName?: string;
-  }): AgentOutput {
-    const { standard, why, customerDocName } = params;
-
-    if (why === 'NO_STANDARD') {
-      return {
-        reply: `I couldn't find any STANDARD (${standard}) context. Please upload the ${standard} standard once via /api/standards/upload.`,
-        citations: [],
-        complianceSummary: {
-          standard,
-          status: 'PARTIAL',
-          missing: [{ title: 'Standard Requirements', details: 'Standard document not found/ingested.' }],
-          recommendations: [{ title: 'Upload standard PDF', details: `Upload ${standard} standard under conversationId std-${standard}.` }],
-        },
-      };
+    if (!key) {
+      throw new Error(`Missing env var for standard vector store: OPENAI_VECTOR_STORE_STD_${standard}`);
     }
-
-    if (why === 'NO_CUSTOMER') {
-      return {
-        reply: `I couldn't find any CUSTOMER evidence related to your question. Please upload customer policies/procedures/audit evidence (not generic documents).`,
-        citations: [],
-        complianceSummary: {
-          standard,
-          status: 'NOT_COMPLIANT',
-          missing: [
-            { title: 'Customer Evidence', details: 'No relevant customer evidence chunks found for this question.' },
-          ],
-          recommendations: [
-            { title: 'Upload customer evidence', details: 'Access Control Policy, IAM procedures, privileged access management evidence, audit logs, etc.' },
-          ],
-        },
-      };
-    }
-
-    // WEAK_CUSTOMER
-    return {
-      reply: `The uploaded CUSTOMER document doesn't look like compliance evidence (${customerDocName ?? 'unknown'}). Please upload relevant security/compliance documents.`,
-      citations: [],
-      complianceSummary: {
-        standard,
-        status: 'NOT_COMPLIANT',
-        missing: [{ title: 'Customer Evidence', details: 'Uploaded document is not suitable as compliance evidence.' }],
-        recommendations: [{ title: 'Upload correct evidence', details: 'Policies, procedures, controls mappings, audit reports, screenshots, tickets, logs.' }],
-      },
-    };
+    return key;
   }
 
-  async answerCompliance(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
+  // ---------------------------
+  // 1) CUSTOMER-ONLY PROBE (NO STANDARD!)
+  // ---------------------------
+  private async probeCustomerEvidence(params: {
     question: string;
-    standardHits: RagHit[];
-    customerHits: RagHit[];
-  }): Promise<AgentOutput> {
-    this.assertConfigured();
+    customerVectorStoreId: string;
+  }): Promise<CustomerProbe> {
+    const { question, customerVectorStoreId } = params;
 
-    const { standard, question, standardHits, customerHits } = params;
+    const probeInstructions = `
+You are validating whether the CUSTOMER uploaded evidence is relevant to the user's question.
 
-    // ✅ Logs تعرفك الـ LLM شغال ولا لأ
-    console.log('[AGENT] model=', this.model, 'key?', !!this.apiKey);
-    console.log('[AGENT] stdHits=', standardHits.length, 'cusHits=', customerHits.length);
-
-    // ✅ Hard guards قبل ما ننادي OpenAI
-    if (standardHits.length === 0) {
-      return this.makeFallback({ standard, why: 'NO_STANDARD' });
-    }
-
-    if (customerHits.length === 0) {
-      return this.makeFallback({ standard, why: 'NO_CUSTOMER' });
-    }
-
-    // ✅ detect garbage evidence بسرعة
-    const customerDocName = (customerHits[0]?.docName || '').toLowerCase();
-    const looksNonCompliance =
-      customerDocName.includes('cpp') ||
-      customerDocName.includes('problem solving') ||
-      customerDocName.includes('mastery plan') ||
-      customerDocName.includes('course');
-
-    if (looksNonCompliance) {
-      return this.makeFallback({ standard, why: 'WEAK_CUSTOMER', customerDocName: customerHits[0]?.docName });
-    }
-
-    const system = `
-You are a compliance auditor assistant.
-You MUST use ONLY the provided context snippets: STANDARD (official requirements) and CUSTOMER (company evidence).
-Compare CUSTOMER evidence against STANDARD requirements relevant to the question.
+You MUST use ONLY the CUSTOMER vector store search results.
+Do NOT use any STANDARD documents.
+Return STRICT JSON only.
 
 Rules:
-- Do NOT invent policies or evidence.
-- If evidence is missing for a requirement, list it explicitly.
-- Reply must be concise, structured, and actionable.
-- Citations must reference ONLY provided snippets (doc + pseudo-page).
+- If you cannot find any relevant CUSTOMER evidence, set hasRelevantCustomerEvidence=false.
+- Extract customerDocsSeen from CUSTOMER results filenames/doc names (best effort).
+- Be conservative: do not guess relevance without explicit evidence in CUSTOMER results.
+`;
 
-Return STRICT JSON only with this schema:
-{
-  "reply": "string",
-  "citations": [{"doc":"string","page":number,"kind":"STANDARD|CUSTOMER"}],
-  "complianceSummary":{
-    "standard":"ISO|FRA|CBE",
-    "status":"COMPLIANT|PARTIAL|NOT_COMPLIANT",
-    "missing":[{"title":"string","details":"string?"}],
-    "recommendations":[{"title":"string","details":"string?"}]
-  }
-}
-`.trim();
+    const probeSchema = {
+      name: 'customer_probe',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['hasRelevantCustomerEvidence', 'customerDocsSeen', 'reason'],
+        properties: {
+          hasRelevantCustomerEvidence: { type: 'boolean' },
+          customerDocsSeen: { type: 'array', items: { type: 'string' } },
+          reason: { type: 'string' },
+        },
+      },
+    } as const;
 
-    const context =
-      this.buildContext(standardHits, `STANDARD(${standard}) CONTEXT`) +
-      '\n' +
-      this.buildContext(customerHits, `CUSTOMER CONTEXT`);
-
-    const user = `
-Question: ${question}
-
-${context}
-`.trim();
-
-    // ✅ timeout للـ OpenAI call
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25_000);
+    const timeout = setTimeout(() => controller.abort(), 30_000);
 
-    let resp: Response;
     try {
-      resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      const body = {
+        model: this.model,
+        instructions: probeInstructions,
+        input: `User question: ${question}\n\nCheck CUSTOMER evidence relevance.`,
+        tools: [
+          {
+            type: 'file_search',
+            vector_store_ids: [customerVectorStoreId], // ✅ CUSTOMER ONLY
+            max_num_results: 8,
+          },
+        ],
+        include: ['file_search_call.results'],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'customer_probe',
+            schema: probeSchema.schema,
+            strict: true,
+          },
+        },
+      };
+
+      const resp = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
-        signal: controller.signal,
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: this.model,
-          temperature: 0.2,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-        }),
+        signal: controller.signal,
+        body: JSON.stringify(body),
       });
+
+      const json = await resp.json();
+
+      if (!resp.ok) {
+        console.error('[CustomerProbe] HTTP error', resp.status, JSON.stringify(json)?.slice(0, 2000));
+        // لو probe فشل، نعتبر مفيش customer evidence عشان ما نغلطش
+        return {
+          hasRelevantCustomerEvidence: false,
+          customerDocsSeen: [],
+          reason: 'Customer probe failed (treat as no customer evidence).',
+        };
+      }
+
+      const outputText: string | undefined = json?.output_text;
+      let parsed: CustomerProbe | null = null;
+
+      if (typeof outputText === 'string' && outputText.trim().startsWith('{')) {
+        parsed = JSON.parse(outputText);
+      } else {
+        const msg = (json?.output || []).find((x: any) => x?.type === 'message');
+        const parts = msg?.content || [];
+        const out = parts.find((p: any) => p?.type === 'output_text')?.text;
+        if (typeof out === 'string' && out.trim().startsWith('{')) parsed = JSON.parse(out);
+      }
+
+      if (!parsed) {
+        return {
+          hasRelevantCustomerEvidence: false,
+          customerDocsSeen: [],
+          reason: 'Customer probe returned unparsable output.',
+        };
+      }
+
+      // Normalize
+      parsed.customerDocsSeen = Array.isArray(parsed.customerDocsSeen) ? parsed.customerDocsSeen : [];
+      parsed.reason = String(parsed.reason || '');
+
+      return parsed;
+    } catch (e: any) {
+      const msg = e?.name === 'AbortError' ? 'Customer probe timed out' : e?.message || String(e);
+      console.error('[CustomerProbe] exception:', msg);
+      return {
+        hasRelevantCustomerEvidence: false,
+        customerDocsSeen: [],
+        reason: msg,
+      };
     } finally {
       clearTimeout(timeout);
     }
+  }
 
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => '');
-      console.error('[AGENT] OpenAI error:', resp.status, resp.statusText, txt.slice(0, 600));
-      throw new Error(`OpenAI error: ${resp.status} ${resp.statusText}`);
+  // ---------------------------
+  // 2) MAIN ANSWER (STANDARD + CUSTOMER)
+  // ---------------------------
+  async answerCompliance(params: {
+    standard: 'ISO' | 'FRA' | 'CBE';
+    question: string;
+    customerVectorStoreId?: string | null;
+  }): Promise<AgentComplianceResponse> {
+    this.assertConfig();
+
+    const { standard, question, customerVectorStoreId } = params;
+    const stdVectorStoreId = this.stdStoreIdFor(standard);
+
+    // ✅ لو مفيش customer store: ندي guidance عام + UNKNOWN
+    if (!customerVectorStoreId) {
+      return {
+        reply:
+          `I’m a cybersecurity compliance assistant. I can explain ${standard} requirements and what evidence is typically needed. ` +
+          `To assess your compliance, please upload customer evidence (policies, procedures, screenshots, audit logs, access review records, etc.).`,
+        citations: [],
+        complianceSummary: {
+          standard,
+          status: 'UNKNOWN',
+          missing: ['No customer evidence store is linked to this conversation yet.'],
+          recommendations: [
+            'Upload customer evidence documents (policies/procedures/access control docs/audit logs)',
+            'Ask a focused question (e.g., “Access control: MFA + least privilege + provisioning + reviews”)',
+          ],
+        },
+      };
     }
 
-    const data: any = await resp.json();
-    const content: string = data?.choices?.[0]?.message?.content ?? '';
+    // ✅ Probe customer store only (يحسم موضوع الملف)
+    const probe = await this.probeCustomerEvidence({
+      question,
+      customerVectorStoreId,
+    });
 
-    let parsed: any;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      const m = content.match(/\{[\s\S]*\}$/);
-      if (!m) throw new Error('Agent did not return valid JSON.');
-      parsed = JSON.parse(m[0]);
+    // ✅ لو مفيش evidence مرتبط: اقفل الباب قبل ما يخلط standard/customer
+    if (!probe.hasRelevantCustomerEvidence) {
+      return {
+        reply:
+          `I can’t confirm that your uploaded customer document is relevant to this question based on the customer evidence I can see. ` +
+          `It may be unrelated (or not enough detail). Please upload access control evidence such as: ` +
+          `access control policy, user provisioning/deprovisioning records, MFA/SSO configuration screenshots, access review reports, and audit logs. ` +
+          (probe.customerDocsSeen.length
+            ? `\n\nCustomer docs detected: ${probe.customerDocsSeen.slice(0, 5).join(', ')}`
+            : ''),
+        citations: [],
+        complianceSummary: {
+          standard,
+          status: 'UNKNOWN',
+          missing: ['Relevant customer evidence not found for this question.'],
+          recommendations: [
+            'Upload access control policy + identity provider (SSO/MFA) configuration evidence',
+            'Upload user access review evidence (periodic review reports / tickets)',
+            'Upload audit logs or monitoring evidence related to access',
+          ],
+        },
+      };
     }
 
-    const out: AgentOutput = {
-      reply: String(parsed?.reply ?? ''),
-      citations: Array.isArray(parsed?.citations) ? parsed.citations : [],
-      complianceSummary: {
-        standard,
-        status: parsed?.complianceSummary?.status ?? 'PARTIAL',
-        missing: Array.isArray(parsed?.complianceSummary?.missing) ? parsed.complianceSummary.missing : [],
-        recommendations: Array.isArray(parsed?.complianceSummary?.recommendations)
-          ? parsed.complianceSummary.recommendations
-          : [],
+    // ✅ MAIN instructions: نسمح assessment الآن
+    const instructions = `
+You are a senior cybersecurity compliance consultant.
+
+Two modes:
+1) General guidance: you may explain standards and best practices, but never claim compliance without CUSTOMER evidence.
+2) Compliance assessment: compare CUSTOMER evidence against STANDARD requirements.
+
+NON-NEGOTIABLE:
+- STANDARD documents are reference only and MUST NEVER be treated as customer evidence.
+- Any compliance claim MUST be supported by CUSTOMER citations.
+- If customer evidence is missing or irrelevant, complianceSummary.status MUST be "UNKNOWN".
+
+Return STRICT JSON only.
+Keep answers concise.
+`;
+
+    const responseSchema = {
+      name: 'compliance_assessment',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['reply', 'citations', 'complianceSummary'],
+        properties: {
+          reply: { type: 'string' },
+          citations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['doc', 'page', 'kind'],
+              properties: {
+                doc: { type: 'string' },
+                page: { type: ['number', 'null'] },
+                kind: { type: 'string', enum: ['STANDARD', 'CUSTOMER'] },
+              },
+            },
+          },
+          complianceSummary: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['standard', 'status', 'missing', 'recommendations'],
+            properties: {
+              standard: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'],
+              },
+              missing: { type: 'array', items: { type: 'string' } },
+              recommendations: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
       },
-    };
+    } as const;
 
-    if (!out.reply) out.reply = 'No answer generated.';
-    return out;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45_000);
+
+    try {
+      const body = {
+        model: this.model,
+        instructions,
+        input: `Standard=${standard}\nUser question: ${question}\n\nAssess compliance using BOTH stores but NEVER treat STANDARD as customer evidence.`,
+        tools: [
+          {
+            type: 'file_search',
+            vector_store_ids: [stdVectorStoreId, customerVectorStoreId],
+            max_num_results: 8,
+          },
+        ],
+        include: ['file_search_call.results'],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'compliance_assessment',
+            schema: responseSchema.schema,
+            strict: true,
+          },
+        },
+      };
+
+      const resp = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(body),
+      });
+
+      const json = await resp.json();
+
+      if (!resp.ok) {
+        console.error('[LLM] HTTP error', resp.status, JSON.stringify(json)?.slice(0, 2000));
+        throw new Error(`OpenAI responses error: ${resp.status}`);
+      }
+
+      let outputText: string | undefined = json?.output_text;
+      let parsed: AgentComplianceResponse | null = null;
+
+      if (typeof outputText === 'string' && outputText.trim().startsWith('{')) {
+        parsed = JSON.parse(outputText);
+      } else {
+        const msg = (json?.output || []).find((x: any) => x?.type === 'message');
+        const parts = msg?.content || [];
+        const out = parts.find((p: any) => p?.type === 'output_text')?.text;
+        if (typeof out === 'string' && out.trim().startsWith('{')) parsed = JSON.parse(out);
+      }
+
+      if (!parsed) {
+        console.error('[LLM] Could not parse structured output. Raw=', JSON.stringify(json)?.slice(0, 2000));
+        throw new Error('Failed to parse structured output from OpenAI');
+      }
+
+      parsed.citations = (parsed.citations || []).map((c) => ({
+        doc: c.doc,
+        page: c.page ?? null,
+        kind: c.kind,
+      }));
+
+      return parsed;
+    } catch (e: any) {
+      const msg = e?.name === 'AbortError' ? 'OpenAI request timed out' : e?.message || String(e);
+      console.error('[LLM] exception:', msg);
+
+      return {
+        reply: `LLM call failed: ${msg}`,
+        citations: [],
+        complianceSummary: {
+          standard,
+          status: 'UNKNOWN',
+          missing: ['LLM call failed (check backend logs)'],
+          recommendations: [
+            'Verify OPENAI_API_KEY, model, and vector store IDs',
+            'Check OpenAI logs in the platform dashboard',
+          ],
+        },
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

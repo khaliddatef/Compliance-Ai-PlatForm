@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener } from '@angular/core';
+import { Component, HostListener, effect } from '@angular/core';
 import { ComplianceResult } from '../../models/compliance-result.model';
 import { Message } from '../../models/message.model';
 import { ApiService, ComplianceStandard, ChatApiResponse } from '../../services/api.service';
@@ -18,7 +18,7 @@ import { LayoutService } from '../../services/layout.service';
   styleUrl: './chat-page.component.css',
 })
 export class ChatPageComponent {
-  rightPanelOpen = typeof window !== 'undefined' ? window.innerWidth > 1100 : true;
+  rightPanelOpen = true;
   typing = false;
   uploading = false;
   uploadProgress = 0;
@@ -34,7 +34,13 @@ export class ChatPageComponent {
     private readonly chatService: ChatService,
     private readonly apiService: ApiService,
     private readonly layout: LayoutService
-  ) {}
+  ) {
+    const initialPanelState = typeof window !== 'undefined' ? window.innerWidth > 1100 : true;
+    this.layout.setRightPanelOpen(initialPanelState);
+    effect(() => {
+      this.rightPanelOpen = this.layout.rightPanelOpen();
+    });
+  }
 
   get messages(): Message[] {
     return this.chatService.activeConversation()?.messages ?? [];
@@ -47,6 +53,9 @@ export class ChatPageComponent {
   @HostListener('window:resize')
   onResize() {
     this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
+    if (this.isMobile && this.layout.rightPanelOpen()) {
+      this.layout.setRightPanelOpen(false);
+    }
   }
 
   toggleSidebar() {
@@ -164,7 +173,7 @@ export class ChatPageComponent {
   }
 
   toggleRightPanel() {
-    this.rightPanelOpen = !this.rightPanelOpen;
+    this.layout.toggleRightPanel();
   }
 
   changeStandard(standard: ComplianceStandard) {

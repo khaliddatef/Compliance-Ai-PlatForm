@@ -1,13 +1,10 @@
 {
   "name": "compliance-ai-plat-form",
   "version": "0.0.0",
-  "scripts": {
-    "ng": "ng",
+    "scripts": {
     "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "serve:ssr:Compliance-Ai-PlatForm": "node dist/Compliance-Ai-PlatForm/server/server.mjs"
+    "dev": "ng serve -o --configuration development --proxy-config proxy.conf.json",
+    "dev:noproxy": "ng serve -o --configuration development"
   },
   "prettier": {
     "printWidth": 100,

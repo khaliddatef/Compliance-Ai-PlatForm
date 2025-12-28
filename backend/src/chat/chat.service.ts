@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Role = 'user' | 'assistant';
@@ -53,6 +53,35 @@ export class ChatService {
     });
   }
 
+  // ✅ Delete conversation + dependent data (messages + docs + chunks)
+  async deleteConversation(conversationId: string) {
+    const exists = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!exists) throw new NotFoundException('Conversation not found');
+
+    // transaction علشان كله يتمسح مرة واحدة
+    await this.prisma.$transaction(async (tx) => {
+      // 1) delete messages
+      await tx.message.deleteMany({ where: { conversationId } });
+
+      // 2) delete document chunks (via documents linked to conversation)
+      await tx.documentChunk.deleteMany({
+        where: { document: { conversationId } },
+      });
+
+      // 3) delete documents
+      await tx.document.deleteMany({ where: { conversationId } });
+
+      // 4) finally delete conversation
+      await tx.conversation.delete({ where: { id: conversationId } });
+    });
+
+    return { ok: true };
+  }
+
   // ----------------------------
   // RAG (Keyword) - MVP Retrieval
   // ----------------------------
@@ -103,7 +132,7 @@ export class ChatService {
         document: {
           conversationId,
           standard,
-          kind, // ✅ important
+          kind,
         },
       },
       include: { document: true },

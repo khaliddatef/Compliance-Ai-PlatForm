@@ -4,7 +4,9 @@
     (closeSidebar)="closeSidebar()"
   ></app-sidebar>
   <main class="shell-main">
-    <router-outlet></router-outlet>
+    <div class="page-container">
+      <router-outlet></router-outlet>
+    </div>
   </main>
   <div class="sidebar-overlay" *ngIf="isMobile && sidebarOpen" (click)="closeSidebar()" aria-hidden="true"></div>
 </div>

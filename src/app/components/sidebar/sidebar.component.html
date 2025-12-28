@@ -30,19 +30,32 @@
 
     <div class="section-header">Recent</div>
     <div class="conversation-list">
+ <button
+    *ngFor="let conversation of conversations; trackBy: trackConversation"
+    type="button"
+    class="conversation"
+    [class.active]="conversation.id === activeId"
+    (click)="selectConversation(conversation)"
+  >
+    <span class="pill"></span>
+
+    <span class="text">
+      <span class="title">{{ conversation.title }}</span>
+      <span class="meta">{{ conversation.updatedAt | date: 'shortTime' }}</span>
+    </span>
+
+    <span class="actions">
       <button
-        *ngFor="let conversation of conversations; trackBy: trackConversation"
         type="button"
-        class="conversation"
-        [class.active]="conversation.id === activeId"
-        (click)="selectConversation(conversation)"
+        class="icon-button trash"
+        aria-label="Delete chat"
+        title="Delete"
+        (click)="deleteConversation(conversation); $event.stopPropagation()"
       >
-        <span class="pill"></span>
-        <span class="text">
-          <span class="title">{{ conversation.title }}</span>
-          <span class="meta">{{ conversation.updatedAt | date: 'shortTime' }}</span>
-        </span>
+        🗑
       </button>
+    </span>
+  </button>
     </div>
   </div>
 </nav>

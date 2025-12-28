@@ -1,13 +1,20 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Post } from '@nestjs/common';
 import { ChatService, ComplianceStandard } from './chat.service';
 import { AgentService } from '../agent/agent.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('api/chat')
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly agent: AgentService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  @Delete(':conversationId')
+  async deleteChat(@Param('conversationId') conversationId: string) {
+    return this.chatService.deleteConversation(conversationId);
+  }
 
   @Post()
   async chat(
@@ -28,14 +35,14 @@ export class ChatController {
         citations: [],
         complianceSummary: {
           standard,
-          status: 'PARTIAL',
+          status: 'UNKNOWN',
           missing: [],
           recommendations: [],
         },
       };
     }
 
-    // 1) Save user message (customer conversation)
+    // 1) Save user message
     const { conv } = await this.chatService.addMessage({
       conversationId: body.conversationId,
       title: 'New compliance chat',
@@ -43,34 +50,15 @@ export class ChatController {
       content: prompt,
     });
 
-    // 2) Retrieve STANDARD + CUSTOMER chunks
-    const standardConversationId = `std-${standard}`; // ✅ ثابت عندك
-    const [standardHits, customerHits] = await Promise.all([
-      this.chatService.retrieveTopChunks({
-        conversationId: standardConversationId,
-        standard,
-        kind: 'STANDARD',
-        query: prompt,
-        topK: 6,
-        maxScan: 500,
-      }),
-      this.chatService.retrieveTopChunks({
-        conversationId: conv.id,
-        standard,
-        kind: 'CUSTOMER',
-        query: prompt,
-        topK: 6,
-        maxScan: 500,
-      }),
-    ]);
-    console.log('STD hits:', standardHits.length, standardHits[0]?.docName);
-    console.log('CUS hits:', customerHits.length, customerHits[0]?.docName);
-    // 3) Agent generates final answer (JSON)
+    // 2) Load conversation to get customerVectorStoreId
+    const convRow = await this.prisma.conversation.findUnique({ where: { id: conv.id } });
+    const customerVectorStoreId = (convRow as any)?.customerVectorStoreId || null;
+
+    // 3) Agent answers (Responses API + file_search)
     const agentOut = await this.agent.answerCompliance({
       standard,
       question: prompt,
-      standardHits,
-      customerHits,
+      customerVectorStoreId,
     });
 
     // 4) Save assistant message
@@ -87,5 +75,4 @@ export class ChatController {
       complianceSummary: agentOut.complianceSummary,
     };
   }
-
 }

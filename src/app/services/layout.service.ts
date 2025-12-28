@@ -3,6 +3,7 @@ import { Injectable, signal } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class LayoutService {
   private readonly sidebarOpenSignal = signal(true);
+  private readonly rightPanelOpenSignal = signal(true);
 
   sidebarOpen() {
     return this.sidebarOpenSignal();
@@ -18,5 +19,21 @@ export class LayoutService {
 
   closeSidebar() {
     this.sidebarOpenSignal.set(false);
+  }
+
+  rightPanelOpen() {
+    return this.rightPanelOpenSignal();
+  }
+
+  setRightPanelOpen(open: boolean) {
+    this.rightPanelOpenSignal.set(open);
+  }
+
+  toggleRightPanel() {
+    this.rightPanelOpenSignal.update((v) => !v);
+  }
+
+  closeRightPanel() {
+    this.rightPanelOpenSignal.set(false);
   }
 }
