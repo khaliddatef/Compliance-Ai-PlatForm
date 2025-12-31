@@ -6,7 +6,7 @@ import { ApiService, ComplianceStandard } from './api.service';
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private readonly storageKey = 'compliance-ai-conversations';
-  private readonly hasBrowserStorage = typeof localStorage !== 'undefined';
+  private readonly isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
   readonly conversations = signal<Conversation[]>(this.loadInitialConversations());
   readonly activeConversationId = signal<string>(this.conversations()[0]?.id || '');
@@ -16,7 +16,7 @@ export class ChatService {
 
   constructor(private api: ApiService) {
     effect(() => {
-      if (!this.hasBrowserStorage) return;
+      if (!this.isBrowser) return;
       localStorage.setItem(this.storageKey, JSON.stringify(this.conversations()));
     });
   }
@@ -161,16 +161,16 @@ export class ChatService {
     return cleaned.length ? cleaned + (content.length > 40 ? '…' : '') : 'User message';
   }
 
-  private loadInitialConversations() {
-    if (this.hasBrowserStorage) {
-      const cached = localStorage.getItem(this.storageKey);
-      if (cached) {
-        try {
+  private loadInitialConversations(): Conversation[] {
+    if (this.isBrowser) {
+      try {
+        const cached = localStorage.getItem(this.storageKey);
+        if (cached) {
           const parsed: Conversation[] = JSON.parse(cached);
           if (parsed.length) return parsed;
-        } catch (error) {
-          console.error('Failed to parse conversations', error);
         }
+      } catch (error) {
+        console.error('Failed to parse conversations', error);
       }
     }
 
