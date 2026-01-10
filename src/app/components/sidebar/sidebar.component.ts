@@ -1,49 +1,39 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
-import { Router } from '@angular/router';
-import { Conversation } from '../../models/conversation.model';
-import { ChatService } from '../../services/chat.service';
+import { Router, RouterModule } from '@angular/router';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.css'
 })
 export class SidebarComponent {
   @Input() open = true;
-  @Output() closeSidebar = new EventEmitter<void>();
+  @Output() toggleSidebar = new EventEmitter<void>();
 
-  constructor(
-    private readonly chatService: ChatService,
-    private readonly router: Router
-  ) {}
+  navItems = [
+    { label: 'Home', path: '/home', icon: 'home' },
+    { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
+    { label: 'Uploaded Files', path: '/uploads', icon: 'uploads' },
+    { label: 'Frameworks', path: '/frameworks', icon: 'frameworks' },
+    { label: 'Settings', path: '/settings', icon: 'settings' }
+  ];
 
-  get conversations() {
-    return this.chatService.conversations();
+  constructor(private readonly auth: AuthService, private readonly router: Router) {}
+
+  get user() {
+    return this.auth.user();
   }
 
-  get activeId() {
-    return this.chatService.activeConversationId();
+  logout() {
+    this.auth.logout();
+    this.router.navigate(['/login']);
   }
 
-  trackConversation(_index: number, conversation: Conversation) {
-    return conversation.id;
+  goToLogin() {
+    this.router.navigate(['/login']);
   }
-
-  startNewChat() {
-    const conversation = this.chatService.startNewConversation();
-    this.router.navigate(['/']);
-    return conversation;
-  }
-
-  selectConversation(conversation: Conversation) {
-    this.chatService.selectConversation(conversation.id);
-    this.router.navigate(['/']);
-  }
-  deleteConversation(conversation: any) {
-  this.chatService.removeConversation(conversation.id);
-}
-
 }

@@ -1,0 +1,24 @@
+<section class="page">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Frameworks</h3>
+      <button class="ghost-btn" type="button">Add framework</button>
+    </div>
+    <div class="framework-grid">
+      <article class="framework-card" *ngFor="let fw of frameworks">
+        <div class="card-header">
+          <h4>{{ fw.name }}</h4>
+          <span class="status" [class.draft]="fw.status !== 'Active'">{{ fw.status }}</span>
+        </div>
+        <div class="coverage">
+          <div class="label">Coverage</div>
+          <div class="meter">
+            <div class="bar" [style.width]="fw.coverage"></div>
+          </div>
+          <div class="value">{{ fw.coverage }}</div>
+        </div>
+        <button class="ghost-btn" type="button">Manage controls</button>
+      </article>
+    </div>
+  </div>
+</section>

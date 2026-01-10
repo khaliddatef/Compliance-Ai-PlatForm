@@ -1,25 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --surface-0: #f7f9fc;
+  --surface-0: #f4f5f7;
   --surface-1: #ffffff;
-  --surface-2: #f5f7fb;
-  --surface-3: #edf1f7;
-  --ink-strong: #0f1c3f;
-  --ink-muted: #667085;
-  --border-subtle: #e1e8f0;
+  --surface-2: #f6f7f9;
+  --surface-3: #eef1f5;
+  --ink-strong: #0f172a;
+  --ink-muted: #64748b;
+  --border-subtle: #e2e8f0;
   --accent-050: #eff6ff;
-  --accent-100: #e0ecff;
-  --accent-200: #c8dcff;
-  --accent-300: #a6c3ff;
-  --accent-400: #7fa8ff;
-  --accent-500: #5c8fff;
-  --accent-600: #3f6fe5;
-  --accent-700: #2f54c1;
-  --accent-800: #243c8f;
-  --shadow-soft: 0 6px 18px rgba(15, 28, 63, 0.06);
-  --shadow-raised: 0 10px 30px rgba(15, 28, 63, 0.08);
-  --shadow-elevated: 0 16px 40px rgba(15, 28, 63, 0.12);
+  --accent-100: #dbeafe;
+  --accent-200: #bfdbfe;
+  --accent-300: #93c5fd;
+  --accent-400: #60a5fa;
+  --accent-500: #3b82f6;
+  --accent-600: #2563eb;
+  --accent-700: #1d4ed8;
+  --accent-800: #1e40af;
+  --shadow-soft: 0 8px 20px rgba(15, 23, 42, 0.06);
+  --shadow-raised: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --shadow-elevated: 0 18px 40px rgba(15, 23, 42, 0.14);
+  --sidebar-bg: #0f172a;
+  --sidebar-ink: #f8fafc;
+  --sidebar-ink-muted: #94a3b8;
+  --sidebar-active: rgba(59, 130, 246, 0.18);
 }
 
 *,

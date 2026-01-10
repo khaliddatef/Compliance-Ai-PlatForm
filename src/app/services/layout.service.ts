@@ -2,7 +2,7 @@ import { Injectable, signal } from '@angular/core';
 
 @Injectable({ providedIn: 'root' })
 export class LayoutService {
-  private readonly sidebarOpenSignal = signal(true);
+  private readonly sidebarOpenSignal = signal(false);
   private readonly rightPanelOpenSignal = signal(true);
 
   sidebarOpen() {

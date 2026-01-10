@@ -23,9 +23,11 @@ export class MessageListComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() messages: Message[] = [];
   @Input() typing = false;
   @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLDivElement>;
+  private readonly isBrowser = typeof window !== 'undefined';
   private resizeObserver?: ResizeObserver;
 
   ngAfterViewInit() {
+    if (!this.isBrowser) return;
     this.scrollToBottom();
     this.observeResize();
   }
@@ -35,8 +37,13 @@ export class MessageListComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (!this.isBrowser) return;
     if (changes['messages'] || changes['typing']) {
-      requestAnimationFrame(() => this.scrollToBottom());
+      const raf =
+        typeof requestAnimationFrame === 'function'
+          ? requestAnimationFrame
+          : (fn: FrameRequestCallback) => setTimeout(fn);
+      raf(() => this.scrollToBottom());
     }
   }
 
@@ -45,7 +52,7 @@ export class MessageListComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private observeResize() {
-    if (typeof ResizeObserver === 'undefined') return;
+    if (!this.isBrowser || typeof ResizeObserver === 'undefined') return;
     const el = this.scrollContainer?.nativeElement;
     if (!el) return;
 

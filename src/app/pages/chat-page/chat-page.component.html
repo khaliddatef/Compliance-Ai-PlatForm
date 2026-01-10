@@ -1,13 +1,9 @@
-<div class="chat-layout" [class.panel-hidden]="!rightPanelOpen">
+<div class="chat-layout">
   <section class="chat-main">
     <app-chat-header
       [title]="conversationTitle"
       status="Live"
       subtitle="Compliance workspace · Payment launch"
-      [showSummaryButton]="true"
-      [showMenuButton]="isMobile"
-      (menuToggle)="toggleSidebar()"
-      (summaryToggle)="toggleRightPanel()"
     ></app-chat-header>
 
     <app-message-list [messages]="messages" [typing]="typing"></app-message-list>
@@ -18,22 +14,4 @@
       [resetKey]="attachmentResetKey"
     ></app-composer>
   </section>
-
-  <aside class="panel-wrap" *ngIf="rightPanelOpen">
-    <app-right-panel
-      [open]="rightPanelOpen"
-      [loading]="loadingCompliance"
-      [standard]="selectedStandard"
-      [result]="complianceResult"
-      (standardChange)="changeStandard($event)"
-      (close)="toggleRightPanel()"
-    ></app-right-panel>
-  </aside>
-
-  <div
-    class="panel-overlay"
-    *ngIf="rightPanelOpen"
-    (click)="toggleRightPanel()"
-    aria-hidden="true"
-  ></div>
 </div>

@@ -1,30 +1,9 @@
 <header class="chat-header">
   <div class="title-group">
     <div class="title-row">
-      <button
-        *ngIf="showMenuButton"
-        class="menu-button"
-        type="button"
-        (click)="menuToggle.emit()"
-        aria-label="Toggle sidebar"
-      >
-        ☰
-      </button>
       <h1>{{ title }}</h1>
       <span class="status-pill" aria-label="Workspace status">{{ status }}</span>
     </div>
     <p class="subtitle">{{ subtitle }}</p>
-  </div>
-  <div class="header-actions">
-    <div class="chip">Realtime checks</div>
-    <button
-      *ngIf="showSummaryButton"
-      class="summary-button"
-      type="button"
-      (click)="summaryToggle.emit()"
-      aria-label="Toggle compliance summary panel"
-    >
-      Compliance summary
-    </button>
   </div>
 </header>

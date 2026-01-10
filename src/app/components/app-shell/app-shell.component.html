@@ -1,9 +1,29 @@
 <div class="app-shell" [class.sidebar-open]="sidebarOpen" [class.mobile]="isMobile">
   <app-sidebar
     [open]="sidebarOpen"
-    (closeSidebar)="closeSidebar()"
+    (toggleSidebar)="toggleSidebar()"
   ></app-sidebar>
   <main class="shell-main">
+    <header class="top-bar">
+      <button
+        class="menu-toggle"
+        type="button"
+        *ngIf="isMobile || !sidebarOpen"
+        (click)="toggleSidebar()"
+        aria-label="Toggle sidebar"
+      >
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </button>
+      <div class="top-title">
+        <div class="title">{{ pageTitle }}</div>
+        <div class="subtitle">Tekronyx Compliance AI</div>
+      </div>
+      <div class="top-actions">
+        <span class="workspace-pill">Workspace</span>
+      </div>
+    </header>
     <div class="page-container">
       <router-outlet></router-outlet>
     </div>

@@ -1,46 +1,31 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, effect } from '@angular/core';
-import { ComplianceResult } from '../../models/compliance-result.model';
+import { Component } from '@angular/core';
 import { Message } from '../../models/message.model';
 import { ApiService, ComplianceStandard, ChatApiResponse } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ChatHeaderComponent } from '../../components/chat-header/chat-header.component';
 import { ComposerComponent, ComposerSendPayload } from '../../components/composer/composer.component';
 import { MessageListComponent } from '../../components/message-list/message-list.component';
-import { RightPanelComponent } from '../../components/right-panel/right-panel.component';
-import { LayoutService } from '../../services/layout.service';
 
 @Component({
   selector: 'app-chat-page',
   standalone: true,
-  imports: [CommonModule, ChatHeaderComponent, ComposerComponent, MessageListComponent, RightPanelComponent],
+  imports: [CommonModule, ChatHeaderComponent, ComposerComponent, MessageListComponent],
   templateUrl: './chat-page.component.html',
   styleUrl: './chat-page.component.css',
 })
 export class ChatPageComponent {
-  rightPanelOpen = true;
   typing = false;
   uploading = false;
   uploadProgress = 0;
   attachmentResetKey = 0;
-  isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
 
   selectedStandard: ComplianceStandard = 'ISO';
 
-  complianceResult: ComplianceResult | null = null;
-  loadingCompliance = false;
-
   constructor(
     private readonly chatService: ChatService,
-    private readonly apiService: ApiService,
-    private readonly layout: LayoutService
-  ) {
-    const initialPanelState = typeof window !== 'undefined' ? window.innerWidth > 1100 : true;
-    this.layout.setRightPanelOpen(initialPanelState);
-    effect(() => {
-      this.rightPanelOpen = this.layout.rightPanelOpen();
-    });
-  }
+    private readonly apiService: ApiService
+  ) {}
 
   get messages(): Message[] {
     return this.chatService.activeConversation()?.messages ?? [];
@@ -48,18 +33,6 @@ export class ChatPageComponent {
 
   get conversationTitle() {
     return this.chatService.activeConversation()?.title || 'Compliance workspace';
-  }
-
-  @HostListener('window:resize')
-  onResize() {
-    this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
-    if (this.isMobile && this.layout.rightPanelOpen()) {
-      this.layout.setRightPanelOpen(false);
-    }
-  }
-
-  toggleSidebar() {
-    this.layout.toggleSidebar();
   }
 
   handleComposerSend(payload: ComposerSendPayload) {
@@ -104,12 +77,6 @@ export class ChatPageComponent {
 
         this.chatService.appendMessage(conversationId, assistantMessage);
 
-        // ✅ حدّث الـ right panel
-        try {
-          this.complianceResult = this.mapBackendToUi(raw);
-        } catch {
-          // ignore mapping errors
-        }
       },
       error: (e) => {
         console.error('chat error', e);
@@ -172,33 +139,7 @@ export class ChatPageComponent {
     });
   }
 
-  toggleRightPanel() {
-    this.layout.toggleRightPanel();
-  }
-
-  changeStandard(standard: ComplianceStandard) {
-    this.selectedStandard = (standard === 'ISO' || standard === 'FRA' || standard === 'CBE'
-      ? standard
-      : 'ISO') as ComplianceStandard;
-
-    this.complianceResult = null;
-  }
-
-  private mapBackendToUi(raw: ChatApiResponse): ComplianceResult {
-    const statusMap: Record<string, any> = {
-      COMPLIANT: 'Compliant',
-      PARTIAL: 'Partially compliant',
-      NOT_COMPLIANT: 'Not compliant',
-    };
-
-    return {
-      standard: raw.complianceSummary.standard,
-      status: statusMap[raw.complianceSummary.status] ?? 'Partially compliant',
-      summary: raw.reply,
-      missing: raw.complianceSummary.missing.map((m: { title: string }) => m.title),
-      sources: raw.citations.map((c: { doc: string; page: number }) => `${c.doc} p.${c.page}`),
-    } as ComplianceResult;
-  }
+  // Standard selection is fixed for now (UI coming in Frameworks page).
 
   private appendAssistantMessage(conversationId: string, content: string) {
     this.chatService.appendMessage(conversationId, {

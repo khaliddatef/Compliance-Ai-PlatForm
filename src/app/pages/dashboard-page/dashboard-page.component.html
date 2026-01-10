@@ -1,0 +1,48 @@
+<section class="page">
+  <div class="stats-grid">
+    <article class="stat-card" *ngFor="let stat of stats">
+      <p class="label">{{ stat.label }}</p>
+      <div class="value">{{ stat.value }}</div>
+      <p class="note">{{ stat.note }}</p>
+    </article>
+  </div>
+
+  <div class="grid-two">
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Controls at Risk</h3>
+        <span class="chip">Needs attention</span>
+      </div>
+      <div class="table">
+        <div class="row header">
+          <span>Control</span>
+          <span>Owner</span>
+          <span>Status</span>
+          <span>Due</span>
+        </div>
+        <div class="row" *ngFor="let row of riskRows">
+          <span>{{ row.control }}</span>
+          <span>{{ row.owner }}</span>
+          <span class="status" [class.warn]="row.status !== 'Partial'">{{ row.status }}</span>
+          <span>{{ row.due }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Recent Activity</h3>
+        <span class="chip muted">Last 48h</span>
+      </div>
+      <div class="activity-list">
+        <div class="activity" *ngFor="let item of activityRows">
+          <div class="activity-main">
+            <div class="activity-title">{{ item.item }}</div>
+            <div class="activity-meta">{{ item.by }}</div>
+          </div>
+          <div class="activity-time">{{ item.time }}</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</section>
