@@ -36,7 +36,8 @@
 
     <div class="input-wrap">
       <textarea
-        [(ngModel)]="draft"
+        [value]="draft"
+        (input)="onDraftInput($event)"
         (keydown)="handleKeydown($event)"
         placeholder="Ask about controls, gaps, or evidence you need..."
         aria-label="Message composer"

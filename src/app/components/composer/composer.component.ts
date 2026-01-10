@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 export type ComposerSendPayload = {
@@ -25,19 +25,30 @@ export class ComposerComponent implements OnChanges {
   draft = '';
   attachments: File[] = [];
   dragging = false;
+  canSend = false;
 
   private readonly allowedExtensions = ['pdf', 'docx', 'xlsx'];
   private lastResetKey = 0;
+
+  constructor(private cdr: ChangeDetectorRef) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['resetKey'] && this.resetKey !== this.lastResetKey) {
       this.attachments = [];
       this.lastResetKey = this.resetKey;
     }
+    this.updateCanSend();
   }
 
-  get canSend() {
-    return !this.uploading && (!!this.draft.trim() || this.attachments.length > 0);
+  updateCanSend() {
+    this.canSend = !this.uploading && (!!this.draft.trim() || this.attachments.length > 0);
+    this.cdr.markForCheck();
+  }
+
+  onDraftInput(event: Event) {
+    const target = event.target as HTMLTextAreaElement;
+    this.draft = target.value;
+    this.updateCanSend();
   }
 
   submit() {
@@ -81,6 +92,7 @@ export class ComposerComponent implements OnChanges {
 
   removeAttachment(index: number) {
     this.attachments = this.attachments.filter((_, idx) => idx !== index);
+    this.updateCanSend();
   }
 
   formatSize(bytes: number) {
@@ -103,6 +115,7 @@ export class ComposerComponent implements OnChanges {
     });
 
     this.attachments = next;
+    this.updateCanSend();
   }
 
   private isAllowed(file: File) {

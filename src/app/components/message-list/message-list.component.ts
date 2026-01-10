@@ -36,7 +36,9 @@ export class MessageListComponent implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['messages'] || changes['typing']) {
-      requestAnimationFrame(() => this.scrollToBottom());
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(() => this.scrollToBottom());
+      }
     }
   }
 
