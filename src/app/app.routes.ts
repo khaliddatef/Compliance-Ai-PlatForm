@@ -6,6 +6,7 @@ import { UploadsPageComponent } from './pages/uploads-page/uploads-page.componen
 import { FrameworksPageComponent } from './pages/frameworks-page/frameworks-page.component';
 import { LoginPageComponent } from './pages/login-page/login-page.component';
 import { SettingsPageComponent } from './pages/settings-page/settings-page.component';
+import { ChatHistoryPageComponent } from './pages/chat-history-page/chat-history-page.component';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPageComponent },
@@ -14,6 +15,7 @@ export const routes: Routes = [
     component: AppShellComponent,
     children: [
       { path: 'home', component: ChatPageComponent, data: { title: 'Home' } },
+      { path: 'history', component: ChatHistoryPageComponent, data: { title: 'Chat History' } },
       { path: 'dashboard', component: DashboardPageComponent, data: { title: 'Dashboard' } },
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
       { path: 'frameworks', component: FrameworksPageComponent, data: { title: 'Frameworks' } },

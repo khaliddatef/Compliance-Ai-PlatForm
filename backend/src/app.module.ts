@@ -5,6 +5,7 @@ import { HealthModule } from './health/health.module';
 import { UploadModule } from './upload/upload.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { IngestModule } from './ingest/ingest.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { IngestModule } from './ingest/ingest.module';
     ChatModule,
     UploadModule,
     IngestModule,
+    AuthModule,
   ],
   providers: [Logger],
 })

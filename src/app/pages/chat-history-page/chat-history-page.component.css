@@ -1,0 +1,127 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-item:hover,
+.history-item:focus-visible {
+  border-color: var(--accent-200);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+}
+
+.history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+
+.meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.action-btn:hover,
+.action-btn:focus-visible {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+}
+
+.action-btn.danger {
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #b42318;
+}
+
+.action-btn.danger:hover,
+.action-btn.danger:focus-visible {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.empty {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-subtle);
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.empty h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.empty p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}

@@ -8,7 +8,7 @@
       <button
         class="menu-toggle"
         type="button"
-        *ngIf="isMobile || !sidebarOpen"
+        *ngIf="isMobile"
         (click)="toggleSidebar()"
         aria-label="Toggle sidebar"
       >
@@ -17,12 +17,17 @@
         <span class="bar"></span>
       </button>
       <div class="top-title">
-        <div class="title">{{ pageTitle }}</div>
-        <div class="subtitle">Tekronyx Compliance AI</div>
+        <div class="title-stack">
+          <div class="title">{{ pageTitle }}</div>
+        </div>
       </div>
-      <div class="top-actions">
-        <span class="workspace-pill">Workspace</span>
-      </div>
+      <img
+        class="top-brand-logo"
+        src="/tekronyx-logo.png"
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+      />
     </header>
     <div class="page-container">
       <router-outlet></router-outlet>

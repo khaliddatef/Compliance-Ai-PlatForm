@@ -4,7 +4,10 @@
     *ngFor="let message of messages; trackBy: trackById"
     [class.from-user]="message.role === 'user'"
   >
-    <app-message-bubble [message]="message"></app-message-bubble>
+    <app-message-bubble
+      [message]="message"
+      (actionSelected)="actionSelected.emit($event)"
+    ></app-message-bubble>
   </div>
 
   <div class="typing" *ngIf="typing">

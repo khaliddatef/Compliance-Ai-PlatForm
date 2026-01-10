@@ -2,8 +2,8 @@
   <div class="title-group">
     <div class="title-row">
       <h1>{{ title }}</h1>
-      <span class="status-pill" aria-label="Workspace status">{{ status }}</span>
+      <span class="status-pill" aria-label="Status">{{ status }}</span>
     </div>
-    <p class="subtitle">{{ subtitle }}</p>
+    <p class="subtitle" *ngIf="subtitle">{{ subtitle }}</p>
   </div>
 </header>

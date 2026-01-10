@@ -1,0 +1,38 @@
+<section class="page">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Chat History</h3>
+    </div>
+
+    <div class="history-list" *ngIf="conversations.length; else emptyState">
+      <div class="history-item" *ngFor="let conversation of conversations; trackBy: trackById">
+        <div class="history-main">
+          <div class="title">{{ conversation.title }}</div>
+          <div class="meta">
+            <span>{{ conversation.messages.length }} messages</span>
+            <span>Updated {{ conversation.updatedAt | date: 'short' }}</span>
+          </div>
+        </div>
+        <div class="history-actions">
+          <button class="action-btn" type="button" (click)="openConversation(conversation.id)">
+            Open
+          </button>
+          <button
+            class="action-btn danger"
+            type="button"
+            (click)="deleteConversation(conversation.id, $event)"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <ng-template #emptyState>
+      <div class="empty">
+        <h4>No chats yet</h4>
+        <p>Start a new chat from Home and your history will appear here.</p>
+      </div>
+    </ng-template>
+  </div>
+</section>

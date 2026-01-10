@@ -3,10 +3,13 @@
     <app-chat-header
       [title]="conversationTitle"
       status="Live"
-      subtitle="Compliance workspace · Payment launch"
     ></app-chat-header>
 
-    <app-message-list [messages]="messages" [typing]="typing"></app-message-list>
+    <app-message-list
+      [messages]="messages"
+      [typing]="typing"
+      (actionSelected)="handleActionSelected($event)"
+    ></app-message-list>
     <app-composer
       (send)="handleComposerSend($event)"
       [uploading]="uploading"

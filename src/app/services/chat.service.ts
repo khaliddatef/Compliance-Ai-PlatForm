@@ -121,6 +121,42 @@ export class ChatService {
     );
   }
 
+  updateMessage(conversationId: string, messageId: string, update: Partial<Message>) {
+    this.conversations.update((list) =>
+      list.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation;
+        return {
+          ...conversation,
+          messages: conversation.messages.map((m) => (m.id === messageId ? { ...m, ...update } : m)),
+          updatedAt: Date.now(),
+        };
+      }),
+    );
+  }
+
+  updateConversation(conversationId: string, update: Partial<Conversation>) {
+    this.conversations.update((list) =>
+      list.map((conversation) =>
+        conversation.id === conversationId ? { ...conversation, ...update, updatedAt: Date.now() } : conversation,
+      ),
+    );
+  }
+
+  clearActions(conversationId: string) {
+    this.conversations.update((list) =>
+      list.map((conversation) => {
+        if (conversation.id !== conversationId) return conversation;
+        return {
+          ...conversation,
+          messages: conversation.messages.map((m) =>
+            m.actions ? { ...m, actions: undefined } : m,
+          ),
+          updatedAt: Date.now(),
+        };
+      }),
+    );
+  }
+
   private replaceMessage(conversationId: string, oldId: string, nextMsg: Message) {
     this.conversations.update((list) =>
       list.map((conversation) => {

@@ -1,9 +1,9 @@
-<div class="bubble" [class.from-user]="message.role === 'user'">
+<div class="bubble" [class.from-user]="message.role === 'user'" [class.action-message]="message.kind === 'action'">
   <div class="avatar" aria-hidden="true">
     <span>{{ message.role === 'user' ? 'You' : 'AI' }}</span>
   </div>
   <div class="bubble-body">
-    <div class="content">
+    <div class="content" *ngIf="message.kind !== 'action'">
       <div *ngFor="let line of lines" class="line" [class.bullet]="line.type === 'bullet'">
         <span *ngIf="line.type === 'bullet'" class="bullet-mark">•</span>
         <span class="text">
@@ -12,6 +12,18 @@
           </ng-container>
         </span>
       </div>
+    </div>
+    <div class="action-pill" *ngIf="message.kind === 'action'">{{ message.content }}</div>
+
+    <div class="action-buttons" *ngIf="message.role === 'assistant' && message.actions?.length">
+      <button
+        class="action-btn"
+        type="button"
+        *ngFor="let action of message.actions"
+        (click)="selectAction(action)"
+      >
+        {{ action.label }}
+      </button>
     </div>
     <div class="meta">
       <span class="time">{{ message.timestamp | date: 'shortTime' }}</span>

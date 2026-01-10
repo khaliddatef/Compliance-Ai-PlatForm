@@ -1,38 +1,41 @@
 <nav class="sidebar" [class.open]="open" [class.collapsed]="!open" aria-label="Primary">
   <div class="sidebar-top">
     <div class="brand">
-      <span class="shield" aria-hidden="true">
-        <svg viewBox="0 0 24 24" focusable="false">
-          <path
-            d="M12 3.5 5 6v6.5c0 3.4 2.5 6.6 7 8.5 4.5-1.9 7-5.1 7-8.5V6l-7-2.5Z"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linejoin="round"
-          />
-          <path
-            d="M9.5 12.5 11 14l3.5-3.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </span>
+      <div class="brand-switch">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path
+              d="M12 3.5 5 6v6.5c0 3.4 2.5 6.6 7 8.5 4.5-1.9 7-5.1 7-8.5V6l-7-2.5Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M9.5 12.5 11 14l3.5-3.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+        <button
+          class="menu-mark"
+          type="button"
+          (click)="toggleSidebar.emit()"
+          aria-label="Toggle sidebar"
+        >
+          <span class="bar"></span>
+          <span class="bar"></span>
+          <span class="bar"></span>
+        </button>
+      </div>
       <div class="brand-text">
         <span class="brand-title">Tekronyx</span>
         <span class="brand-sub">Compliance AI</span>
       </div>
-      <button
-        class="icon-button toggle"
-        type="button"
-        (click)="toggleSidebar.emit()"
-        [attr.aria-label]="open ? 'Collapse sidebar' : 'Expand sidebar'"
-        [attr.title]="open ? 'Collapse sidebar' : 'Expand sidebar'"
-      >
-        {{ open ? '<<' : '>>' }}
-      </button>
     </div>
 
     <div class="nav">
@@ -42,11 +45,16 @@
         [routerLink]="item.path"
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: true }"
+        (click)="handleNavClick(item, $event)"
       >
         <span class="nav-icon" aria-hidden="true" [ngSwitch]="item.icon">
           <svg *ngSwitchCase="'home'" viewBox="0 0 24 24" focusable="false">
             <path d="M4 11.5L12 5l8 6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M6 10.5V19h12v-8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg *ngSwitchCase="'history'" viewBox="0 0 24 24" focusable="false">
+            <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M12 7.5v5l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
           <svg *ngSwitchCase="'dashboard'" viewBox="0 0 24 24" focusable="false">
             <rect x="3" y="3" width="8" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>

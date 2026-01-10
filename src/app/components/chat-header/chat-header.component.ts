@@ -10,6 +10,6 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 })
 export class ChatHeaderComponent {
   @Input() title = 'Compliance workspace';
-  @Input() subtitle = 'Aligned to ISO and FRA standards';
+  @Input() subtitle = '';
   @Input() status = 'Live';
 }

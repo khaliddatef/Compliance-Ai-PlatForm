@@ -40,7 +40,6 @@
   font-size: 18px;
   box-shadow: var(--shadow-soft);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-    margin-bottom: 30px;
 
 }
 
@@ -68,13 +67,15 @@ textarea {
   width: 100%;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
-  padding: 12px;
-  background: var(--surface-2);
-  resize: vertical;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  resize: none;
+  height: 72px;
+  min-height: 72px;
+  max-height: 72px;
   font: inherit;
   color: var(--ink-strong);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  margin-top: 20px;
 }
 
 textarea:focus-visible {
@@ -130,7 +131,6 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  margin-bottom: 30px;
 }
 
 .send:hover,
@@ -216,13 +216,31 @@ textarea:focus-visible {
   }
 
   .input-row {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .input-wrap {
+    order: 1;
+    flex: 1 1 100%;
+  }
+
+  .icon-btn {
+    order: 2;
+    width: 40px;
+    height: 40px;
   }
 
   .send {
-    width: 100%;
+    order: 3;
+    flex: 1 1 auto;
     justify-content: center;
+  }
+
+  textarea {
+    height: 64px;
+    min-height: 64px;
+    max-height: 64px;
   }
 }
 

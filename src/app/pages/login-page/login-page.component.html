@@ -28,18 +28,29 @@
 
     <form class="form" (submit)="$event.preventDefault(); signIn()">
       <label>
-        Name
-        <input type="text" placeholder="Your name" [(ngModel)]="name" name="name" />
-      </label>
-      <label>
         Email
-        <input type="email" placeholder="you@company.com" [(ngModel)]="email" name="email" />
+        <input
+          type="email"
+          placeholder="you@company.com"
+          [(ngModel)]="email"
+          name="email"
+          autocomplete="email"
+        />
       </label>
       <label>
         Password
-        <input type="password" placeholder="********" />
+        <input
+          type="password"
+          placeholder="********"
+          [(ngModel)]="password"
+          name="password"
+          autocomplete="current-password"
+        />
       </label>
-      <button class="primary-btn" type="submit">Sign in</button>
+      <p class="error" *ngIf="error">{{ error }}</p>
+      <button class="primary-btn" type="submit" [disabled]="loading">
+        {{ loading ? 'Signing in...' : 'Sign in' }}
+      </button>
     </form>
   </div>
 </section>

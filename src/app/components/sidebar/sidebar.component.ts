@@ -15,14 +15,18 @@ export class SidebarComponent {
   @Output() toggleSidebar = new EventEmitter<void>();
 
   navItems = [
-    { label: 'Home', path: '/home', icon: 'home' },
+    { label: 'Home', path: '/home', icon: 'home', action: 'newChat' },
+    { label: 'Chat History', path: '/history', icon: 'history' },
     { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
     { label: 'Uploaded Files', path: '/uploads', icon: 'uploads' },
     { label: 'Frameworks', path: '/frameworks', icon: 'frameworks' },
     { label: 'Settings', path: '/settings', icon: 'settings' }
   ];
 
-  constructor(private readonly auth: AuthService, private readonly router: Router) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly router: Router
+  ) {}
 
   get user() {
     return this.auth.user();
@@ -35,5 +39,11 @@ export class SidebarComponent {
 
   goToLogin() {
     this.router.navigate(['/login']);
+  }
+
+  handleNavClick(item: { path: string; action?: string }, event: MouseEvent) {
+    if (item.action !== 'newChat') return;
+    event.preventDefault();
+    this.router.navigate([item.path], { queryParams: { new: Date.now() } });
   }
 }

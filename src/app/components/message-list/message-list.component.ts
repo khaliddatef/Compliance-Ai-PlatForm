@@ -3,13 +3,15 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  EventEmitter,
   Input,
   OnChanges,
   OnDestroy,
+  Output,
   SimpleChanges,
   ViewChild,
 } from '@angular/core';
-import { Message } from '../../models/message.model';
+import { Message, MessageAction } from '../../models/message.model';
 import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
 
 @Component({
@@ -22,6 +24,7 @@ import { MessageBubbleComponent } from '../message-bubble/message-bubble.compone
 export class MessageListComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() messages: Message[] = [];
   @Input() typing = false;
+  @Output() actionSelected = new EventEmitter<{ messageId: string; action: MessageAction }>();
   @ViewChild('scrollContainer') scrollContainer?: ElementRef<HTMLDivElement>;
   private readonly isBrowser = typeof window !== 'undefined';
   private resizeObserver?: ResizeObserver;

@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input } from '@angular/core';
-import { Message } from '../../models/message.model';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Message, MessageAction } from '../../models/message.model';
 
 type RenderLine = {
   type: 'bullet' | 'text';
@@ -16,6 +16,7 @@ type RenderLine = {
 })
 export class MessageBubbleComponent {
   @Input({ required: true }) message!: Message;
+  @Output() actionSelected = new EventEmitter<{ messageId: string; action: MessageAction }>();
 
   copied = false;
   feedback: 'up' | 'down' | '' = '';
@@ -46,6 +47,10 @@ export class MessageBubbleComponent {
 
   setFeedback(direction: 'up' | 'down') {
     this.feedback = this.feedback === direction ? '' : direction;
+  }
+
+  selectAction(action: MessageAction) {
+    this.actionSelected.emit({ messageId: this.message.id, action });
   }
 
   private parseCitations(text: string) {

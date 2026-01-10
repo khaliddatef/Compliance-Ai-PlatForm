@@ -1,11 +1,15 @@
 .bubble {
   display: flex;
   gap: 10px;
-  max-width: 92%;
+  width: 100%;
+  max-width: 100%;
 }
 
 .bubble.from-user {
   flex-direction: row-reverse;
+  width: auto;
+  max-width: 70%;
+  margin-left: auto;
 }
 
 .avatar {
@@ -35,6 +39,11 @@
   box-shadow: var(--shadow-soft);
 }
 
+.bubble.action-message .bubble-body {
+  border-style: dashed;
+  background: var(--surface-1);
+}
+
 .bubble.from-user .bubble-body {
   background: linear-gradient(135deg, var(--accent-500), var(--accent-300));
   color: #0b1330;
@@ -47,6 +56,44 @@
   flex-direction: column;
   gap: 8px;
   color: inherit;
+}
+
+.action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  font-weight: 600;
+  color: var(--ink-strong);
+  width: fit-content;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.action-btn {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.action-btn:hover,
+.action-btn:focus-visible {
+  background: var(--surface-3);
+  border-color: var(--accent-200);
 }
 
 .line {
@@ -130,5 +177,11 @@
 @media (max-width: 768px) {
   .bubble {
     max-width: 100%;
+  }
+
+  .bubble.from-user {
+    max-width: 100%;
+    width: 100%;
+    margin-left: 0;
   }
 }

@@ -1,6 +1,10 @@
 import { Injectable, signal } from '@angular/core';
+import { map, tap } from 'rxjs/operators';
+import { throwError } from 'rxjs';
+import { ApiService } from './api.service';
 
 export type AuthUser = {
+  id?: string;
   name: string;
   email: string;
 };
@@ -11,6 +15,8 @@ const STORAGE_KEY = 'tekronyx.user';
 export class AuthService {
   private readonly userSignal = signal<AuthUser | null>(this.loadUser());
 
+  constructor(private readonly api: ApiService) {}
+
   user() {
     return this.userSignal();
   }
@@ -19,16 +25,28 @@ export class AuthService {
     return !!this.userSignal();
   }
 
-  login(email: string, name?: string) {
+  login(email: string, password: string) {
     const cleanEmail = email?.trim();
-    if (!cleanEmail) return;
-    const fallbackName = cleanEmail.split('@')[0] || 'User';
-    const user: AuthUser = {
-      name: (name || fallbackName).trim(),
-      email: cleanEmail
-    };
-    this.userSignal.set(user);
-    this.saveUser(user);
+    if (!cleanEmail || !password) {
+      return throwError(() => new Error('Email and password are required.'));
+    }
+
+    return this.api.login(cleanEmail, password).pipe(
+      map((res) => res?.user),
+      tap((user) => {
+        if (!user?.email) {
+          throw new Error('Invalid login response.');
+        }
+        const nextUser: AuthUser = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+        };
+        this.userSignal.set(nextUser);
+        this.saveUser(nextUser);
+      }),
+      map(() => true),
+    );
   }
 
   logout() {

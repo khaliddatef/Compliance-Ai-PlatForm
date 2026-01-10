@@ -185,21 +185,7 @@ Rules:
 
     // ✅ لو مفيش customer store: ندي guidance عام + UNKNOWN
     if (!customerVectorStoreId) {
-      return {
-        reply:
-          `I’m a cybersecurity compliance assistant. I can explain ${standard} requirements and what evidence is typically needed. ` +
-          `To assess your compliance, please upload customer evidence (policies, procedures, screenshots, audit logs, access review records, etc.).`,
-        citations: [],
-        complianceSummary: {
-          standard,
-          status: 'UNKNOWN',
-          missing: ['No customer evidence store is linked to this conversation yet.'],
-          recommendations: [
-            'Upload customer evidence documents (policies/procedures/access control docs/audit logs)',
-            'Ask a focused question (e.g., “Access control: MFA + least privilege + provisioning + reviews”)',
-          ],
-        },
-      };
+      return this.answerGeneral({ standard, question });
     }
 
     // ✅ Probe customer store only (يحسم موضوع الملف)
@@ -370,6 +356,160 @@ Keep answers concise.
           recommendations: [
             'Verify OPENAI_API_KEY, model, and vector store IDs',
             'Check OpenAI logs in the platform dashboard',
+          ],
+        },
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  // ---------------------------
+  // 2A) GENERAL ANSWER (NO CUSTOMER EVIDENCE)
+  // ---------------------------
+  private async answerGeneral(params: {
+    standard: 'ISO' | 'FRA' | 'CBE';
+    question: string;
+  }): Promise<AgentComplianceResponse> {
+    this.assertConfig();
+
+    const { standard, question } = params;
+
+    const instructions = `
+You are a cybersecurity compliance assistant for ${standard}.
+Provide concise guidance and recommended evidence.
+Do NOT claim compliance without customer evidence.
+Always set complianceSummary.status to "UNKNOWN".
+Return STRICT JSON only.
+`;
+
+    const responseSchema = {
+      name: 'compliance_assessment',
+      strict: true,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['reply', 'citations', 'complianceSummary'],
+        properties: {
+          reply: { type: 'string' },
+          citations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['doc', 'page', 'kind'],
+              properties: {
+                doc: { type: 'string' },
+                page: { type: ['number', 'null'] },
+                kind: { type: 'string', enum: ['STANDARD', 'CUSTOMER'] },
+              },
+            },
+          },
+          complianceSummary: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['standard', 'status', 'missing', 'recommendations'],
+            properties: {
+              standard: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'],
+              },
+              missing: { type: 'array', items: { type: 'string' } },
+              recommendations: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    } as const;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+
+    try {
+      const body = {
+        model: this.model,
+        instructions,
+        input: `Standard=${standard}\nUser question: ${question}\nProvide guidance without claiming compliance.`,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'compliance_assessment',
+            schema: responseSchema.schema,
+            strict: true,
+          },
+        },
+      };
+
+      const resp = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify(body),
+      });
+
+      const json = await resp.json();
+
+      if (!resp.ok) {
+        console.error('[LLM] HTTP error', resp.status, JSON.stringify(json)?.slice(0, 2000));
+        throw new Error(`OpenAI responses error: ${resp.status}`);
+      }
+
+      let outputText: string | undefined = json?.output_text;
+      let parsed: AgentComplianceResponse | null = null;
+
+      if (typeof outputText === 'string' && outputText.trim().startsWith('{')) {
+        parsed = JSON.parse(outputText);
+      } else {
+        const msg = (json?.output || []).find((x: any) => x?.type === 'message');
+        const parts = msg?.content || [];
+        const out = parts.find((p: any) => p?.type === 'output_text')?.text;
+        if (typeof out === 'string' && out.trim().startsWith('{')) parsed = JSON.parse(out);
+      }
+
+      if (!parsed) {
+        console.error('[LLM] Could not parse structured output. Raw=', JSON.stringify(json)?.slice(0, 2000));
+        throw new Error('Failed to parse structured output from OpenAI');
+      }
+
+      parsed.citations = (parsed.citations || []).map((c) => ({
+        doc: c.doc,
+        page: c.page ?? null,
+        kind: c.kind,
+      }));
+
+      if (!parsed.complianceSummary) {
+        parsed.complianceSummary = {
+          standard,
+          status: 'UNKNOWN',
+          missing: [],
+          recommendations: [],
+        };
+      } else {
+        parsed.complianceSummary.standard = standard;
+        parsed.complianceSummary.status = 'UNKNOWN';
+      }
+
+      return parsed;
+    } catch (e: any) {
+      const msg = e?.name === 'AbortError' ? 'OpenAI request timed out' : e?.message || String(e);
+      console.error('[LLM] exception:', msg);
+
+      return {
+        reply:
+          `I’m a cybersecurity compliance assistant. I can explain ${standard} requirements and what evidence is typically needed. ` +
+          `To assess your compliance, please upload customer evidence (policies, procedures, screenshots, audit logs, access review records, etc.).`,
+        citations: [],
+        complianceSummary: {
+          standard,
+          status: 'UNKNOWN',
+          missing: ['No customer evidence store is linked to this conversation yet.'],
+          recommendations: [
+            'Upload customer evidence documents (policies/procedures/access control docs/audit logs)',
+            'Ask a focused question (e.g., “Access control: MFA + least privilege + provisioning + reviews”)',
           ],
         },
       };

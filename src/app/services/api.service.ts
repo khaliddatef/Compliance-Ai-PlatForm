@@ -17,6 +17,12 @@ export type ComplianceSummary = {
   recommendations: { title: string; details?: string }[];
 };
 
+export type AuthUserResponse = {
+  id: string;
+  name: string;
+  email: string;
+};
+
 export type ChatApiResponse = {
   conversationId: string;
   assistantMessage: string;
@@ -61,6 +67,12 @@ export class ApiService {
 
   chat(conversationId: string, standard: ComplianceStandard, message: string) {
     return this.http.post<any>('/api/chat', { conversationId, standard, message });
+  }
+
+  // ===== Auth =====
+
+  login(email: string, password: string) {
+    return this.http.post<{ user: AuthUserResponse }>('/api/auth/login', { email, password });
   }
 
   // ✅ DELETE conversation in backend
