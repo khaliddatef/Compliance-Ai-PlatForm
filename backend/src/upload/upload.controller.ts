@@ -121,10 +121,10 @@ export class UploadController {
   async upload(
     @Query('conversationId') conversationId: string,
     @Query('standard') standard: string,
-    @Query('kind') kind: DocKind = 'CUSTOMER',
-    @Query('language') language?: 'ar' | 'en',
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: AuthUser,
+    @Query('kind') kind: DocKind = 'CUSTOMER',
+    @Query('language') language?: 'ar' | 'en',
   ) {
     return this.uploadService.saveUploadedFiles({
       conversationId,

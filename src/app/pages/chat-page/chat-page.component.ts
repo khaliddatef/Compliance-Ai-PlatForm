@@ -188,11 +188,12 @@ export class ChatPageComponent implements OnInit, OnDestroy {
       next: (raw: ChatApiResponse) => {
         const replyText = String(raw?.reply ?? raw?.assistantMessage ?? '');
         const externalLinks = Array.isArray(raw?.externalLinks) ? raw.externalLinks : [];
-        const reference = externalLinks.length
+        const firstLink = externalLinks[0];
+        const reference = firstLink
           ? {
-              type: 'link',
+              type: 'link' as const,
               label: language === 'ar' ? 'مصدر' : 'Source',
-              url: externalLinks[0]?.url,
+              url: firstLink.url,
             }
           : undefined;
 
