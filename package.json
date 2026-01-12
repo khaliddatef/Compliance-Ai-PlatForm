@@ -4,7 +4,10 @@
     "scripts": {
     "start": "ng serve",
     "dev": "ng serve -o --configuration development --proxy-config proxy.conf.json",
-    "dev:noproxy": "ng serve -o --configuration development"
+    "dev:noproxy": "ng serve -o --configuration development",
+    "start:all": "node start-all.js",
+    "setup": "npm install && npm --prefix backend install",
+    "db:sync": "npm --prefix backend run db:sync"
   },
   "prettier": {
     "printWidth": 100,

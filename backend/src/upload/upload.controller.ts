@@ -1,17 +1,31 @@
 import {
+  Body,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
+  NotFoundException,
+  Param,
   Post,
   Query,
+  Res,
   UploadedFiles,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { UploadService } from './upload.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthUser } from '../auth/auth.service';
 
 type DocKind = 'CUSTOMER' | 'STANDARD';
 
 @Controller('api/uploads')
+@UseGuards(AuthGuard)
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
@@ -21,16 +35,84 @@ export class UploadController {
     @Query('conversationId') conversationId: string,
     @Query('standard') standard?: string,
     @Query('kind') kind?: DocKind,
+    @Query('all') all?: string,
+    @CurrentUser() user?: AuthUser,
   ) {
+    const allRequested = String(all || '').toLowerCase();
+    if (allRequested === 'true' || allRequested === '1') {
+      const docs = await this.uploadService.listAllForUser(user);
+      return { ok: true, documents: docs };
+    }
+
     if (!conversationId) return { ok: false, message: 'conversationId is required' };
 
     const docs = await this.uploadService.listByConversation({
       conversationId,
       standard,
       kind,
+      user,
     });
 
     return { ok: true, conversationId, documents: docs };
+  }
+
+  @Get(':id/download')
+  async download(@Param('id') id: string, @Res() res: Response, @CurrentUser() user: AuthUser) {
+    const doc = await this.uploadService.getDocumentWithOwner(id);
+    if (!doc) throw new NotFoundException('Document not found');
+    this.assertDocAccess(doc, user);
+
+    const resolvedPath = path.isAbsolute(doc.storagePath)
+      ? doc.storagePath
+      : path.resolve(process.cwd(), doc.storagePath);
+
+    try {
+      await fs.stat(resolvedPath);
+    } catch {
+      throw new NotFoundException('File not found on disk');
+    }
+
+    const safeName = (doc.originalName || 'document')
+      .replace(/[^\w.\-]+/g, '_')
+      .slice(0, 120);
+
+    return res.download(resolvedPath, safeName);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const doc = await this.uploadService.getDocumentWithOwner(id);
+    if (!doc) throw new NotFoundException('Document not found');
+    this.assertDocAccess(doc, user);
+
+    const deleted = await this.uploadService.deleteDocument(id);
+    if (!deleted) throw new NotFoundException('Document not found');
+    return { ok: true };
+  }
+
+  @Post('submit')
+  async submitEvidence(
+    @Body()
+    body: {
+      documentIds?: string[];
+      controlId?: string;
+      status?: 'COMPLIANT' | 'PARTIAL';
+      note?: string;
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const documentIds = Array.isArray(body?.documentIds) ? body.documentIds : [];
+    const allowed = await this.uploadService.ensureDocsAccess(documentIds, user);
+    if (!allowed) {
+      throw new ForbiddenException('Not allowed to submit these documents');
+    }
+
+    return this.uploadService.submitEvidence({
+      documentIds,
+      controlId: String(body?.controlId || ''),
+      status: String(body?.status || '').toUpperCase() as 'COMPLIANT' | 'PARTIAL',
+      note: body?.note,
+    });
   }
 
   // ✅ UPLOAD
@@ -40,13 +122,25 @@ export class UploadController {
     @Query('conversationId') conversationId: string,
     @Query('standard') standard: string,
     @Query('kind') kind: DocKind = 'CUSTOMER',
+    @Query('language') language?: 'ar' | 'en',
     @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: AuthUser,
   ) {
     return this.uploadService.saveUploadedFiles({
       conversationId,
       standard,
       kind,
       files,
+      user,
+      language,
     });
+  }
+
+  private assertDocAccess(doc: { conversation?: { userId?: string | null } }, user: AuthUser) {
+    if (user.role !== 'USER') return;
+    const ownerId = doc.conversation?.userId;
+    if (!ownerId || ownerId !== user.id) {
+      throw new ForbiddenException('Not allowed to access this file');
+    }
   }
 }

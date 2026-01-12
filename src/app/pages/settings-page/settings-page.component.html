@@ -4,6 +4,23 @@
       <h3>Settings</h3>
       <span class="chip">Preferences</span>
     </div>
+    <div class="setting account" *ngIf="user; else signedOut">
+      <div>
+        <div class="title">Signed in as</div>
+        <div class="desc">{{ user.name }} · {{ user.email }}</div>
+      </div>
+      <button class="ghost-btn" type="button" (click)="logout()">Logout</button>
+    </div>
+
+    <ng-template #signedOut>
+      <div class="setting account">
+        <div>
+          <div class="title">Sign in</div>
+          <div class="desc">Use your Tekronyx account to access chat history and uploads.</div>
+        </div>
+        <button class="ghost-btn" type="button" (click)="goToLogin()">Go to login</button>
+      </div>
+    </ng-template>
     <div class="settings-grid">
       <div class="setting">
         <div>

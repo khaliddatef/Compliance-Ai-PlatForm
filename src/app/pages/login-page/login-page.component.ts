@@ -17,6 +17,12 @@ export class LoginPageComponent {
   password = '';
   loading = false;
   error = '';
+  readonly testAccounts = [
+    { name: 'Mostafa', email: 'mostafa@tekronyx.com', role: 'User' },
+    { name: 'Omar', email: 'wasamy.omar@tekronyx.com', role: 'Manager' },
+    { name: 'Khaled', email: 'khaled@tekronyx.com', role: 'Admin' },
+  ];
+  selectedTestEmail = this.testAccounts[0]?.email || '';
 
   constructor(private readonly auth: AuthService, private readonly router: Router) {}
 
@@ -35,5 +41,17 @@ export class LoginPageComponent {
           this.error = err?.error?.message || 'Invalid email or password.';
         },
       });
+  }
+
+  signInAs(account: { email: string }) {
+    this.email = account.email;
+    this.password = 'Tekronyx@123';
+    this.signIn();
+  }
+
+  useSelectedTest() {
+    const target = this.testAccounts.find((account) => account.email === this.selectedTestEmail);
+    if (!target) return;
+    this.signInAs(target);
   }
 }

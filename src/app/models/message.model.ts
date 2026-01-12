@@ -8,6 +8,22 @@ export type MessageAction = {
   label: string;
 };
 
+export type MessageReference =
+  | {
+      type: 'kb';
+      controlId: string;
+      title: string;
+      summary?: string | null;
+      evidence?: string[];
+      testComponents?: string[];
+      label?: string;
+    }
+  | {
+      type: 'link';
+      label: string;
+      url: string;
+    };
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -15,4 +31,5 @@ export interface Message {
   timestamp: number;
   kind?: MessageKind;
   actions?: MessageAction[];
+  reference?: MessageReference;
 }

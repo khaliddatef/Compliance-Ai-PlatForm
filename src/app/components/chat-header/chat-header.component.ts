@@ -12,4 +12,7 @@ export class ChatHeaderComponent {
   @Input() title = 'Compliance workspace';
   @Input() subtitle = '';
   @Input() status = 'Live';
+  @Input() showAction = false;
+  @Input() actionLabel = 'New chat';
+  @Output() actionClicked = new EventEmitter<void>();
 }

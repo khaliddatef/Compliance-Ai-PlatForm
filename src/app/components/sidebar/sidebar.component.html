@@ -45,7 +45,6 @@
         [routerLink]="item.path"
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: true }"
-        (click)="handleNavClick(item, $event)"
       >
         <span class="nav-icon" aria-hidden="true" [ngSwitch]="item.icon">
           <svg *ngSwitchCase="'home'" viewBox="0 0 24 24" focusable="false">
@@ -70,6 +69,11 @@
           <svg *ngSwitchCase="'frameworks'" viewBox="0 0 24 24" focusable="false">
             <rect x="4" y="4" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
             <rect x="10" y="10" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+          <svg *ngSwitchCase="'kb'" viewBox="0 0 24 24" focusable="false">
+            <path d="M5 6.5h10a3 3 0 0 1 3 3V19H8a3 3 0 0 0-3 3Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M5 6.5h10a3 3 0 0 1 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M5 6.5v12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
           </svg>
           <svg *ngSwitchCase="'settings'" viewBox="0 0 24 24" focusable="false">
             <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/>

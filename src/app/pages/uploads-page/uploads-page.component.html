@@ -1,22 +1,86 @@
 <section class="page">
   <div class="panel">
     <div class="panel-header">
-      <h3>Uploaded Files</h3>
-      <button class="primary-btn" type="button">Upload New</button>
+      <div>
+        <h3>Uploaded Files</h3>
+        <p class="sub">Files uploaded from chat conversations.</p>
+      </div>
+      <button class="primary-btn" type="button" (click)="refresh()">Refresh</button>
     </div>
-    <div class="table">
+
+    <div class="filters">
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search by file, chat, or framework..."
+          [(ngModel)]="searchTerm"
+        />
+      </div>
+      <div class="filter-group">
+        <label>
+          Framework
+          <select [(ngModel)]="frameworkFilter">
+            <option *ngFor="let option of frameworkOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
+              {{ option }}
+            </option>
+          </select>
+        </label>
+        <label>
+          Status
+          <select [(ngModel)]="statusFilter">
+            <option *ngFor="let option of statusOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
+              {{ option }}
+            </option>
+          </select>
+        </label>
+        <label>
+          Sort
+          <select [(ngModel)]="sortMode">
+            <option value="recent">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name-asc">Name A-Z</option>
+            <option value="name-desc">Name Z-A</option>
+            <option value="size-desc">Size: Large-Small</option>
+            <option value="size-asc">Size: Small-Large</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="table" *ngIf="!loading && visibleFiles.length">
       <div class="row header">
         <span>File</span>
         <span>Framework</span>
         <span>Status</span>
+        <span>Uploaded</span>
+        <span>Control</span>
+        <span>Evidence Match</span>
         <span>Size</span>
+        <span>Action</span>
       </div>
-      <div class="row" *ngFor="let file of files">
-        <span class="file-name">{{ file.name }}</span>
-        <span>{{ file.standard }}</span>
-        <span class="status" [class.pending]="file.status !== 'Indexed'">{{ file.status }}</span>
+      <div class="row" *ngFor="let file of visibleFiles">
+        <div class="file-cell">
+          <span class="file-name">{{ file.name }}</span>
+          <span class="file-meta" *ngIf="file.chatTitle">Chat: {{ file.chatTitle }}</span>
+        </div>
+        <span>{{ file.framework }}</span>
+        <span class="status" [ngClass]="file.statusClass">{{ file.status }}</span>
+        <span class="date">{{ file.uploadedAt | date: 'MMM d, y' }}</span>
+        <span class="control">{{ file.controlId }}</span>
+        <div class="match-cell">
+          <span class="match-pill" [ngClass]="file.matchClass">{{ file.matchLabel }}</span>
+          <span class="match-note" [title]="file.matchNote">{{ file.matchNote }}</span>
+        </div>
         <span>{{ file.size }}</span>
+        <div class="action-group">
+          <button class="download-btn" type="button" (click)="downloadFile(file)">Download</button>
+          <button class="delete-btn" type="button" (click)="deleteFile(file)">Delete</button>
+        </div>
       </div>
     </div>
+
+    <p *ngIf="loading" class="empty">Loading uploads…</p>
+    <p *ngIf="!loading && !visibleFiles.length && !error" class="empty">No uploads yet.</p>
+    <p *ngIf="error" class="empty error">{{ error }}</p>
   </div>
 </section>

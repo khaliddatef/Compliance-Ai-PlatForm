@@ -52,5 +52,25 @@
         {{ loading ? 'Signing in...' : 'Sign in' }}
       </button>
     </form>
+
+    <div class="test-accounts">
+      <div class="test-header">
+        <span>Test accounts</span>
+        <span class="test-note">Default password: Tekronyx@123</span>
+      </div>
+      <div class="test-row">
+        <label class="test-select">
+          <span class="label">Choose account</span>
+          <select [(ngModel)]="selectedTestEmail" name="testAccount">
+            <option *ngFor="let account of testAccounts" [value]="account.email">
+              {{ account.name }} · {{ account.role }}
+            </option>
+          </select>
+        </label>
+        <button class="ghost-btn primary" type="button" (click)="useSelectedTest()">
+          Use account
+        </button>
+      </div>
+    </div>
   </div>
 </section>

@@ -3,6 +3,9 @@
     <app-chat-header
       [title]="conversationTitle"
       status="Live"
+      [showAction]="true"
+      actionLabel="New chat"
+      (actionClicked)="startNewChat()"
     ></app-chat-header>
 
     <app-message-list

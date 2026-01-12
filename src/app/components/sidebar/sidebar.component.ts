@@ -14,12 +14,13 @@ export class SidebarComponent {
   @Input() open = true;
   @Output() toggleSidebar = new EventEmitter<void>();
 
-  navItems = [
-    { label: 'Home', path: '/home', icon: 'home', action: 'newChat' },
+  private readonly allNavItems = [
+    { label: 'Home', path: '/home', icon: 'home' },
     { label: 'Chat History', path: '/history', icon: 'history' },
     { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
     { label: 'Uploaded Files', path: '/uploads', icon: 'uploads' },
     { label: 'Frameworks', path: '/frameworks', icon: 'frameworks' },
+    { label: 'Control KB', path: '/control-kb', icon: 'kb' },
     { label: 'Settings', path: '/settings', icon: 'settings' }
   ];
 
@@ -32,6 +33,19 @@ export class SidebarComponent {
     return this.auth.user();
   }
 
+  get navItems() {
+    const role = (this.user?.role || 'USER').toUpperCase();
+    if (role === 'USER') {
+      return this.allNavItems.filter(
+        (item) => item.path !== '/dashboard' && item.path !== '/frameworks' && item.path !== '/control-kb'
+      );
+    }
+    if (role === 'MANAGER') {
+      return this.allNavItems.filter((item) => item.path !== '/frameworks' && item.path !== '/control-kb');
+    }
+    return this.allNavItems;
+  }
+
   logout() {
     this.auth.logout();
     this.router.navigate(['/login']);
@@ -41,9 +55,4 @@ export class SidebarComponent {
     this.router.navigate(['/login']);
   }
 
-  handleNavClick(item: { path: string; action?: string }, event: MouseEvent) {
-    if (item.action !== 'newChat') return;
-    event.preventDefault();
-    this.router.navigate([item.path], { queryParams: { new: Date.now() } });
-  }
 }

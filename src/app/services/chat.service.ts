@@ -21,7 +21,18 @@ export class ChatService {
     });
   }
 
+  private getPreferredLanguage(): 'ar' | 'en' {
+    if (!this.isBrowser || typeof navigator === 'undefined') return 'en';
+    const lang = String(navigator.language || '').toLowerCase();
+    return lang.startsWith('ar') ? 'ar' : 'en';
+  }
+
+  private detectLanguage(text: string): 'ar' | 'en' {
+    return /[\u0600-\u06FF]/.test(text || '') ? 'ar' : 'en';
+  }
+
   startNewConversation() {
+    const language = this.getPreferredLanguage();
     const conversation: Conversation = {
       id: crypto.randomUUID(),
       backendId: null, // ✅ store backend conversation id per chat
@@ -30,7 +41,10 @@ export class ChatService {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'Hi! Share context or upload docs and I will draft a compliance summary.',
+          content:
+            language === 'ar'
+              ? 'مرحبًا! قولّي تحب تشتغل على إيه (كنترولات، مراجعة أدلة، أو سؤال محدد). وتقدر كمان ترفع ملفات الأدلة.'
+              : 'Hi! Tell me what you want to work on (controls, evidence review, or a specific question). You can also upload evidence files.',
           timestamp: Date.now(),
         },
       ],
@@ -71,7 +85,8 @@ export class ChatService {
       timestamp: Date.now(),
     });
 
-    this.api.sendMessage(text, standard, convo.backendId ?? undefined).subscribe({
+    const language = this.detectLanguage(text) || this.getPreferredLanguage();
+    this.api.sendMessage(text, standard, convo.backendId ?? undefined, language).subscribe({
       next: ({ assistantMessage, conversationId }) => {
         // ✅ save backend conversation id on THIS conversation
         this.conversations.update((list) =>
@@ -92,7 +107,8 @@ export class ChatService {
         this.replaceMessage(convo.id, typingId, {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'Server error. Please try again.',
+          content:
+            language === 'ar' ? 'حصلت مشكلة في السيرفر. جرّب مرة تانية.' : 'Server error. Please try again.',
           timestamp: Date.now(),
         });
       },
@@ -198,6 +214,7 @@ export class ChatService {
   }
 
   private loadInitialConversations(): Conversation[] {
+    const language = this.getPreferredLanguage();
     if (this.isBrowser) {
       try {
         const cached = localStorage.getItem(this.storageKey);
@@ -219,7 +236,9 @@ export class ChatService {
           id: crypto.randomUUID(),
           role: 'assistant',
           content:
-            'Welcome to Compliance AI. Ask about audit readiness, summarize risks, or upload docs for a quick review.',
+            language === 'ar'
+              ? 'مرحبًا بك في Tekronyx. قولّي تحب تشتغل على إيه، أو ارفع ملفات للمراجعة السريعة.'
+              : 'Welcome to Tekronyx. Tell me what you want to work on, or upload docs for a quick review.',
           timestamp: Date.now() - 1000 * 60 * 5,
         },
       ],

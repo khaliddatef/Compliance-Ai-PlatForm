@@ -7,6 +7,7 @@ export type AuthUser = {
   id?: string;
   name: string;
   email: string;
+  role?: 'ADMIN' | 'MANAGER' | 'USER';
 };
 
 const STORAGE_KEY = 'tekronyx.user';
@@ -41,6 +42,7 @@ export class AuthService {
           id: user.id,
           name: user.name,
           email: user.email,
+          role: user.role,
         };
         this.userSignal.set(nextUser);
         this.saveUser(nextUser);
@@ -60,7 +62,8 @@ export class AuthService {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as AuthUser;
-      return parsed?.email ? parsed : null;
+      if (!parsed?.email) return null;
+      return { ...parsed, role: parsed.role || 'USER' };
     } catch {
       return null;
     }

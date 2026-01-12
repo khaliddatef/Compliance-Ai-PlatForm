@@ -1,0 +1,305 @@
+<section class="page">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>Control Knowledge Base</h3>
+        <p class="sub">Admin-only source of truth for ISO 27001 controls.</p>
+      </div>
+      <button class="primary-btn" type="button" (click)="refreshTopics()">Refresh</button>
+    </div>
+
+    <div class="kb-layout" *ngIf="!loading">
+      <aside class="kb-column topics-col">
+        <div class="column-header">
+          <div>
+            <h4>Topics</h4>
+            <span class="meta">{{ topics.length }} topics</span>
+          </div>
+          <button class="ghost-btn" type="button" (click)="showNewTopic = !showNewTopic">
+            {{ showNewTopic ? 'Close' : 'New topic' }}
+          </button>
+        </div>
+
+        <div class="draft-card" *ngIf="showNewTopic">
+          <h5>New topic</h5>
+          <div class="field">
+            <label>Title</label>
+            <input type="text" [(ngModel)]="topicDraft.title" placeholder="Access control" />
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <textarea rows="2" [(ngModel)]="topicDraft.description" placeholder="Short summary"></textarea>
+          </div>
+          <div class="field-row">
+            <label>
+              Mode
+              <select [(ngModel)]="topicDraft.mode">
+                <option value="continuous">Continuous</option>
+                <option value="open">Open</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select [(ngModel)]="topicDraft.status">
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+          <button class="ghost-btn" type="button" (click)="createTopic()">Add topic</button>
+        </div>
+
+        <div class="list">
+          <button
+            class="list-item"
+            type="button"
+            *ngFor="let topic of topics"
+            [class.active]="topic.id === selectedTopic?.id"
+            (click)="selectTopic(topic)"
+          >
+            <div>
+              <span class="title">{{ topic.title }}</span>
+              <span class="meta">{{ topic.controlCount || 0 }} controls</span>
+            </div>
+            <span class="pill" [class.disabled]="topic.status !== 'enabled'">{{ topic.status }}</span>
+          </button>
+        </div>
+
+        <div class="edit-card" *ngIf="selectedTopic && topicEdit">
+          <div class="edit-header">
+            <h5>Topic details</h5>
+            <div class="actions">
+              <button class="ghost-btn" type="button" *ngIf="!editingTopic" (click)="startEditTopic()">Edit</button>
+              <button class="ghost-btn" type="button" *ngIf="editingTopic" (click)="saveTopic()">Save</button>
+              <button class="ghost-btn" type="button" *ngIf="editingTopic" (click)="cancelEditTopic()">Cancel</button>
+              <button class="ghost-btn danger" type="button" (click)="deleteTopic()">Delete</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Title</label>
+            <input type="text" [(ngModel)]="topicEdit.title" [disabled]="!editingTopic" />
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <textarea rows="2" [(ngModel)]="topicEdit.description" [disabled]="!editingTopic"></textarea>
+          </div>
+          <div class="field-row">
+            <label>
+              Mode
+              <select [(ngModel)]="topicEdit.mode" [disabled]="!editingTopic">
+                <option value="continuous">Continuous</option>
+                <option value="open">Open</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select [(ngModel)]="topicEdit.status" [disabled]="!editingTopic">
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </aside>
+
+      <section class="kb-column controls-col">
+        <div class="column-header controls-header">
+          <div>
+            <h4>Controls</h4>
+            <span class="meta">Topic: {{ selectedTopic?.title || 'Select a topic' }}</span>
+          </div>
+          <button class="ghost-btn" type="button" (click)="showNewControl = !showNewControl" [disabled]="!selectedTopic">
+            {{ showNewControl ? 'Close' : 'New control' }}
+          </button>
+        </div>
+
+        <div class="search-row">
+          <input type="search" [(ngModel)]="searchTerm" placeholder="Search controls..." (keyup.enter)="searchControls()" />
+          <button class="ghost-btn" type="button" (click)="searchControls()">Search</button>
+        </div>
+
+        <div class="draft-card" *ngIf="showNewControl && selectedTopic">
+          <h5>New control</h5>
+          <div class="field">
+            <label>Control code</label>
+            <input type="text" [(ngModel)]="controlDraft.controlCode" placeholder="GOV-01" />
+          </div>
+          <div class="field">
+            <label>Title</label>
+            <textarea rows="2" [(ngModel)]="controlDraft.title" placeholder="Short control statement"></textarea>
+          </div>
+          <div class="field">
+            <label>ISO mappings</label>
+            <input type="text" [(ngModel)]="controlDraft.isoMappingsText" placeholder="A.5.1, A.5.4" />
+          </div>
+          <button class="ghost-btn" type="button" (click)="createControl()">Add control</button>
+        </div>
+
+        <div class="controls-grid">
+          <div class="controls-list">
+            <div class="list">
+              <button
+                class="list-item"
+                type="button"
+                *ngFor="let control of controls"
+                [class.active]="control.id === selectedControl?.id"
+                (click)="selectControl(control)"
+              >
+                <div>
+                  <span class="title">{{ control.controlCode }}</span>
+                  <span class="meta">{{ control.title }}</span>
+                </div>
+                <span class="meta">{{ control._count?.testComponents || 0 }} tests</span>
+              </button>
+            </div>
+
+            <div class="pagination" *ngIf="totalPages > 1">
+              <button class="ghost-btn" type="button" (click)="prevPage()" [disabled]="page === 1">Prev</button>
+              <button
+                class="page-btn"
+                type="button"
+                *ngFor="let p of pageNumbers"
+                [class.active]="p === page"
+                (click)="goToPage(p)"
+              >
+                {{ p }}
+              </button>
+              <button class="ghost-btn" type="button" (click)="nextPage()" [disabled]="page === totalPages">Next</button>
+            </div>
+            <div class="page-meta" *ngIf="totalControls">Showing {{ controls.length }} of {{ totalControls }}</div>
+          </div>
+
+          <div class="controls-detail">
+            <ng-container *ngIf="selectedControl && controlEdit; else emptyState">
+              <div class="detail-card">
+                <div class="edit-header">
+                  <h5>Control details</h5>
+                  <div class="actions">
+                    <button class="ghost-btn" type="button" *ngIf="!editingControl" (click)="startEditControl()">Edit</button>
+                    <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="saveControl()">Save</button>
+                    <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="cancelEditControl()">Cancel</button>
+                    <button class="ghost-btn danger" type="button" (click)="deleteControl()">Delete</button>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <label>
+                    Code
+                    <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl" />
+                  </label>
+                  <label>
+                    Status
+                    <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl">
+                      <option value="enabled">Enabled</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field">
+                  <label>Title</label>
+                  <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl"></textarea>
+                </div>
+                <div class="field">
+                  <label>ISO mappings</label>
+                  <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl" />
+                </div>
+                <div class="field">
+                  <label>Description</label>
+                  <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl"></textarea>
+                </div>
+              </div>
+
+              <div class="detail-card">
+                <div class="edit-header">
+                  <h5>Test components</h5>
+                  <button class="ghost-btn" type="button" (click)="showNewComponent = !showNewComponent">
+                    {{ showNewComponent ? 'Close' : 'New component' }}
+                  </button>
+                </div>
+
+                <div class="draft-card" *ngIf="showNewComponent">
+                  <div class="field">
+                    <label>Requirement</label>
+                    <textarea rows="2" [(ngModel)]="componentDraft.requirement" placeholder="Requirement text"></textarea>
+                  </div>
+                  <div class="field">
+                    <label>Evidence types</label>
+                    <input type="text" [(ngModel)]="componentDraft.evidenceTypesText" placeholder="Policy, Screenshot, Log" />
+                  </div>
+                  <div class="field">
+                    <label>Acceptance criteria</label>
+                    <input type="text" [(ngModel)]="componentDraft.acceptanceCriteria" placeholder="Evidence clearly meets the requirement." />
+                  </div>
+                  <div class="field">
+                    <label>Partial criteria</label>
+                    <input type="text" [(ngModel)]="componentDraft.partialCriteria" placeholder="Evidence is incomplete." />
+                  </div>
+                  <div class="field">
+                    <label>Reject criteria</label>
+                    <input type="text" [(ngModel)]="componentDraft.rejectCriteria" placeholder="No relevant evidence." />
+                  </div>
+                  <button class="ghost-btn" type="button" (click)="createTestComponent()">Add component</button>
+                </div>
+
+                <div class="components" *ngIf="selectedControl?.testComponents?.length">
+                  <div class="component" *ngFor="let component of selectedControl?.testComponents">
+                    <div class="component-header">
+                      <h6>{{ component.requirement }}</h6>
+                      <div class="actions">
+                        <button class="ghost-btn" type="button" (click)="startEditComponent(component)" *ngIf="editingComponentId !== component.id">Edit</button>
+                        <button class="ghost-btn" type="button" (click)="saveComponent(component)" *ngIf="editingComponentId === component.id">Save</button>
+                        <button class="ghost-btn" type="button" (click)="cancelEditComponent()" *ngIf="editingComponentId === component.id">Cancel</button>
+                        <button class="ghost-btn danger" type="button" (click)="deleteComponent(component)">Delete</button>
+                      </div>
+                    </div>
+
+                    <div class="component-body" *ngIf="editingComponentId !== component.id">
+                      <p class="meta">Evidence: {{ formatEvidence(component) || '—' }}</p>
+                      <p class="meta">Accept: {{ component.acceptanceCriteria || '—' }}</p>
+                      <p class="meta">Partial: {{ component.partialCriteria || '—' }}</p>
+                      <p class="meta">Reject: {{ component.rejectCriteria || '—' }}</p>
+                    </div>
+
+                    <div class="component-body" *ngIf="editingComponentId === component.id && componentEdit">
+                      <div class="field">
+                        <label>Requirement</label>
+                        <textarea rows="2" [(ngModel)]="componentEdit.requirement"></textarea>
+                      </div>
+                      <div class="field">
+                        <label>Evidence types</label>
+                        <input type="text" [(ngModel)]="componentEdit.evidenceTypesText" />
+                      </div>
+                      <div class="field">
+                        <label>Acceptance</label>
+                        <input type="text" [(ngModel)]="componentEdit.acceptanceCriteria" />
+                      </div>
+                      <div class="field">
+                        <label>Partial</label>
+                        <input type="text" [(ngModel)]="componentEdit.partialCriteria" />
+                      </div>
+                      <div class="field">
+                        <label>Reject</label>
+                        <input type="text" [(ngModel)]="componentEdit.rejectCriteria" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <p class="empty" *ngIf="selectedControl && !selectedControl.testComponents?.length">No test components yet.</p>
+              </div>
+            </ng-container>
+
+            <ng-template #emptyState>
+              <div class="empty-state">
+                <p>Select a control to view details.</p>
+                <span>Use the list on the left to pick a control.</span>
+              </div>
+            </ng-template>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p class="empty" *ngIf="loading">Loading control knowledge base…</p>
+    <p class="empty error" *ngIf="error">{{ error }}</p>
+  </div>
+</section>

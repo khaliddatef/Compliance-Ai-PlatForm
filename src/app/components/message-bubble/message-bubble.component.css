@@ -1,14 +1,15 @@
 .bubble {
   display: flex;
   gap: 10px;
-  width: 100%;
-  max-width: 100%;
+  width: fit-content;
+  max-width: 82%;
 }
 
 .bubble.from-user {
   flex-direction: row-reverse;
-  width: auto;
-  max-width: 70%;
+  width: fit-content;
+  max-width: 60%;
+  gap: 0;
   margin-left: auto;
 }
 
@@ -31,7 +32,7 @@
 }
 
 .bubble-body {
-  flex: 1;
+  flex: 0 1 auto;
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -133,6 +134,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-top: 10px;
   color: var(--ink-muted);
   font-size: 12px;
@@ -142,36 +144,168 @@
   color: rgba(10, 24, 41, 0.85);
 }
 
-.actions {
-  display: flex;
+.meta-actions {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
 }
 
-.tiny {
+.meta-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
-  color: var(--ink-strong);
-  padding: 4px 8px;
-  border-radius: 10px;
+  color: var(--ink-muted);
+  font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-.tiny:hover,
-.tiny:focus-visible {
+.meta-reference:hover,
+.meta-reference:focus-visible {
   background: var(--surface-3);
   border-color: var(--accent-200);
+  color: var(--ink-strong);
 }
 
-.tiny.active {
-  border-color: var(--accent-400);
+.reference-card {
+  margin-top: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  padding: 12px;
+  font-size: 12px;
+  color: var(--ink-strong);
+}
+
+.reference-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.reference-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.reference-subtitle {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.reference-close {
+  border: none;
+  background: var(--surface-3);
+  color: var(--ink-strong);
+  padding: 4px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.reference-body {
+  display: grid;
+  gap: 8px;
+}
+
+.reference-body ul {
+  padding-left: 18px;
+  margin: 6px 0 0;
+}
+
+.reference-label {
+  font-weight: 600;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reference-note {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.meta-button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.meta-button:hover,
+.meta-button:focus-visible {
+  background: var(--surface-3);
+  border-color: var(--border-subtle);
+  color: var(--ink-strong);
+}
+
+.meta-button.active {
   background: var(--accent-100);
+  border-color: var(--accent-200);
+  color: var(--accent-700);
 }
 
-.bubble.from-user .tiny {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+.meta-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.meta-menu {
+  position: relative;
+}
+
+.meta-menu-panel {
+  position: absolute;
+  right: 0;
+  bottom: 28px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+  z-index: 2;
+}
+
+.meta-menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--ink-strong);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.meta-menu-panel button:hover,
+.meta-menu-panel button:focus-visible {
+  background: var(--surface-3);
 }
 
 @media (max-width: 768px) {

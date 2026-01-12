@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 export type ComposerSendPayload = {
@@ -25,14 +25,18 @@ export class ComposerComponent implements OnChanges {
   draft = '';
   attachments: File[] = [];
   dragging = false;
+  @ViewChild('composerInput') composerInput?: ElementRef<HTMLTextAreaElement>;
 
   private readonly allowedExtensions = ['pdf', 'docx', 'xlsx'];
   private lastResetKey = 0;
+  private readonly minHeight = 32;
+  private readonly maxHeight = 160;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['resetKey'] && this.resetKey !== this.lastResetKey) {
       this.attachments = [];
       this.lastResetKey = this.resetKey;
+      this.resetTextareaHeight();
     }
   }
 
@@ -47,6 +51,7 @@ export class ComposerComponent implements OnChanges {
 
     this.send.emit({ text: value, files: [...this.attachments] });
     this.draft = '';
+    this.resetTextareaHeight();
   }
 
   handleKeydown(event: KeyboardEvent) {
@@ -54,6 +59,21 @@ export class ComposerComponent implements OnChanges {
       event.preventDefault();
       this.submit();
     }
+  }
+
+  autoResize(event: Event) {
+    const target = event.target as HTMLTextAreaElement | null;
+    const el = target || this.composerInput?.nativeElement;
+    if (!el) return;
+
+    el.style.height = '0px';
+    const styles = getComputedStyle(el);
+    const minHeight = Number.parseInt(styles.minHeight || `${this.minHeight}`, 10) || this.minHeight;
+    const maxHeight = Number.parseInt(styles.maxHeight || `${this.maxHeight}`, 10) || this.maxHeight;
+    const next = Math.min(el.scrollHeight, maxHeight);
+    const height = Math.max(next, minHeight);
+    el.style.height = `${height}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }
 
   onFileInput(event: Event) {
@@ -109,5 +129,13 @@ export class ComposerComponent implements OnChanges {
     const name = file.name.toLowerCase();
     return this.allowedExtensions.some((ext) => name.endsWith(`.${ext}`));
   }
-}
 
+  private resetTextareaHeight() {
+    const el = this.composerInput?.nativeElement;
+    if (!el) return;
+    const styles = getComputedStyle(el);
+    const minHeight = Number.parseInt(styles.minHeight || `${this.minHeight}`, 10) || this.minHeight;
+    el.style.height = `${minHeight}px`;
+    el.style.overflowY = 'hidden';
+  }
+}

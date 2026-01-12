@@ -1,16 +1,22 @@
 import {
   BadRequestException,
   Controller,
+  ForbiddenException,
   Post,
   Query,
   UploadedFiles,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { UploadService } from '../upload/upload.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { AuthUser } from '../auth/auth.service';
 
+@UseGuards(AuthGuard)
 @Controller('api/standards')
 export class StandardsController {
   constructor(private readonly uploadService: UploadService) {}
@@ -36,9 +42,11 @@ export class StandardsController {
   async uploadStandard(
     @Query('standard') standard: 'ISO' | 'FRA' | 'CBE',
     @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: AuthUser,
   ) {
     if (!standard) throw new BadRequestException('Missing standard query param');
     if (!files?.length) throw new BadRequestException('No files uploaded');
+    if (user.role === 'USER') throw new ForbiddenException('Not allowed to upload standards');
 
     // conversation ثابت لكل standard
     const conversationId = `standards-${standard}`;
@@ -48,6 +56,7 @@ export class StandardsController {
       standard,
       kind: 'STANDARD',
       files,
+      user,
     });
   }
 }

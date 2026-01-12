@@ -22,18 +22,36 @@ export class ChatService {
     title?: string;
     role: Role;
     content: string;
+    userId?: string;
   }) {
-    const { conversationId, title, role, content } = params;
+    const { conversationId, title, role, content, userId } = params;
 
-    const conv = conversationId
-      ? await this.prisma.conversation.upsert({
-          where: { id: conversationId },
-          create: { id: conversationId, title: title || 'New compliance chat' },
-          update: { updatedAt: new Date() },
-        })
-      : await this.prisma.conversation.create({
-          data: { title: title || 'New compliance chat' },
+    let conv;
+
+    if (conversationId) {
+      const existing = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { id: true, userId: true },
+      });
+
+      if (!existing) {
+        conv = await this.prisma.conversation.create({
+          data: { id: conversationId, title: title || 'New compliance chat', userId },
         });
+      } else {
+        conv = await this.prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            updatedAt: new Date(),
+            ...(existing.userId ? {} : { userId }),
+          },
+        });
+      }
+    } else {
+      conv = await this.prisma.conversation.create({
+        data: { title: title || 'New compliance chat', userId },
+      });
+    }
 
     const msg = await this.prisma.message.create({
       data: {

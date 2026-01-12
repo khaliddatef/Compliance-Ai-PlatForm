@@ -5,6 +5,8 @@ export type CompliancePhase = 'Preparation' | 'In Progress' | 'Audit Ready';
 
 export type ControlState = {
   started: boolean;
+  intakeComplete?: boolean;
+  controlPrompted?: boolean;
   currentIndex: number;
   statuses: Record<string, ControlStatus>;
   lastControlId?: string;
@@ -19,4 +21,6 @@ export interface Conversation {
   messages: Message[];
   updatedAt: number;
   controlState?: ControlState;
+  lastUploadIds?: string[];
+  lastUploadAt?: number;
 }

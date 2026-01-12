@@ -1,6 +1,6 @@
 <div class="bubble" [class.from-user]="message.role === 'user'" [class.action-message]="message.kind === 'action'">
-  <div class="avatar" aria-hidden="true">
-    <span>{{ message.role === 'user' ? 'You' : 'AI' }}</span>
+  <div class="avatar" aria-hidden="true" *ngIf="message.role === 'assistant'">
+    <span>AI</span>
   </div>
   <div class="bubble-body">
     <div class="content" *ngIf="message.kind !== 'action'">
@@ -27,28 +27,139 @@
     </div>
     <div class="meta">
       <span class="time">{{ message.timestamp | date: 'shortTime' }}</span>
-      <div class="actions" *ngIf="message.role === 'assistant'">
-        <button class="tiny" type="button" (click)="copyContent()" aria-label="Copy message">
-          {{ copied ? 'Copied' : 'Copy' }}
+      <button
+        class="meta-reference"
+        type="button"
+        *ngIf="message.role === 'assistant' && reference"
+        (click)="toggleReference()"
+        [attr.aria-expanded]="referenceOpen"
+      >
+        <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8.2h.01" />
+          <path d="M11 12h1v4" />
+        </svg>
+        <span>{{ referenceLabel }}</span>
+      </button>
+      <div class="meta-actions" *ngIf="message.role === 'assistant'">
+        <button
+          class="meta-button"
+          type="button"
+          (click)="copyContent()"
+          [class.active]="copied"
+          aria-label="Copy message"
+          title="Copy"
+        >
+          <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2z"
+            />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
         </button>
         <button
-          class="tiny"
+          class="meta-button"
           type="button"
           (click)="setFeedback('up')"
           [class.active]="feedback === 'up'"
           aria-label="Thumbs up"
+          title="Like"
         >
-          👍
+          <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 11v10" />
+            <path
+              d="M10 11l3.5-6.5a2 2 0 0 1 1.8-1h0a2 2 0 0 1 2 2v5.5h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-6.5a3 3 0 0 1-2.7-1.7L10 11z"
+            />
+            <path d="M5 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5z" />
+          </svg>
         </button>
         <button
-          class="tiny"
+          class="meta-button"
           type="button"
           (click)="setFeedback('down')"
           [class.active]="feedback === 'down'"
           aria-label="Thumbs down"
+          title="Dislike"
         >
-          👎
+          <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 13V3" />
+            <path
+              d="M10 13l3.5 6.5a2 2 0 0 0 1.8 1h0a2 2 0 0 0 2-2V13h3a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H13a3 3 0 0 0-2.7 1.7L10 13z"
+            />
+            <path d="M5 13h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5z" />
+          </svg>
         </button>
+        <button
+          class="meta-button"
+          type="button"
+          (click)="shareMessage()"
+          aria-label="Share"
+          title="Share"
+        >
+          <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v10" />
+            <path d="M8 9l4-4 4 4" />
+            <path d="M5 19h14a2 2 0 0 0 2-2v-2" />
+          </svg>
+        </button>
+        <div class="meta-menu">
+          <button
+            class="meta-button"
+            type="button"
+            (click)="toggleMenu()"
+            [attr.aria-expanded]="menuOpen"
+            aria-label="More"
+            title="More"
+          >
+            <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="6" cy="12" r="1.6" />
+              <circle cx="12" cy="12" r="1.6" />
+              <circle cx="18" cy="12" r="1.6" />
+            </svg>
+          </button>
+          <div class="meta-menu-panel" *ngIf="menuOpen">
+            <button type="button" (click)="readAloud()">
+              <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 10v4a2 2 0 0 0 2 2h3l5 4V4L9 8H6a2 2 0 0 0-2 2z" />
+                <path d="M16 9a4 4 0 0 1 0 6" />
+                <path d="M19 7a7 7 0 0 1 0 10" />
+              </svg>
+              Read aloud
+            </button>
+            <button type="button" (click)="reportMessage()">
+              <svg class="meta-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 3v18" />
+                <path d="M5 4h11l-2 3 2 3H5" />
+              </svg>
+              Report message
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="reference-card" *ngIf="referenceOpen && kbReference">
+      <div class="reference-header">
+        <div>
+          <div class="reference-title">{{ kbReference.title }}</div>
+          <div class="reference-subtitle">{{ kbReference.controlId }}</div>
+        </div>
+        <button type="button" class="reference-close" (click)="closeReference()">{{ closeLabel }}</button>
+      </div>
+      <div class="reference-body">
+        <p *ngIf="kbReference.summary">{{ kbReference.summary }}</p>
+        <div *ngIf="kbReference.evidence?.length">
+          <div class="reference-label">{{ referenceEvidenceLabel }}</div>
+          <ul>
+            <li *ngFor="let item of kbReference.evidence">{{ item }}</li>
+          </ul>
+        </div>
+        <div *ngIf="kbReference.testComponents?.length">
+          <div class="reference-label">{{ referenceTestLabel }}</div>
+          <ul>
+            <li *ngFor="let item of kbReference.testComponents">{{ item }}</li>
+          </ul>
+        </div>
+        <div class="reference-note">{{ referenceNote }}</div>
       </div>
     </div>
   </div>

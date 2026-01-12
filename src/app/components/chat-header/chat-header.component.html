@@ -1,9 +1,17 @@
 <header class="chat-header">
-  <div class="title-group">
-    <div class="title-row">
+  <div class="title-row">
+    <div class="title-meta">
       <h1>{{ title }}</h1>
       <span class="status-pill" aria-label="Status">{{ status }}</span>
     </div>
-    <p class="subtitle" *ngIf="subtitle">{{ subtitle }}</p>
+    <button
+      class="action-btn"
+      type="button"
+      *ngIf="showAction"
+      (click)="actionClicked.emit()"
+    >
+      {{ actionLabel }}
+    </button>
   </div>
+  <p class="subtitle" *ngIf="subtitle">{{ subtitle }}</p>
 </header>

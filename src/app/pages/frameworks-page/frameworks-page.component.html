@@ -17,7 +17,9 @@
           </div>
           <div class="value">{{ fw.coverage }}</div>
         </div>
-        <button class="ghost-btn" type="button">Manage controls</button>
+        <button class="ghost-btn" type="button" *ngIf="isAdmin" [routerLink]="['/control-kb']">
+          Manage controls
+        </button>
       </article>
     </div>
   </div>

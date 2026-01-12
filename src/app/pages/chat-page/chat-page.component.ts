@@ -1,15 +1,21 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { Message, MessageAction, MessageActionId } from '../../models/message.model';
-import { ApiService, ComplianceStandard, ChatApiResponse } from '../../services/api.service';
+import {
+  ApiService,
+  ComplianceStandard,
+  ChatApiResponse,
+  ControlCatalogItem,
+  ControlEvaluation,
+  ControlContext,
+} from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ChatHeaderComponent } from '../../components/chat-header/chat-header.component';
 import { ComposerComponent, ComposerSendPayload } from '../../components/composer/composer.component';
 import { MessageListComponent } from '../../components/message-list/message-list.component';
 import { AuthService } from '../../services/auth.service';
-import { ISO_CONTROLS, IsoControl } from '../../data/iso-controls';
 import { ControlState, ControlStatus } from '../../models/conversation.model';
 
 @Component({
@@ -27,13 +33,28 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
   selectedStandard: ComplianceStandard = 'ISO';
 
-  private readonly controls = ISO_CONTROLS;
-  private readonly actionButtons: MessageAction[] = [
-    { id: 'save', label: 'Save as Evidence' },
-    { id: 'partial', label: 'Save as Partial Evidence' },
-    { id: 'fix', label: 'Ask how to fix missing requirements' },
-    { id: 'skip', label: 'Skip for now' },
-  ];
+  private controls: ControlCatalogItem[] = [];
+  private controlsLoaded = false;
+  private controlsLoading = false;
+  private readonly controlContextCache = new Map<string, ControlContext>();
+  private readonly controlContextInflight = new Map<string, Promise<ControlContext | null>>();
+  private getActionButtons(): MessageAction[] {
+    const language = this.getLanguageHint();
+    if (language === 'ar') {
+      return [
+        { id: 'save', label: 'اعتماد كدليل' },
+        { id: 'partial', label: 'اعتماد كدليل جزئي' },
+        { id: 'fix', label: 'ازاي نكمل المطلوب؟' },
+        { id: 'skip', label: 'تخطي مؤقتًا' },
+      ];
+    }
+    return [
+      { id: 'save', label: 'Submit as Evidence' },
+      { id: 'partial', label: 'Submit as Partial Evidence' },
+      { id: 'fix', label: 'Ask how to fix missing requirements' },
+      { id: 'skip', label: 'Skip for now' },
+    ];
+  }
 
   private routeSub?: Subscription;
 
@@ -41,10 +62,12 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     private readonly chatService: ChatService,
     private readonly apiService: ApiService,
     private readonly auth: AuthService,
-    private readonly route: ActivatedRoute
+    private readonly route: ActivatedRoute,
+    private readonly router: Router
   ) {}
 
   ngOnInit() {
+    this.loadControlCatalog();
     this.routeSub = this.route.queryParamMap.subscribe((params) => {
       const conversationId = params.get('conversationId');
 
@@ -55,11 +78,29 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         } else {
           this.chatService.startNewConversation();
         }
-      } else {
-        this.chatService.startNewConversation();
+        this.ensureControlFlow();
+        this.maybePromptAfterCatalogLoad();
+        return;
       }
 
+      const active = this.chatService.activeConversation();
+      if (active) {
+        this.ensureControlFlow();
+        this.maybePromptAfterCatalogLoad();
+        return;
+      }
+
+      const list = this.chatService.conversations();
+      if (list.length) {
+        this.chatService.selectConversation(list[0].id);
+        this.ensureControlFlow();
+        this.maybePromptAfterCatalogLoad();
+        return;
+      }
+
+      this.chatService.startNewConversation();
       this.ensureControlFlow();
+      this.maybePromptAfterCatalogLoad();
     });
   }
 
@@ -73,6 +114,13 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
   get conversationTitle() {
     return this.chatService.activeConversation()?.title || 'Compliance workspace';
+  }
+
+  startNewChat() {
+    this.chatService.startNewConversation();
+    this.router.navigate(['/home'], { replaceUrl: true });
+    this.ensureControlFlow();
+    this.maybePromptAfterCatalogLoad();
   }
 
   handleComposerSend(payload: ComposerSendPayload) {
@@ -131,21 +179,36 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     }
     this.typing = true;
 
+    this.maybeStartControlFlow(conversationId, text);
+
     const prompt = this.buildPrompt(text, conversationId);
-    this.apiService.sendMessage(prompt, this.selectedStandard, conversationId).subscribe({
+    const showActions = options.showActions ?? this.isControlFlowActive();
+    const language = this.getLanguageHint();
+    this.apiService.sendMessage(prompt, this.selectedStandard, conversationId, language).subscribe({
       next: (raw: ChatApiResponse) => {
         const replyText = String(raw?.reply ?? raw?.assistantMessage ?? '');
+        const externalLinks = Array.isArray(raw?.externalLinks) ? raw.externalLinks : [];
+        const reference = externalLinks.length
+          ? {
+              type: 'link',
+              label: language === 'ar' ? 'مصدر' : 'Source',
+              url: externalLinks[0]?.url,
+            }
+          : undefined;
 
-        if (options.showActions !== false) {
+        if (showActions !== false) {
           this.chatService.clearActions(conversationId);
         }
 
         const assistantMessage: Message = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: replyText || 'No reply.',
+          content:
+            replyText ||
+            (language === 'ar' ? 'لا يوجد رد في الوقت الحالي.' : 'No reply.'),
           timestamp: Date.now(),
-          actions: options.showActions === false ? undefined : this.actionButtons,
+          actions: showActions === false ? undefined : this.getActionButtons(),
+          reference,
         };
 
         this.chatService.appendMessage(conversationId, assistantMessage);
@@ -156,7 +219,10 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         const fallback: Message = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'Unable to reach the assistant right now. Please try again.',
+          content:
+            language === 'ar'
+              ? 'مش قادر أوصل للمساعد دلوقتي. جرّب مرة تانية لو سمحت.'
+              : 'Unable to reach the assistant right now. Please try again.',
           timestamp: Date.now(),
         };
         this.chatService.appendMessage(conversationId, fallback);
@@ -169,7 +235,8 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   }
 
   private uploadDocs(files: File[], conversationId: string) {
-    const summaryText = this.buildUploadSummary(files);
+    const language = this.getLanguageHint();
+    const summaryText = this.buildUploadSummary(files, language);
     this.chatService.appendMessage(conversationId, {
       id: crypto.randomUUID(),
       role: 'user',
@@ -181,7 +248,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     this.uploadProgress = 10;
 
     // ✅ دي اللي شغالة فعلاً في ApiService
-    this.apiService.uploadCustomerFiles(conversationId, this.selectedStandard, files).subscribe({
+    this.apiService.uploadCustomerFiles(conversationId, this.selectedStandard, files, language).subscribe({
       next: (res: any) => {
         // backend بيرجع ingestResults وعدد chunks.. إلخ
         const ok = !!res?.ok;
@@ -192,15 +259,38 @@ export class ChatPageComponent implements OnInit, OnDestroy {
           : undefined;
 
         const msg = ok
-          ? `✅ Uploaded ${count} file(s) successfully${typeof ingestOk === 'number' ? ` (ingested: ${ingestOk}/${count})` : ''}.`
-          : `⚠️ Upload finished but response is unexpected.`;
+          ? language === 'ar'
+            ? `✅ تم رفع ${count} ملف${count === 1 ? '' : 'ات'} بنجاح${typeof ingestOk === 'number' ? ` (تمت المعالجة: ${ingestOk}/${count})` : ''}.`
+            : `✅ Uploaded ${count} file(s) successfully${typeof ingestOk === 'number' ? ` (ingested: ${ingestOk}/${count})` : ''}.`
+          : language === 'ar'
+            ? '⚠️ الرفع تم لكن الرد غير متوقع.'
+            : `⚠️ Upload finished but response is unexpected.`;
 
         this.appendAssistantMessage(conversationId, msg);
+
+        const uploadedDocs = Array.isArray(res?.documents) ? res.documents : [];
+        if (uploadedDocs.length) {
+          const docIds = uploadedDocs.map((doc: any) => String(doc.id)).filter(Boolean);
+          this.chatService.updateConversation(conversationId, {
+            lastUploadIds: docIds,
+            lastUploadAt: Date.now(),
+          });
+        }
+
+        this.appendUploadAnalysis(conversationId, res);
+
+        const control = this.getActiveControl();
+        if (control && this.isControlFlowActive()) {
+          void this.evaluateEvidence(conversationId, control);
+        }
         this.uploadProgress = 100;
       },
       error: (e) => {
         console.error('upload error', e);
-        this.appendAssistantMessage(conversationId, '❌ Upload failed. Please try again.');
+        this.appendAssistantMessage(
+          conversationId,
+          language === 'ar' ? '❌ فشل رفع الملف. حاول مرة أخرى.' : '❌ Upload failed. Please try again.',
+        );
         this.uploading = false;
         this.uploadProgress = 0;
       },
@@ -224,22 +314,34 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   }
 
   private getActionPrompt(actionId: MessageActionId) {
-    const prompts: Record<MessageActionId, string> = {
-      save:
-        'User chose: Save as Evidence. Confirm it is saved and tell the user the next control to work on.',
-      partial:
-        'User chose: Save as Partial Evidence. Confirm partial status and list missing items to complete.',
-      fix:
-        'User asked for remediation guidance. Provide concise steps to fix missing requirements.',
-      skip:
-        'User chose: Skip for now. Confirm skip and guide to the next control.',
-    };
+    const language = this.getLanguageHint();
+    const prompts: Record<MessageActionId, string> =
+      language === 'ar'
+        ? {
+            save: 'المستخدم اختار اعتماد كدليل. أكد الحفظ ووجّه المستخدم للكنترول التالي.',
+            partial: 'المستخدم اختار اعتماد كدليل جزئي. أكد الحالة ووضح العناصر الناقصة بإيجاز.',
+            fix: 'المستخدم طلب طريقة إصلاح النواقص. قدّم خطوات مختصرة وعملية.',
+            skip: 'المستخدم اختار التخطي مؤقتًا. أكد التخطي ووجّه للكنترول التالي.',
+          }
+        : {
+            save:
+              'User chose: Submit as Evidence. Confirm it is saved and tell the user the next control to work on.',
+            partial:
+              'User chose: Submit as Partial Evidence. Confirm partial status and list missing items to complete.',
+            fix:
+              'User asked for remediation guidance. Provide concise steps to fix missing requirements.',
+            skip:
+              'User chose: Skip for now. Confirm skip and guide to the next control.',
+          };
     return prompts[actionId];
   }
 
-  private buildUploadSummary(files: File[]) {
+  private buildUploadSummary(files: File[], language: 'ar' | 'en') {
     const names = files.map((f) => f.name);
     const shortList = names.length > 2 ? `${names.slice(0, 2).join(', ')}…` : names.join(', ');
+    if (language === 'ar') {
+      return `تم رفع ${names.length} ملف${names.length === 1 ? '' : 'ات'}: ${shortList}`;
+    }
     return `Uploaded ${names.length} ${names.length === 1 ? 'document' : 'documents'}: ${shortList}`;
   }
 
@@ -248,7 +350,34 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     return rawName && rawName.length ? rawName : null;
   }
 
+  private getLanguageHint(): 'ar' | 'en' {
+    const active = this.chatService.activeConversation();
+    const lastUser = [...(active?.messages ?? [])]
+      .reverse()
+      .find((message) => message.role === 'user' && message.content && message.kind !== 'action');
+    const text = lastUser?.content || '';
+    if (text && /[\u0600-\u06FF]/.test(text)) return 'ar';
+    if (typeof navigator !== 'undefined') {
+      const lang = String(navigator.language || '').toLowerCase();
+      if (lang.startsWith('ar')) return 'ar';
+    }
+    return 'en';
+  }
+
+  private getActiveControl() {
+    const active = this.chatService.activeConversation();
+    const state = active?.controlState;
+    if (!state) return null;
+    return this.controls[state.currentIndex] ?? null;
+  }
+
+  private isControlFlowActive() {
+    const state = this.chatService.activeConversation()?.controlState;
+    return Boolean(state?.intakeComplete);
+  }
+
   private ensureControlFlow() {
+    this.loadControlCatalog();
     const active = this.chatService.activeConversation() || this.chatService.startNewConversation();
     const name = this.getUserName();
     const currentState = active.controlState;
@@ -257,13 +386,19 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         this.chatService.updateConversation(active.id, {
           controlState: { ...currentState, greetedName: name },
         });
-        this.appendAssistantMessage(active.id, `Welcome back ${name} 👋`);
+        const language = this.getLanguageHint();
+        this.appendAssistantMessage(
+          active.id,
+          language === 'ar' ? `أهلًا بعودتك ${name} 👋` : `Welcome back ${name} 👋`,
+        );
       }
       return;
     }
 
     const initialState: ControlState = {
       started: true,
+      intakeComplete: false,
+      controlPrompted: false,
       currentIndex: 0,
       statuses: {},
       phase: 'Preparation',
@@ -271,18 +406,79 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     };
     this.chatService.updateConversation(active.id, { controlState: initialState });
 
-    const displayName = name || 'there';
-    const control = this.controls[0];
-    const lastControlText = control ? `The next control is ${control.id}.` : '';
-
-    this.appendAssistantMessage(
-      active.id,
-      `Welcome ${displayName} 👋 You are preparing for ISO/IEC 27001 compliance. ${lastControlText} Would you like to continue?`,
-    );
-
-    if (control) {
-      this.appendControlPrompt(active.id, control);
+    if (active.messages.length === 0) {
+      const language = this.getLanguageHint();
+      const displayName = name || (language === 'ar' ? 'بيك' : 'there');
+      this.appendAssistantMessage(
+        active.id,
+        language === 'ar'
+          ? `أهلًا ${displayName} 👋 أقدر أساعدك في الامتثال وإدارة الأدلة. قولّي عايز نشتغل على إيه، أو ارفع أدلة للمراجعة.`
+          : `Welcome ${displayName} 👋 I can help with compliance and evidence review. Tell me what you're working on, or upload evidence for review.`,
+      );
     }
+  }
+
+  private loadControlCatalog() {
+    if (this.controlsLoading || this.controlsLoaded) return;
+
+    this.controlsLoading = true;
+    this.apiService.listControlCatalog(this.selectedStandard).subscribe({
+      next: (items) => {
+        this.controls = Array.isArray(items) ? items : [];
+        this.controlsLoaded = true;
+        this.controlsLoading = false;
+        this.maybePromptAfterCatalogLoad();
+      },
+      error: (e) => {
+        console.error('control catalog error', e);
+        this.controls = [];
+        this.controlsLoaded = false;
+        this.controlsLoading = false;
+      },
+    });
+  }
+
+  private maybePromptAfterCatalogLoad() {
+    if (!this.controlsLoaded) return;
+    const active = this.chatService.activeConversation();
+    if (!active?.controlState) return;
+    const state = active.controlState;
+    if (!state.intakeComplete || state.controlPrompted) return;
+
+    const control = this.getActiveControl();
+    if (!control) return;
+
+    const nextState: ControlState = { ...state, controlPrompted: true };
+    this.chatService.updateConversation(active.id, { controlState: nextState });
+    void this.appendControlPrompt(active.id, control);
+  }
+
+  private async fetchControlContext(controlId: string): Promise<ControlContext | null> {
+    const cached = this.controlContextCache.get(controlId);
+    if (cached) return cached;
+
+    const inflight = this.controlContextInflight.get(controlId);
+    if (inflight) return inflight;
+
+    const request = firstValueFrom(
+      this.apiService.getControlContext(this.selectedStandard, controlId),
+    )
+      .then((context) => {
+        if (context) {
+          this.controlContextCache.set(controlId, context);
+        }
+        return context;
+      })
+      .catch((error) => {
+        console.error('control context error', error);
+        return null;
+      })
+      .finally(() => {
+        this.controlContextInflight.delete(controlId);
+      });
+
+    this.controlContextInflight.set(controlId, request);
+    return request;
   }
 
   private applyControlAction(conversationId: string, actionId: MessageActionId) {
@@ -307,46 +503,334 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
     this.chatService.updateConversation(conversationId, { controlState: nextState });
 
+    const language = this.getLanguageHint();
     const statusLabel =
-      status === 'complete' ? 'Saved as Evidence' : status === 'partial' ? 'Saved as Partial Evidence' : 'Skipped';
+      status === 'complete'
+        ? language === 'ar'
+          ? 'تم اعتماد الدليل'
+          : 'Submitted as Evidence'
+        : status === 'partial'
+          ? language === 'ar'
+            ? 'تم حفظه كدليل جزئي'
+            : 'Submitted as Partial Evidence'
+          : language === 'ar'
+            ? 'تم التخطي'
+            : 'Skipped';
+    const phaseLabel =
+      nextPhase === 'Preparation'
+        ? language === 'ar'
+          ? 'مرحلة الاستعداد'
+          : 'Preparation'
+        : nextPhase === 'Audit Ready'
+          ? language === 'ar'
+            ? 'جاهز للتدقيق'
+            : 'Audit Ready'
+          : language === 'ar'
+            ? 'قيد التنفيذ'
+            : 'In Progress';
     this.appendAssistantMessage(
       conversationId,
-      `✅ ${currentControl.id} ${statusLabel}. Phase: ${nextPhase}.`,
+      `✅ ${currentControl.id} ${statusLabel}. ${language === 'ar' ? 'المرحلة' : 'Phase'}: ${phaseLabel}.`,
     );
+
+    if (actionId === 'save' || actionId === 'partial') {
+      this.submitEvidence(conversationId, currentControl.id, actionId === 'save' ? 'COMPLIANT' : 'PARTIAL');
+    }
 
     const nextControl = this.controls[nextIndex];
     if (nextControl) {
-      this.appendControlPrompt(conversationId, nextControl);
+      void this.appendControlPrompt(conversationId, nextControl);
     } else {
+      const language = this.getLanguageHint();
       this.appendAssistantMessage(
         conversationId,
-        'All controls in this set are completed. You are Audit Ready for this scope.',
+        language === 'ar'
+          ? 'كل الكنترولات في النطاق ده خلصت. أنت دلوقتي جاهز للتدقيق في النطاق ده.'
+          : 'All controls in this set are completed. You are Audit Ready for this scope.',
       );
     }
   }
 
-  private appendControlPrompt(conversationId: string, control: IsoControl) {
-    const evidenceLines = control.evidence.map((item) => `- ${item}`).join('\n');
-    const testLines = control.testComponents.map((item) => `- ${item}`).join('\n');
+  private async appendControlPrompt(conversationId: string, control: ControlCatalogItem) {
+    const context = await this.fetchControlContext(control.id);
+    if (!context) {
+      const language = this.getLanguageHint();
+      this.appendAssistantMessage(
+        conversationId,
+        language === 'ar'
+          ? `تفاصيل الكنترول ${control.id} غير متاحة حالياً. جرّب تعمل تحديث وتعيد المحاولة.`
+          : `Control ${control.id} details are not available right now. Please refresh and try again.`,
+      );
+      return;
+    }
+
+    const language = this.getLanguageHint();
+    const controlLabel = language === 'ar' ? 'الكنترول' : 'Control';
+    const evidenceLabel = language === 'ar' ? 'الأدلة المطلوبة' : 'Evidence needed';
+    const testLabel = language === 'ar' ? 'عناصر الاختبار' : 'Test components';
+
+    const evidenceLines = context.evidence.map((item) => `- ${item}`).join('\n');
+    const testLines = context.testComponents.map((item) => `- ${item}`).join('\n');
+    const summary = context.summary ? `${context.summary}\n\n` : '';
     this.appendAssistantMessage(
       conversationId,
-      `Control ${control.id} — ${control.title}\n${control.summary}\n\nEvidence needed:\n${evidenceLines}\n\nTest components:\n${testLines}`,
+      `${controlLabel} ${context.id} — ${context.title}\n${summary}${evidenceLabel}:\n${evidenceLines}\n\n${testLabel}:\n${testLines}`,
     );
+  }
+
+  private async evaluateEvidence(conversationId: string, control: ControlCatalogItem) {
+    const payload = await this.fetchControlContext(control.id);
+    if (!payload) {
+      const language = this.getLanguageHint();
+      this.appendAssistantMessage(
+        conversationId,
+        language === 'ar'
+          ? 'مش قادر أحمّل تفاصيل الكنترول علشان تقييم الأدلة. جرّب مرة تانية.'
+          : 'Unable to load control details for evidence review. Please try again.',
+      );
+      return;
+    }
+
+    const language = this.getLanguageHint();
+    this.apiService.evaluateControl(conversationId, this.selectedStandard, payload, language).subscribe({
+      next: (res) => {
+        const evaluation = res?.evaluation;
+        if (!evaluation) {
+          this.appendAssistantMessage(
+            conversationId,
+            language === 'ar'
+              ? 'تقييم الأدلة رجّع نتيجة غير واضحة. جرّب مرة تانية.'
+              : 'Evidence review failed to return a result.',
+          );
+          return;
+        }
+        this.chatService.clearActions(conversationId);
+        const formatted = this.formatEvaluationMessage(payload, evaluation);
+        this.chatService.appendMessage(conversationId, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: formatted,
+          timestamp: Date.now(),
+          actions: this.getActionButtons(),
+          reference: {
+            type: 'kb',
+            controlId: payload.id,
+            title: payload.title,
+            summary: payload.summary,
+            evidence: payload.evidence,
+            testComponents: payload.testComponents,
+            label: language === 'ar' ? 'مرجع الكنترول' : 'Control reference',
+          },
+        });
+      },
+      error: (e) => {
+        console.error('evidence eval error', e);
+        this.appendAssistantMessage(
+          conversationId,
+          language === 'ar'
+            ? 'مش قادر أقيّم الأدلة دلوقتي. جرّب مرة تانية.'
+            : 'Unable to evaluate evidence right now. Please try again.',
+        );
+      },
+    });
+  }
+
+  private formatEvaluationMessage(control: ControlContext, evaluation: ControlEvaluation) {
+    const language = this.getLanguageHint();
+    const labels =
+      language === 'ar'
+        ? {
+            review: 'مراجعة الدليل لـ',
+            status: 'الحالة',
+            summary: 'الملخص',
+            satisfied: 'العناصر المتحققة',
+            missing: 'العناصر الناقصة',
+            next: 'الخطوات المقترحة',
+            sources: 'المصادر',
+          }
+        : {
+            review: 'Evidence review for',
+            status: 'Status',
+            summary: 'Summary',
+            satisfied: 'Satisfied test components',
+            missing: 'Missing test components',
+            next: 'Recommended next steps',
+            sources: 'Sources',
+          };
+    const statusLabel =
+      language === 'ar'
+        ? evaluation.status === 'COMPLIANT'
+          ? 'متوافق'
+          : evaluation.status === 'PARTIAL'
+            ? 'متوافق جزئياً'
+            : evaluation.status === 'NOT_COMPLIANT'
+              ? 'غير متوافق'
+              : 'غير محدد'
+        : evaluation.status.replace('_', ' ');
+    const lines: string[] = [
+      `${labels.review} ${control.id} — ${control.title}`,
+      `${labels.status}: ${statusLabel}`,
+      `${labels.summary}: ${evaluation.summary}`,
+    ];
+
+    if (evaluation.satisfied?.length) {
+      lines.push(`${labels.satisfied}:`);
+      lines.push(...evaluation.satisfied.map((item) => `- ${item}`));
+    }
+
+    if (evaluation.missing?.length) {
+      lines.push(`${labels.missing}:`);
+      lines.push(...evaluation.missing.map((item) => `- ${item}`));
+    }
+
+    if (evaluation.recommendations?.length) {
+      lines.push(`${labels.next}:`);
+      lines.push(...evaluation.recommendations.map((item) => `- ${item}`));
+    }
+
+    if (evaluation.citations?.length) {
+      const docs = evaluation.citations
+        .map((c) => c?.doc)
+        .filter(Boolean)
+        .slice(0, 3);
+      if (docs.length) lines.push(`${labels.sources}: ${docs.map((d) => `[${d}]`).join(' ')}`);
+    }
+
+    return lines.join('\n');
   }
 
   private buildPrompt(text: string, conversationId: string) {
     const active = this.chatService.activeConversation();
     const state = active?.controlState;
-    const control = state ? this.controls[state.currentIndex] : undefined;
-    if (!control) return text;
+    const control = state ? this.getActiveControl() : undefined;
+    if (!control || !state?.intakeComplete) return text;
 
-    const context = [
-      `Current control: ${control.id} — ${control.title}`,
-      `Test components: ${control.testComponents.join('; ')}`,
-      `Evidence focus: ${control.evidence.join('; ')}`,
-    ].join('\n');
+    const language = this.getLanguageHint();
+    const details = this.controlContextCache.get(control.id);
+    const title = details?.title || control.title || control.id;
+    const summary = details?.summary || control.summary || '';
+    const testComponents = details?.testComponents ?? [];
+    const evidence = details?.evidence ?? [];
+    const currentLabel = language === 'ar' ? 'الكنترول الحالي' : 'Current control';
+    const testLabel = language === 'ar' ? 'عناصر الاختبار' : 'Test components';
+    const evidenceLabel = language === 'ar' ? 'محور الأدلة' : 'Evidence focus';
+    const contextLines = [`${currentLabel}: ${control.id} — ${title}`];
+    if (summary) contextLines.push(summary);
+    if (testComponents.length) contextLines.push(`${testLabel}: ${testComponents.join('; ')}`);
+    if (evidence.length) contextLines.push(`${evidenceLabel}: ${evidence.join('; ')}`);
+    const context = contextLines.join('\n');
+    const userLabel = language === 'ar' ? 'رسالة المستخدم' : 'User message';
 
-    return `${context}\n\nUser message: ${text}`;
+    return `${context}\n\n${userLabel}: ${text}`;
+  }
+
+  private maybeStartControlFlow(conversationId: string, text: string) {
+    const active = this.chatService.activeConversation();
+    const state = active?.controlState;
+    if (!state || state.intakeComplete) return;
+
+    if (!this.shouldStartControlFlow(text)) return;
+
+    const shouldPrompt = !state.controlPrompted && this.controlsLoaded;
+    const nextState: ControlState = {
+      ...state,
+      intakeComplete: true,
+      controlPrompted: shouldPrompt ? true : state.controlPrompted,
+    };
+
+    this.chatService.updateConversation(conversationId, { controlState: nextState });
+
+    if (shouldPrompt) {
+      const control = this.getActiveControl();
+      if (control) {
+        void this.appendControlPrompt(conversationId, control);
+      }
+    }
+  }
+
+  private shouldStartControlFlow(text: string) {
+    const value = (text || '').toLowerCase();
+    if (!value) return false;
+
+    const triggerWords = [
+      'start',
+      'continue',
+      'resume',
+      'next',
+      'a.',
+      'ابدأ',
+      'اكمل',
+      'كمل',
+      'التالي',
+    ];
+
+    if (triggerWords.some((word) => value.includes(word))) return true;
+
+    if (/control\s*(a\.\d+(\.\d+)?)/i.test(text)) return true;
+    if (/كنترول\s*(\d+|\b)/i.test(value)) return true;
+
+    return /a\.\d+(\.\d+)?/i.test(text);
+  }
+
+  private appendUploadAnalysis(conversationId: string, res: any) {
+    const docs = Array.isArray(res?.documents) ? res.documents : [];
+    if (!docs.length) return;
+
+    const language = this.getLanguageHint();
+
+    docs.forEach((doc: any) => {
+      const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
+      const fileName = doc?.originalName || fallbackName;
+      const docType = doc?.docType
+        ? language === 'ar'
+          ? `النوع: ${doc.docType}`
+          : `Type: ${doc.docType}`
+        : '';
+      const controlId = doc?.matchControlId
+        ? language === 'ar'
+          ? `الكنترول: ${doc.matchControlId}`
+          : `Control: ${doc.matchControlId}`
+        : language === 'ar'
+          ? 'الكنترول: غير محدد'
+          : 'Control: Not identified';
+      const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
+      const statusLabel =
+        matchStatus === 'COMPLIANT'
+          ? language === 'ar'
+            ? 'مناسب كدليل'
+            : 'Ready to submit'
+          : matchStatus === 'PARTIAL'
+            ? language === 'ar'
+              ? 'دليل جزئي'
+              : 'Partial evidence'
+            : matchStatus === 'NOT_COMPLIANT'
+              ? language === 'ar'
+                ? 'غير مناسب كدليل'
+                : 'Not evidence'
+              : language === 'ar'
+                ? 'يحتاج مراجعة'
+                : 'Needs review';
+      const note = doc?.matchNote
+        ? language === 'ar'
+          ? `ملاحظة: ${doc.matchNote}`
+          : `AI note: ${doc.matchNote}`
+        : '';
+      const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 3) : [];
+      const lines = [
+        `📎 ${fileName}`,
+        docType,
+        controlId,
+        language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
+        note,
+      ].filter(Boolean);
+
+      if (recs.length) {
+        lines.push(language === 'ar' ? 'الخطوات القادمة:' : 'Next steps:');
+        lines.push(...recs.map((item: string) => `- ${item}`));
+      }
+
+      this.appendAssistantMessage(conversationId, lines.join('\n'));
+    });
   }
 
   private mapActionToStatus(actionId: MessageActionId): ControlStatus {
@@ -354,6 +838,38 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     if (actionId === 'partial') return 'partial';
     if (actionId === 'skip') return 'skipped';
     return 'pending';
+  }
+
+  private submitEvidence(conversationId: string, controlId: string, status: 'COMPLIANT' | 'PARTIAL') {
+    const active = this.chatService.activeConversation();
+    const docIds = active?.lastUploadIds ?? [];
+    if (!docIds.length) {
+      const language = this.getLanguageHint();
+      this.appendAssistantMessage(
+        conversationId,
+        language === 'ar'
+          ? 'مفيش ملفات مرفوعة حديثًا علشان نثبتها. ارفع الأدلة أولًا وبعدين اعمل Submit.'
+          : 'No recent upload found to submit. Upload evidence first, then submit it for this control.',
+      );
+      return;
+    }
+
+    this.apiService.submitEvidence(docIds, controlId, status).subscribe({
+      next: (res) => {
+        if (res?.ok) {
+          this.chatService.updateConversation(conversationId, { lastUploadIds: [], lastUploadAt: undefined });
+        }
+      },
+      error: () => {
+        const language = this.getLanguageHint();
+        this.appendAssistantMessage(
+          conversationId,
+          language === 'ar'
+            ? 'مش قادر أثبّت الدليل دلوقتي. جرّب مرة تانية.'
+            : 'Unable to submit evidence right now. Please try again.',
+        );
+      },
+    });
   }
 
   private findNextIndex(statuses: Record<string, ControlStatus>) {

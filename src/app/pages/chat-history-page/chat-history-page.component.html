@@ -2,6 +2,13 @@
   <div class="panel">
     <div class="panel-header">
       <h3>Chat History</h3>
+      <div class="search">
+        <input
+          type="search"
+          placeholder="Search chats..."
+          [(ngModel)]="searchTerm"
+        />
+      </div>
     </div>
 
     <div class="history-list" *ngIf="conversations.length; else emptyState">
