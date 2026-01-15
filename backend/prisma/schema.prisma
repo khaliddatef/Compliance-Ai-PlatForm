@@ -85,6 +85,8 @@ model ControlTopic {
   standard    String
   title       String
   description String?
+  intent      String?
+  designPrinciple String?
   mode        String   @default("continuous")
   status      String   @default("enabled")
   priority    Int      @default(0)
@@ -92,6 +94,7 @@ model ControlTopic {
   updatedAt   DateTime @updatedAt
 
   controls ControlDefinition[]
+  controlMappings ControlTopicMapping[]
 
   @@index([standard])
 }
@@ -102,24 +105,105 @@ model ControlDefinition {
   controlCode String
   title       String
   description String?
+  question    String?
   isoMappings Json?
   ownerRole   String?
   status      String   @default("enabled")
   sortOrder   Int      @default(0)
+  weight      Float?
+  evidenceRequestList Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   topic          ControlTopic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
   testComponents TestComponent[]
+  frameworkMappings ControlFrameworkMapping[]
+  topicMappings ControlTopicMapping[]
+  evidenceMappings ControlEvidenceMapping[]
+  riskContext ControlRiskContext?
+  testComponentSignals TestComponentSignal[]
+  controlRoles ControlRole[]
+  implementationGuidance ImplementationGuidance[]
+  applicability ControlApplicability?
+  riskMappings ControlRiskMapping[]
+  threatMappings ControlThreatMapping[]
 
   @@index([controlCode])
   @@index([topicId])
 }
 
+enum ControlTopicRelationshipType {
+  PRIMARY
+  RELATED
+}
+
+enum MappingRelationshipType {
+  PRIMARY
+  RELATED
+}
+
+model ControlTopicMapping {
+  id               String   @id @default(cuid())
+  controlId        String
+  topicId          String
+  relationshipType ControlTopicRelationshipType @default(PRIMARY)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  topic   ControlTopic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, topicId])
+  @@index([controlId])
+  @@index([topicId])
+  @@index([relationshipType])
+}
+
+model ControlFrameworkMapping {
+  id            String   @id @default(cuid())
+  controlId     String
+  frameworkId   String?
+  framework     String
+  frameworkCode String
+  relationshipType MappingRelationshipType @default(PRIMARY)
+  priority      Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  frameworkRef Framework? @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+
+  @@index([controlId])
+  @@index([framework])
+}
+
+model Framework {
+  id        String   @id @default(cuid())
+  externalId String?
+  standard  String
+  name      String
+  version   String?
+  description String?
+  status    String   @default("enabled")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  controlMappings ControlFrameworkMapping[]
+  sources FrameworkSource[]
+
+  @@unique([standard, name])
+  @@index([standard])
+}
+
 model TestComponent {
   id                String   @id @default(cuid())
   controlId         String
+  assessmentObjective String?
   requirement       String
+  collectionMethod  String?
+  procedure         String?
+  expectedResult    String?
+  frequency         String?
   evidenceTypes     Json?
   acceptanceCriteria String?
   partialCriteria   String?
@@ -129,8 +213,214 @@ model TestComponent {
   updatedAt         DateTime @updatedAt
 
   control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  signals TestComponentSignal[]
 
   @@index([controlId])
+}
+
+model EvidenceType {
+  id        String   @id
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EvidenceRequest {
+  id              String   @id
+  rowNumber       Int?
+  areaFocus       String?
+  artifact        String?
+  description     String?
+  mappedControlsRaw String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  mappings ControlEvidenceMapping[]
+}
+
+model ControlEvidenceMapping {
+  id                String   @id @default(cuid())
+  controlId         String
+  evidenceRequestId String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  control         ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  evidenceRequest EvidenceRequest   @relation(fields: [evidenceRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, evidenceRequestId])
+  @@index([controlId])
+  @@index([evidenceRequestId])
+}
+
+model ControlRiskContext {
+  id               String   @id @default(cuid())
+  controlId        String   @unique
+  controlTitle     String?
+  controlDescription String?
+  securityObjective String?
+  failureImpact    String?
+  riskThemes       String?
+  severity         String?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+}
+
+model TestComponentSignal {
+  id                   String   @id @default(cuid())
+  testComponentId      String
+  controlId            String
+  requirement          String?
+  positiveSignals      String?
+  negativeSignals      String?
+  missingSignals       String?
+  signalWeight         Int?
+  contextOverrideAllowed Boolean?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  testComponent TestComponent   @relation(fields: [testComponentId], references: [id], onDelete: Cascade)
+  control       ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+  @@index([testComponentId])
+}
+
+model ControlRole {
+  id               String   @id @default(cuid())
+  controlId        String
+  controlTitle     String?
+  accountableRole  String?
+  responsibleRole  String?
+  evidenceOwnerRole String?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+}
+
+model ImplementationGuidance {
+  id                 String   @id @default(cuid())
+  controlId          String
+  companySizeSegment String?
+  guidance           String?
+  source             String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+}
+
+model FrameworkSource {
+  id               String   @id @default(cuid())
+  frameworkId      String?
+  frameworkName    String?
+  geography        String?
+  source           String?
+  authoritativeSource String?
+  strm             String?
+  url              String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  framework Framework? @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+}
+
+model RiskCatalog {
+  id            String   @id
+  grouping      String?
+  title         String?
+  description   String?
+  nistFunction  String?
+  materialityPreTaxIncome String?
+  materialityTotalAssets  String?
+  materialityTotalEquity  String?
+  materialityTotalRevenue String?
+  source        String?
+  text          String?
+  tokens        Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  controlMappings ControlRiskMapping[]
+}
+
+model ThreatCatalog {
+  id            String   @id
+  grouping      String?
+  title         String?
+  description   String?
+  materialityPreTaxIncome String?
+  materialityTotalAssets  String?
+  materialityTotalEquity  String?
+  materialityTotalRevenue String?
+  source        String?
+  text          String?
+  tokens        Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  controlMappings ControlThreatMapping[]
+}
+
+model ControlApplicability {
+  id               String   @id @default(cuid())
+  controlId        String   @unique
+  appliesPeople    Boolean?
+  appliesProcess   Boolean?
+  appliesTechnology Boolean?
+  appliesData      Boolean?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+}
+
+model ControlRiskMapping {
+  id               String   @id @default(cuid())
+  controlId        String
+  riskId           String
+  riskTitle        String?
+  confidence       Float?
+  relationshipType MappingRelationshipType @default(RELATED)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  risk    RiskCatalog       @relation(fields: [riskId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, riskId])
+  @@index([controlId])
+  @@index([riskId])
+}
+
+model ControlThreatMapping {
+  id               String   @id @default(cuid())
+  controlId        String
+  threatId         String
+  threatTitle      String?
+  confidence       Float?
+  relationshipType MappingRelationshipType @default(RELATED)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  threat  ThreatCatalog     @relation(fields: [threatId], references: [id], onDelete: Cascade)
+
+  @@unique([controlId, threatId])
+  @@index([controlId])
+  @@index([threatId])
 }
 
 model EvidenceEvaluation {

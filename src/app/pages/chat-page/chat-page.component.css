@@ -8,7 +8,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr;
-  gap: 4px;
+  gap: 2px;
   width: 100%;
   margin: 0;
   height: 100%;
@@ -20,11 +20,11 @@
 .chat-main {
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  padding: 8px;
+  border-radius: var(--panel-radius);
+  padding: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   box-shadow: var(--shadow-raised);
   min-height: 0;
   height: 100%;
@@ -41,6 +41,6 @@
 
 @media (max-width: 768px) {
   .chat-main {
-    padding: 6px;
+    padding: 5px;
   }
 }

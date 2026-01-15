@@ -86,6 +86,7 @@ export type UploadDocumentRecord = {
   matchStatus?: string;
   matchNote?: string;
   matchRecommendations?: string[];
+  frameworkReferences?: string[];
   reviewedAt?: string | null;
   submittedAt?: string | null;
 };
@@ -106,10 +107,31 @@ export type DashboardMetrics = {
   evidenceItems: number;
   awaitingReview: number;
   lastReviewAt: string | null;
+  evidenceHealth: {
+    high: number;
+    medium: number;
+    low: number;
+    score: number;
+    total: number;
+  };
+  auditReadiness: {
+    percent: number;
+    acceptedControls: number;
+    totalControls: number;
+    missingPolicies: number;
+    missingLogs: number;
+  };
+  submissionReadiness: {
+    percent: number;
+    submitted: number;
+    reviewed: number;
+  };
 };
 
 export type DashboardRiskControl = {
   controlId: string;
+  controlDbId?: string | null;
+  title?: string | null;
   status: string;
   summary: string;
   updatedAt: string;
@@ -125,6 +147,14 @@ export type DashboardResponse = {
   ok: boolean;
   standard: string;
   metrics: DashboardMetrics;
+  riskCoverage: {
+    id: string;
+    title: string;
+    coveragePercent: number;
+    controlCount: number;
+    missingCount: number;
+    controlCodes: string[];
+  }[];
   riskControls: DashboardRiskControl[];
   activity: DashboardActivityItem[];
 };
@@ -151,6 +181,24 @@ export type TestComponentRecord = {
   sortOrder?: number;
 };
 
+export type ControlFrameworkMappingRecord = {
+  id: string;
+  frameworkId?: string | null;
+  framework: string;
+  frameworkCode: string;
+  frameworkRef?: {
+    externalId?: string | null;
+    name?: string | null;
+  } | null;
+};
+
+export type ControlTopicMappingRecord = {
+  id: string;
+  topicId: string;
+  relationshipType: 'PRIMARY' | 'RELATED';
+  topic?: ControlTopic;
+};
+
 export type ControlDefinitionRecord = {
   id: string;
   topicId: string;
@@ -158,6 +206,8 @@ export type ControlDefinitionRecord = {
   title: string;
   description?: string | null;
   isoMappings?: string[] | null;
+  frameworkMappings?: ControlFrameworkMappingRecord[];
+  topicMappings?: ControlTopicMappingRecord[];
   ownerRole?: string | null;
   status?: string;
   sortOrder?: number;
@@ -171,6 +221,15 @@ export type ControlDefinitionListResponse = {
   total: number;
   page: number;
   pageSize: number;
+};
+
+export type FrameworkSummary = {
+  id: string;
+  frameworkId?: string;
+  framework: string;
+  status: 'enabled' | 'disabled';
+  controlCount: number;
+  topicCount: number;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -223,6 +282,16 @@ export class ApiService {
     return this.http.get(`/api/uploads/${id}/download`, { responseType: 'blob' });
   }
 
+  reevaluateUpload(id: string, language?: 'ar' | 'en') {
+    let params = new HttpParams();
+    if (language) params = params.set('language', language);
+    return this.http.post<{ ok: boolean; document: UploadDocumentRecord }>(
+      `/api/uploads/${id}/reevaluate`,
+      {},
+      { params },
+    );
+  }
+
   getDashboard(standard: ComplianceStandard) {
     const params = new HttpParams().set('standard', standard);
     return this.http.get<DashboardResponse>('/api/dashboard', { params });
@@ -239,9 +308,23 @@ export class ApiService {
 
   // ===== Control Knowledge Base =====
 
-  listControlTopics(standard: ComplianceStandard) {
-    const params = new HttpParams().set('standard', standard);
+  listControlTopics(standard: ComplianceStandard, framework?: string) {
+    let params = new HttpParams().set('standard', standard);
+    if (framework) params = params.set('framework', framework);
     return this.http.get<ControlTopic[]>('/api/control-kb/topics', { params });
+  }
+
+  listFrameworks(standard: ComplianceStandard) {
+    const params = new HttpParams().set('standard', standard);
+    return this.http.get<FrameworkSummary[]>('/api/control-kb/frameworks', { params });
+  }
+
+  createFramework(payload: { standard: ComplianceStandard; name: string }) {
+    return this.http.post<FrameworkSummary>('/api/control-kb/frameworks', payload);
+  }
+
+  updateFramework(id: string, payload: { name?: string; status?: string }) {
+    return this.http.patch<FrameworkSummary>(`/api/control-kb/frameworks/${id}`, payload);
   }
 
   listControlCatalog(standard: ComplianceStandard) {
@@ -277,12 +360,22 @@ export class ApiService {
     standard: ComplianceStandard;
     topicId?: string;
     query?: string;
+    status?: string;
+    ownerRole?: string;
+    evidenceType?: string;
+    isoMapping?: string;
+    framework?: string;
     page?: number;
     pageSize?: number;
   }) {
     let params = new HttpParams().set('standard', paramsInput.standard);
     if (paramsInput.topicId) params = params.set('topicId', paramsInput.topicId);
     if (paramsInput.query) params = params.set('q', paramsInput.query);
+    if (paramsInput.status) params = params.set('status', paramsInput.status);
+    if (paramsInput.ownerRole) params = params.set('ownerRole', paramsInput.ownerRole);
+    if (paramsInput.evidenceType) params = params.set('evidenceType', paramsInput.evidenceType);
+    if (paramsInput.isoMapping) params = params.set('isoMapping', paramsInput.isoMapping);
+    if (paramsInput.framework) params = params.set('framework', paramsInput.framework);
     if (paramsInput.page) params = params.set('page', paramsInput.page);
     if (paramsInput.pageSize) params = params.set('pageSize', paramsInput.pageSize);
     return this.http.get<ControlDefinitionListResponse>('/api/control-kb/controls', { params });
@@ -305,8 +398,26 @@ export class ApiService {
     return this.http.post<ControlDefinitionRecord>('/api/control-kb/controls', payload);
   }
 
-  updateControlDefinition(id: string, payload: Partial<ControlDefinitionRecord>) {
+  updateControlDefinition(
+    id: string,
+    payload: Partial<ControlDefinitionRecord> & { topicId?: string },
+  ) {
     return this.http.patch<ControlDefinitionRecord>(`/api/control-kb/controls/${id}`, payload);
+  }
+
+  addControlTopicMapping(
+    controlId: string,
+    topicId: string,
+    relationshipType: 'PRIMARY' | 'RELATED' = 'RELATED',
+  ) {
+    return this.http.post<ControlDefinitionRecord>(`/api/control-kb/controls/${controlId}/topics`, {
+      topicId,
+      relationshipType,
+    });
+  }
+
+  removeControlTopicMapping(controlId: string, topicId: string) {
+    return this.http.delete<ControlDefinitionRecord>(`/api/control-kb/controls/${controlId}/topics/${topicId}`);
   }
 
   deleteControlDefinition(id: string) {

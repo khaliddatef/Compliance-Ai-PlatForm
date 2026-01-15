@@ -145,6 +145,11 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const active = this.chatService.activeConversation();
     if (!active) return;
 
+    if (event.action.id === 'reevaluate') {
+      this.handleReevaluateAction(active.id, event.messageId, event.action);
+      return;
+    }
+
     this.chatService.updateMessage(active.id, event.messageId, { actions: undefined });
     this.chatService.appendMessage(active.id, {
       id: crypto.randomUUID(),
@@ -323,6 +328,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
             partial: 'المستخدم اختار اعتماد كدليل جزئي. أكد الحالة ووضح العناصر الناقصة بإيجاز.',
             fix: 'المستخدم طلب طريقة إصلاح النواقص. قدّم خطوات مختصرة وعملية.',
             skip: 'المستخدم اختار التخطي مؤقتًا. أكد التخطي ووجّه للكنترول التالي.',
+            reevaluate: '',
           }
         : {
             save:
@@ -333,6 +339,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
               'User asked for remediation guidance. Provide concise steps to fix missing requirements.',
             skip:
               'User chose: Skip for now. Confirm skip and guide to the next control.',
+            reevaluate: '',
           };
     return prompts[actionId];
   }
@@ -780,57 +787,141 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const language = this.getLanguageHint();
 
     docs.forEach((doc: any) => {
-      const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
-      const fileName = doc?.originalName || fallbackName;
-      const docType = doc?.docType
+      const content = this.buildUploadAnalysisContent(doc, language);
+      const docId = String(doc?.id || '');
+      const actions = docId ? [this.buildReevaluateAction(docId, language)] : undefined;
+      this.chatService.appendMessage(conversationId, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content,
+        timestamp: Date.now(),
+        actions,
+      });
+    });
+  }
+
+  private buildUploadAnalysisContent(doc: any, language: 'ar' | 'en') {
+    const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
+    const fileName = doc?.originalName || fallbackName;
+    const docType = doc?.docType
+      ? language === 'ar'
+        ? `النوع: ${doc.docType}`
+        : `Type: ${doc.docType}`
+      : '';
+    const controlId = doc?.matchControlId
+      ? language === 'ar'
+        ? `الكنترول: ${doc.matchControlId}`
+        : `Control: ${doc.matchControlId}`
+      : language === 'ar'
+        ? 'الكنترول: غير محدد'
+        : 'Control: Not identified';
+    const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
+    const statusLabel =
+      matchStatus === 'COMPLIANT'
         ? language === 'ar'
-          ? `النوع: ${doc.docType}`
-          : `Type: ${doc.docType}`
-        : '';
-      const controlId = doc?.matchControlId
-        ? language === 'ar'
-          ? `الكنترول: ${doc.matchControlId}`
-          : `Control: ${doc.matchControlId}`
-        : language === 'ar'
-          ? 'الكنترول: غير محدد'
-          : 'Control: Not identified';
-      const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
-      const statusLabel =
-        matchStatus === 'COMPLIANT'
+          ? 'مناسب كدليل'
+          : 'Ready to submit'
+        : matchStatus === 'PARTIAL'
           ? language === 'ar'
-            ? 'مناسب كدليل'
-            : 'Ready to submit'
-          : matchStatus === 'PARTIAL'
+            ? 'دليل جزئي'
+            : 'Partial evidence'
+          : matchStatus === 'NOT_COMPLIANT'
             ? language === 'ar'
-              ? 'دليل جزئي'
-              : 'Partial evidence'
-            : matchStatus === 'NOT_COMPLIANT'
-              ? language === 'ar'
-                ? 'غير مناسب كدليل'
-                : 'Not evidence'
-              : language === 'ar'
-                ? 'يحتاج مراجعة'
-                : 'Needs review';
-      const note = doc?.matchNote
-        ? language === 'ar'
-          ? `ملاحظة: ${doc.matchNote}`
-          : `AI note: ${doc.matchNote}`
-        : '';
-      const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 3) : [];
-      const lines = [
-        `📎 ${fileName}`,
-        docType,
-        controlId,
-        language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
-        note,
-      ].filter(Boolean);
+              ? 'غير مناسب كدليل'
+              : 'Not evidence'
+            : language === 'ar'
+              ? 'يحتاج مراجعة'
+              : 'Needs review';
+    const note = doc?.matchNote
+      ? language === 'ar'
+        ? `ملاحظة: ${doc.matchNote}`
+        : `AI note: ${doc.matchNote}`
+      : '';
+    const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 3) : [];
+    const frameworkRefs = Array.isArray(doc?.frameworkReferences)
+      ? doc.frameworkReferences.filter(Boolean)
+      : [];
+    const lines = [
+      `📎 ${fileName}`,
+      docType,
+      controlId,
+      language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
+      note,
+    ].filter(Boolean);
 
-      if (recs.length) {
-        lines.push(language === 'ar' ? 'الخطوات القادمة:' : 'Next steps:');
-        lines.push(...recs.map((item: string) => `- ${item}`));
-      }
+    if (frameworkRefs.length) {
+      lines.push(language === 'ar' ? 'مراجع الفريموركات:' : 'Framework references:');
+      lines.push(...frameworkRefs.map((item: string) => `- ${item}`));
+    }
 
-      this.appendAssistantMessage(conversationId, lines.join('\n'));
+    if (recs.length) {
+      lines.push(language === 'ar' ? 'الخطوات القادمة:' : 'Next steps:');
+      lines.push(...recs.map((item: string) => `- ${item}`));
+    }
+
+    return lines.join('\n');
+  }
+
+  private buildReevaluateAction(documentId: string, language: 'ar' | 'en'): MessageAction {
+    return {
+      id: 'reevaluate',
+      label: language === 'ar' ? 'إعادة التقييم' : 'Re-evaluate',
+      meta: { documentId },
+    };
+  }
+
+  private handleReevaluateAction(conversationId: string, messageId: string, action: MessageAction) {
+    const documentId = action.meta?.documentId;
+    if (!documentId) return;
+
+    const language = this.getLanguageHint();
+    const active = this.chatService.activeConversation();
+    const existing = active?.messages.find((message) => message.id === messageId);
+    const previousContent = existing?.content;
+    const previousActions = existing?.actions;
+
+    this.chatService.updateMessage(conversationId, messageId, {
+      content: language === 'ar' ? '⏳ جاري إعادة التقييم...' : '⏳ Re-evaluating document...',
+      actions: undefined,
+    });
+
+    this.apiService.reevaluateUpload(documentId, language).subscribe({
+      next: (res) => {
+        const doc = res?.document;
+        if (!doc) {
+          this.chatService.updateMessage(conversationId, messageId, {
+            content: previousContent || '',
+            actions: previousActions,
+          });
+          this.appendAssistantMessage(
+            conversationId,
+            language === 'ar'
+              ? '❌ تعذرت إعادة التقييم. جرّب مرة أخرى.'
+              : '❌ Unable to re-evaluate right now. Please try again.',
+          );
+          return;
+        }
+
+        const content = this.buildUploadAnalysisContent(doc, language);
+        this.chatService.updateMessage(conversationId, messageId, {
+          content,
+          actions: [this.buildReevaluateAction(documentId, language)],
+          timestamp: Date.now(),
+        });
+      },
+      error: (e) => {
+        console.error('reevaluate error', e);
+        this.chatService.updateMessage(conversationId, messageId, {
+          content: previousContent || '',
+          actions: previousActions,
+        });
+        this.appendAssistantMessage(
+          conversationId,
+          language === 'ar'
+            ? '❌ تعذرت إعادة التقييم. جرّب مرة أخرى.'
+            : '❌ Unable to re-evaluate right now. Please try again.',
+        );
+      },
     });
   }
 

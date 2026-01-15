@@ -24,6 +24,11 @@
   --sidebar-ink: #f8fafc;
   --sidebar-ink-muted: #94a3b8;
   --sidebar-active: rgba(59, 130, 246, 0.18);
+  --panel-radius: 14px;
+  --panel-padding: 12px;
+  --panel-gap: 10px;
+  --top-bar-height: 56px;
+  --table-row-height: 56px;
 }
 
 *,
@@ -57,4 +62,41 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent-400);
   outline-offset: 2px;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 40%, var(--surface-2) 80%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 8px;
+}
+
+.skeleton-pill {
+  height: 20px;
+  border-radius: 999px;
+}
+
+.skeleton-block {
+  border-radius: 12px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: -200% 0%;
+  }
 }

@@ -1,26 +1,106 @@
 <section class="page">
   <div class="panel">
     <div class="panel-header">
-      <h3>Frameworks</h3>
-      <button class="ghost-btn" type="button">Add framework</button>
-    </div>
-    <div class="framework-grid">
-      <article class="framework-card" *ngFor="let fw of frameworks">
-        <div class="card-header">
-          <h4>{{ fw.name }}</h4>
-          <span class="status" [class.draft]="fw.status !== 'Active'">{{ fw.status }}</span>
-        </div>
-        <div class="coverage">
-          <div class="label">Coverage</div>
-          <div class="meter">
-            <div class="bar" [style.width]="fw.coverage"></div>
-          </div>
-          <div class="value">{{ fw.coverage }}</div>
-        </div>
-        <button class="ghost-btn" type="button" *ngIf="isAdmin" [routerLink]="['/control-kb']">
-          Manage controls
+      <div>
+        <h3>Frameworks</h3>
+        <p class="sub">Level 0 · Browse frameworks mapped in the control knowledge base.</p>
+      </div>
+      <div class="header-actions">
+        <span class="sub">Admin &amp; Manager view</span>
+        <button class="primary-btn" type="button" *ngIf="isAdmin" (click)="toggleNewFramework()">
+          {{ showNewFramework ? 'Close' : 'New framework' }}
         </button>
-      </article>
+      </div>
     </div>
+    <div class="draft-card" *ngIf="showNewFramework && isAdmin">
+      <h5>New framework</h5>
+      <div class="field">
+        <label>Name</label>
+        <input
+          type="text"
+          [(ngModel)]="newFrameworkName"
+          (ngModelChange)="error = ''"
+          placeholder="e.g., ISO 27001 v2022"
+        />
+      </div>
+      <button
+        class="primary-btn"
+        type="button"
+        (click)="createFramework()"
+        [disabled]="creating || !newFrameworkName.trim()"
+      >
+        {{ creating ? 'Creating...' : 'Create framework' }}
+      </button>
+    </div>
+    <p class="sub error" *ngIf="error">{{ error }}</p>
+    <div class="table" *ngIf="loading">
+      <div class="row header">
+        <span>Framework ID</span>
+        <span>Status</span>
+        <span>Topics</span>
+        <span>Controls</span>
+        <span class="actions-header">Actions</span>
+      </div>
+      <div class="row item skeleton-row" *ngFor="let _ of [1,2,3,4,5,6]">
+        <span class="skeleton skeleton-line"></span>
+        <span class="skeleton skeleton-line"></span>
+        <span class="skeleton skeleton-line"></span>
+        <span class="skeleton skeleton-line"></span>
+        <span class="skeleton skeleton-line"></span>
+      </div>
+    </div>
+    <ng-container *ngIf="!loading">
+      <div class="table" *ngIf="frameworks.length; else emptyState">
+      <div class="row header">
+        <span>Framework ID</span>
+          <span>Status</span>
+          <span>Topics</span>
+          <span>Controls</span>
+          <span class="actions-header">Actions</span>
+        </div>
+        <div class="row item" *ngFor="let fw of frameworks">
+          <div class="framework-cell">
+            <span class="framework-id" [title]="fw.framework">{{ fw.frameworkId || fw.framework }}</span>
+          </div>
+          <span class="status-pill" [class.status-pill--inactive]="fw.status !== 'enabled'">
+            {{ fw.status === 'enabled' ? 'Active' : 'Inactive' }}
+          </span>
+          <span class="metric">{{ fw.topicCount }}</span>
+          <span class="metric">{{ fw.controlCount }}</span>
+          <div class="row-actions">
+            <button
+              class="action-btn action-btn--open"
+              type="button"
+              [routerLink]="['/framework-controls']"
+              [queryParams]="{ standard: standard, framework: fw.framework }"
+              *ngIf="isAdmin || isManager"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 17l10-10"></path>
+                <path d="M8 7h9v9"></path>
+              </svg>
+              <span>Open controls</span>
+            </button>
+            <button
+              class="action-btn"
+              [class.action-btn--deactivate]="fw.status === 'enabled'"
+              [class.action-btn--activate]="fw.status !== 'enabled'"
+              type="button"
+              *ngIf="isAdmin"
+              (click)="toggleFramework(fw)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v9"></path>
+                <path d="M7.5 5.5a7 7 0 1 0 9 0"></path>
+              </svg>
+              <span>{{ fw.status === 'enabled' ? 'Deactivate' : 'Activate' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <ng-template #emptyState>
+        <p class="sub">No frameworks found yet.</p>
+      </ng-template>
+    </ng-container>
   </div>
 </section>

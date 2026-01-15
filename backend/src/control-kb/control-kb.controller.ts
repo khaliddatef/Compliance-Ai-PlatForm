@@ -22,9 +22,52 @@ export class ControlKbController {
   constructor(private readonly service: ControlKbService) {}
 
   @Get('topics')
-  async listTopics(@CurrentUser() user: AuthUser, @Query('standard') standard = 'ISO') {
+  async listTopics(
+    @CurrentUser() user: AuthUser,
+    @Query('standard') standard = 'ISO',
+    @Query('framework') framework?: string,
+  ) {
+    this.assertViewAccess(user);
+    return this.service.listTopics(standard.toUpperCase(), framework?.trim() || null);
+  }
+
+  @Get('frameworks')
+  async listFrameworks(@CurrentUser() user: AuthUser, @Query('standard') standard = 'ISO') {
+    this.assertViewAccess(user);
+    const includeDisabled = user?.role === 'ADMIN';
+    return this.service.listFrameworks(standard.toUpperCase(), includeDisabled);
+  }
+
+  @Post('frameworks')
+  async createFramework(
+    @CurrentUser() user: AuthUser,
+    @Body()
+    body: {
+      standard: string;
+      name: string;
+      status?: string;
+    },
+  ) {
     this.assertAdmin(user);
-    return this.service.listTopics(standard.toUpperCase());
+    return this.service.createFramework({
+      standard: body.standard.toUpperCase(),
+      name: body.name.trim(),
+      status: body.status,
+    });
+  }
+
+  @Patch('frameworks/:id')
+  async updateFramework(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      name?: string;
+      status?: string;
+    },
+  ) {
+    this.assertAdmin(user);
+    return this.service.updateFramework(id, body);
   }
 
   @Get('catalog')
@@ -91,23 +134,34 @@ export class ControlKbController {
     @Query('standard') standard = 'ISO',
     @Query('topicId') topicId?: string,
     @Query('q') query?: string,
+    @Query('status') status?: string,
+    @Query('ownerRole') ownerRole?: string,
+    @Query('evidenceType') evidenceType?: string,
+    @Query('isoMapping') isoMapping?: string,
+    @Query('framework') framework?: string,
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '10',
   ) {
-    this.assertAdmin(user);
+    this.assertViewAccess(user);
     return this.service.listControls({
       standard: standard.toUpperCase(),
       topicId: topicId || null,
       query: query || null,
+      status: status || null,
+      ownerRole: ownerRole || null,
+      evidenceType: evidenceType || null,
+      isoMapping: isoMapping || null,
+      framework: framework || null,
       page: Number.parseInt(String(page), 10) || 1,
       pageSize: Number.parseInt(String(pageSize), 10) || 10,
+      includeDisabled: user?.role === 'ADMIN',
     });
   }
 
   @Get('controls/:id')
   async getControl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    this.assertAdmin(user);
-    return this.service.getControl(id);
+    this.assertViewAccess(user);
+    return this.service.getControl(id, true);
   }
 
   @Post('controls')
@@ -135,6 +189,7 @@ export class ControlKbController {
     @Param('id') id: string,
     @Body()
     body: {
+      topicId?: string;
       controlCode?: string;
       title?: string;
       description?: string;
@@ -146,6 +201,31 @@ export class ControlKbController {
   ) {
     this.assertAdmin(user);
     return this.service.updateControl(id, body);
+  }
+
+  @Post('controls/:id/topics')
+  async addControlTopicMapping(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      topicId: string;
+      relationshipType?: 'PRIMARY' | 'RELATED';
+    },
+  ) {
+    this.assertAdmin(user);
+    const type = (body.relationshipType || 'RELATED').toUpperCase() as 'PRIMARY' | 'RELATED';
+    return this.service.addControlTopicMapping(id, body.topicId, type);
+  }
+
+  @Delete('controls/:id/topics/:topicId')
+  async removeControlTopicMapping(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('topicId') topicId: string,
+  ) {
+    this.assertAdmin(user);
+    return this.service.removeControlTopicMapping(id, topicId);
   }
 
   @Delete('controls/:id')
@@ -199,6 +279,12 @@ export class ControlKbController {
   private assertAdmin(user?: AuthUser) {
     if (!user || user.role !== 'ADMIN') {
       throw new ForbiddenException('Admin access required');
+    }
+  }
+
+  private assertViewAccess(user?: AuthUser) {
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'MANAGER')) {
+      throw new ForbiddenException('Admin or Manager access required');
     }
   }
 }

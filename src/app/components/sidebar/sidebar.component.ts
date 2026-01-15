@@ -41,7 +41,7 @@ export class SidebarComponent {
       );
     }
     if (role === 'MANAGER') {
-      return this.allNavItems.filter((item) => item.path !== '/frameworks' && item.path !== '/control-kb');
+      return this.allNavItems;
     }
     return this.allNavItems;
   }

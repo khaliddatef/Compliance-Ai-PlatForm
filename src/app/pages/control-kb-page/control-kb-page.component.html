@@ -1,125 +1,119 @@
 <section class="page">
   <div class="panel">
-    <div class="panel-header">
-      <div>
-        <h3>Control Knowledge Base</h3>
-        <p class="sub">Admin-only source of truth for ISO 27001 controls.</p>
+    <div class="kb-skeleton" *ngIf="loading">
+      <div class="filters skeleton-block">
+        <div class="search-row">
+          <div class="search skeleton"></div>
+          <div class="skeleton skeleton-pill"></div>
+          <div class="skeleton skeleton-pill"></div>
+        </div>
+        <div class="filter-panel">
+          <div class="filter-group">
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line"></div>
+          </div>
+        </div>
       </div>
-      <button class="primary-btn" type="button" (click)="refreshTopics()">Refresh</button>
+      <div class="table">
+        <div class="row skeleton-row" *ngFor="let _ of [1,2,3,4,5,6]">
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-pill"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line"></div>
+        </div>
+      </div>
     </div>
-
-    <div class="kb-layout" *ngIf="!loading">
-      <aside class="kb-column topics-col">
-        <div class="column-header">
-          <div>
-            <h4>Topics</h4>
-            <span class="meta">{{ topics.length }} topics</span>
+    <div *ngIf="!loading">
+      <div class="filters">
+        <div class="search-row">
+          <div class="search">
+            <input
+              type="search"
+              placeholder="Search by control code or title..."
+              [(ngModel)]="searchTerm"
+              (keyup.enter)="applyFilters()"
+            />
           </div>
-          <button class="ghost-btn" type="button" (click)="showNewTopic = !showNewTopic">
-            {{ showNewTopic ? 'Close' : 'New topic' }}
+          <button class="primary-btn" type="button" (click)="applyFilters()">Search</button>
+          <button class="ghost-btn" type="button" (click)="showFilters = !showFilters">
+            {{ showFilters ? 'Hide filters' : 'Search filters' }}
           </button>
-        </div>
-
-        <div class="draft-card" *ngIf="showNewTopic">
-          <h5>New topic</h5>
-          <div class="field">
-            <label>Title</label>
-            <input type="text" [(ngModel)]="topicDraft.title" placeholder="Access control" />
-          </div>
-          <div class="field">
-            <label>Description</label>
-            <textarea rows="2" [(ngModel)]="topicDraft.description" placeholder="Short summary"></textarea>
-          </div>
-          <div class="field-row">
-            <label>
-              Mode
-              <select [(ngModel)]="topicDraft.mode">
-                <option value="continuous">Continuous</option>
-                <option value="open">Open</option>
-              </select>
-            </label>
-            <label>
-              Status
-              <select [(ngModel)]="topicDraft.status">
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </label>
-          </div>
-          <button class="ghost-btn" type="button" (click)="createTopic()">Add topic</button>
-        </div>
-
-        <div class="list">
-          <button
-            class="list-item"
-            type="button"
-            *ngFor="let topic of topics"
-            [class.active]="topic.id === selectedTopic?.id"
-            (click)="selectTopic(topic)"
-          >
-            <div>
-              <span class="title">{{ topic.title }}</span>
-              <span class="meta">{{ topic.controlCount || 0 }} controls</span>
-            </div>
-            <span class="pill" [class.disabled]="topic.status !== 'enabled'">{{ topic.status }}</span>
-          </button>
-        </div>
-
-        <div class="edit-card" *ngIf="selectedTopic && topicEdit">
-          <div class="edit-header">
-            <h5>Topic details</h5>
-            <div class="actions">
-              <button class="ghost-btn" type="button" *ngIf="!editingTopic" (click)="startEditTopic()">Edit</button>
-              <button class="ghost-btn" type="button" *ngIf="editingTopic" (click)="saveTopic()">Save</button>
-              <button class="ghost-btn" type="button" *ngIf="editingTopic" (click)="cancelEditTopic()">Cancel</button>
-              <button class="ghost-btn danger" type="button" (click)="deleteTopic()">Delete</button>
-            </div>
-          </div>
-          <div class="field">
-            <label>Title</label>
-            <input type="text" [(ngModel)]="topicEdit.title" [disabled]="!editingTopic" />
-          </div>
-          <div class="field">
-            <label>Description</label>
-            <textarea rows="2" [(ngModel)]="topicEdit.description" [disabled]="!editingTopic"></textarea>
-          </div>
-          <div class="field-row">
-            <label>
-              Mode
-              <select [(ngModel)]="topicEdit.mode" [disabled]="!editingTopic">
-                <option value="continuous">Continuous</option>
-                <option value="open">Open</option>
-              </select>
-            </label>
-            <label>
-              Status
-              <select [(ngModel)]="topicEdit.status" [disabled]="!editingTopic">
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </label>
-          </div>
-        </div>
-      </aside>
-
-      <section class="kb-column controls-col">
-        <div class="column-header controls-header">
-          <div>
-            <h4>Controls</h4>
-            <span class="meta">Topic: {{ selectedTopic?.title || 'Select a topic' }}</span>
-          </div>
-          <button class="ghost-btn" type="button" (click)="showNewControl = !showNewControl" [disabled]="!selectedTopic">
+          <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewControl = !showNewControl">
             {{ showNewControl ? 'Close' : 'New control' }}
           </button>
         </div>
-
-        <div class="search-row">
-          <input type="search" [(ngModel)]="searchTerm" placeholder="Search controls..." (keyup.enter)="searchControls()" />
-          <button class="ghost-btn" type="button" (click)="searchControls()">Search</button>
+        <div class="filter-chips" *ngIf="activeFilterChips.length && !showFilters">
+          <span class="chip" *ngFor="let chip of activeFilterChips" [title]="chip.value">
+            {{ chip.label }}: {{ chip.value }}
+          </span>
+          <button class="ghost-btn chip-clear" type="button" (click)="clearFilters()">Clear</button>
         </div>
+        <div class="filter-panel" *ngIf="showFilters">
+          <div class="filter-group">
+            <label>
+              Framework
+              <input
+                type="text"
+                [(ngModel)]="frameworkQuery"
+                placeholder="Type to filter frameworks..."
+              />
+              <select [(ngModel)]="frameworkFilter" (change)="applyFilters()">
+                <option value="all">All</option>
+                <option *ngFor="let option of filteredFrameworkOptions" [value]="option">
+                  {{ option }}
+                </option>
+              </select>
+            </label>
+            <label>
+              Topic
+              <select [(ngModel)]="topicFilter" (change)="applyFilters()">
+                <option value="all">All</option>
+                <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select [(ngModel)]="statusFilter" (change)="applyFilters()">
+                <option value="all">All</option>
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            <label>
+              Evidence type
+              <input
+                type="text"
+                [(ngModel)]="evidenceFilter"
+                placeholder="Policy, Log..."
+                (keyup.enter)="applyFilters()"
+              />
+            </label>
+            <label>
+              Owner role
+              <input
+                type="text"
+                [(ngModel)]="ownerRoleFilter"
+                placeholder="Security, IT..."
+                (keyup.enter)="applyFilters()"
+              />
+            </label>
+          </div>
+          <div class="filter-actions">
+            <button class="ghost-btn" type="button" (click)="clearFilters()">Reset</button>
+          </div>
+        </div>
+      </div>
 
-        <div class="draft-card" *ngIf="showNewControl && selectedTopic">
-          <h5>New control</h5>
+      <div class="draft-card" *ngIf="showNewControl && canEdit">
+        <h5>New control</h5>
+        <p class="empty" *ngIf="!selectedTopic">Select a topic to add a control.</p>
+        <ng-container *ngIf="selectedTopic">
           <div class="field">
             <label>Control code</label>
             <input type="text" [(ngModel)]="controlDraft.controlCode" placeholder="GOV-01" />
@@ -133,170 +127,329 @@
             <input type="text" [(ngModel)]="controlDraft.isoMappingsText" placeholder="A.5.1, A.5.4" />
           </div>
           <button class="ghost-btn" type="button" (click)="createControl()">Add control</button>
+        </ng-container>
+      </div>
+
+      <div class="table" *ngIf="controls.length; else emptyControls">
+        <div class="row header">
+          <span>#</span>
+          <span>Control</span>
+          <span>Frameworks</span>
+          <span>Topic</span>
+          <span>References</span>
+          <span>Status</span>
+          <span>Tests</span>
+          <span>Actions</span>
         </div>
-
-        <div class="controls-grid">
-          <div class="controls-list">
-            <div class="list">
-              <button
-                class="list-item"
-                type="button"
-                *ngFor="let control of controls"
-                [class.active]="control.id === selectedControl?.id"
-                (click)="selectControl(control)"
-              >
-                <div>
-                  <span class="title">{{ control.controlCode }}</span>
-                  <span class="meta">{{ control.title }}</span>
-                </div>
-                <span class="meta">{{ control._count?.testComponents || 0 }} tests</span>
-              </button>
+        <div
+          class="row item"
+          role="button"
+          tabindex="0"
+          *ngFor="let control of controls; let i = index"
+          [class.active]="control.id === selectedControl?.id"
+          (click)="selectControl(control)"
+          (keydown.enter)="selectControl(control)"
+        >
+          <span class="index">{{ getControlIndex(i) }}</span>
+          <div class="control-cell">
+            <div class="control-row">
+              <span class="control-code" [title]="control.controlCode">{{ control.controlCode }}</span>
             </div>
-
-            <div class="pagination" *ngIf="totalPages > 1">
-              <button class="ghost-btn" type="button" (click)="prevPage()" [disabled]="page === 1">Prev</button>
-              <button
-                class="page-btn"
-                type="button"
-                *ngFor="let p of pageNumbers"
-                [class.active]="p === page"
-                (click)="goToPage(p)"
-              >
-                {{ p }}
-              </button>
-              <button class="ghost-btn" type="button" (click)="nextPage()" [disabled]="page === totalPages">Next</button>
-            </div>
-            <div class="page-meta" *ngIf="totalControls">Showing {{ controls.length }} of {{ totalControls }}</div>
+            <span class="control-title" [title]="control.title">{{ control.title }}</span>
           </div>
-
-          <div class="controls-detail">
-            <ng-container *ngIf="selectedControl && controlEdit; else emptyState">
-              <div class="detail-card">
-                <div class="edit-header">
-                  <h5>Control details</h5>
-                  <div class="actions">
-                    <button class="ghost-btn" type="button" *ngIf="!editingControl" (click)="startEditControl()">Edit</button>
-                    <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="saveControl()">Save</button>
-                    <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="cancelEditControl()">Cancel</button>
-                    <button class="ghost-btn danger" type="button" (click)="deleteControl()">Delete</button>
-                  </div>
-                </div>
-                <div class="field-row">
-                  <label>
-                    Code
-                    <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl" />
-                  </label>
-                  <label>
-                    Status
-                    <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl">
-                      <option value="enabled">Enabled</option>
-                      <option value="disabled">Disabled</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="field">
-                  <label>Title</label>
-                  <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl"></textarea>
-                </div>
-                <div class="field">
-                  <label>ISO mappings</label>
-                  <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl" />
-                </div>
-                <div class="field">
-                  <label>Description</label>
-                  <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl"></textarea>
+          <div class="framework-cell">
+            <button
+              class="framework-count"
+              type="button"
+              [disabled]="!getControlFrameworkCount(control)"
+              (click)="toggleFrameworkPopover(control, $event)"
+            >
+              {{ getControlFrameworkCount(control) || '—' }}
+            </button>
+            <div class="framework-popover" *ngIf="frameworkPopoverControlId === control.id" (click)="$event.stopPropagation()">
+              <div class="topic-popover-title">Frameworks</div>
+              <div class="topic-popover-list">
+                <div class="topic-popover-item" *ngFor="let framework of getControlFrameworkLabels(control)">
+                  <span>{{ framework }}</span>
                 </div>
               </div>
-
-              <div class="detail-card">
-                <div class="edit-header">
-                  <h5>Test components</h5>
-                  <button class="ghost-btn" type="button" (click)="showNewComponent = !showNewComponent">
-                    {{ showNewComponent ? 'Close' : 'New component' }}
-                  </button>
+            </div>
+          </div>
+          <div class="topic-cell">
+            <span class="meta truncate" [title]="getPrimaryTopicLabel(control)">{{ getPrimaryTopicLabel(control) }}</span>
+            <button
+              class="topic-more"
+              type="button"
+              *ngIf="getRelatedTopicCount(control)"
+              (click)="toggleTopicPopover(control, $event)"
+            >
+              +{{ getRelatedTopicCount(control) }}
+            </button>
+            <div class="topic-popover" *ngIf="topicPopoverControlId === control.id" (click)="$event.stopPropagation()">
+              <div class="topic-popover-title">Related topics</div>
+              <div class="topic-popover-list">
+                <div class="topic-popover-item" *ngFor="let mapping of getControlTopicMappings(control)">
+                  <span>{{ mapping.title }}</span>
+                  <span class="topic-tag" [class.primary]="mapping.relationshipType === 'PRIMARY'">
+                    {{ mapping.relationshipType === 'PRIMARY' ? 'Primary' : 'Related' }}
+                  </span>
                 </div>
-
-                <div class="draft-card" *ngIf="showNewComponent">
-                  <div class="field">
-                    <label>Requirement</label>
-                    <textarea rows="2" [(ngModel)]="componentDraft.requirement" placeholder="Requirement text"></textarea>
-                  </div>
-                  <div class="field">
-                    <label>Evidence types</label>
-                    <input type="text" [(ngModel)]="componentDraft.evidenceTypesText" placeholder="Policy, Screenshot, Log" />
-                  </div>
-                  <div class="field">
-                    <label>Acceptance criteria</label>
-                    <input type="text" [(ngModel)]="componentDraft.acceptanceCriteria" placeholder="Evidence clearly meets the requirement." />
-                  </div>
-                  <div class="field">
-                    <label>Partial criteria</label>
-                    <input type="text" [(ngModel)]="componentDraft.partialCriteria" placeholder="Evidence is incomplete." />
-                  </div>
-                  <div class="field">
-                    <label>Reject criteria</label>
-                    <input type="text" [(ngModel)]="componentDraft.rejectCriteria" placeholder="No relevant evidence." />
-                  </div>
-                  <button class="ghost-btn" type="button" (click)="createTestComponent()">Add component</button>
-                </div>
-
-                <div class="components" *ngIf="selectedControl?.testComponents?.length">
-                  <div class="component" *ngFor="let component of selectedControl?.testComponents">
-                    <div class="component-header">
-                      <h6>{{ component.requirement }}</h6>
-                      <div class="actions">
-                        <button class="ghost-btn" type="button" (click)="startEditComponent(component)" *ngIf="editingComponentId !== component.id">Edit</button>
-                        <button class="ghost-btn" type="button" (click)="saveComponent(component)" *ngIf="editingComponentId === component.id">Save</button>
-                        <button class="ghost-btn" type="button" (click)="cancelEditComponent()" *ngIf="editingComponentId === component.id">Cancel</button>
-                        <button class="ghost-btn danger" type="button" (click)="deleteComponent(component)">Delete</button>
-                      </div>
-                    </div>
-
-                    <div class="component-body" *ngIf="editingComponentId !== component.id">
-                      <p class="meta">Evidence: {{ formatEvidence(component) || '—' }}</p>
-                      <p class="meta">Accept: {{ component.acceptanceCriteria || '—' }}</p>
-                      <p class="meta">Partial: {{ component.partialCriteria || '—' }}</p>
-                      <p class="meta">Reject: {{ component.rejectCriteria || '—' }}</p>
-                    </div>
-
-                    <div class="component-body" *ngIf="editingComponentId === component.id && componentEdit">
-                      <div class="field">
-                        <label>Requirement</label>
-                        <textarea rows="2" [(ngModel)]="componentEdit.requirement"></textarea>
-                      </div>
-                      <div class="field">
-                        <label>Evidence types</label>
-                        <input type="text" [(ngModel)]="componentEdit.evidenceTypesText" />
-                      </div>
-                      <div class="field">
-                        <label>Acceptance</label>
-                        <input type="text" [(ngModel)]="componentEdit.acceptanceCriteria" />
-                      </div>
-                      <div class="field">
-                        <label>Partial</label>
-                        <input type="text" [(ngModel)]="componentEdit.partialCriteria" />
-                      </div>
-                      <div class="field">
-                        <label>Reject</label>
-                        <input type="text" [(ngModel)]="componentEdit.rejectCriteria" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <p class="empty" *ngIf="selectedControl && !selectedControl.testComponents?.length">No test components yet.</p>
               </div>
-            </ng-container>
+            </div>
+          </div>
+          <span class="reference-cell" [title]="getControlReferenceCodes(control)">{{ getControlReferenceCodes(control) }}</span>
+          <span class="status-pill" [ngClass]="getControlStatusClass(control)">{{ getControlStatusLabel(control) }}</span>
+          <span class="tests">{{ control._count?.testComponents || 0 }}</span>
+          <button class="ghost-btn open-btn" type="button" (click)="openControlPage(control, $event)">Open</button>
+        </div>
+      </div>
 
-            <ng-template #emptyState>
-              <div class="empty-state">
-                <p>Select a control to view details.</p>
-                <span>Use the list on the left to pick a control.</span>
-              </div>
-            </ng-template>
+      <ng-template #emptyControls>
+        <p class="empty">No controls found.</p>
+      </ng-template>
+
+      <div class="pagination-bar" *ngIf="totalPages > 1 || totalControls">
+        <div class="pagination" *ngIf="totalPages > 1">
+          <button class="ghost-btn" type="button" (click)="prevPage()" [disabled]="page === 1">Prev</button>
+          <button
+            class="page-btn"
+            type="button"
+            *ngFor="let p of pageNumbers"
+            [class.active]="p === page"
+            (click)="goToPage(p)"
+          >
+            {{ p }}
+          </button>
+          <button class="ghost-btn" type="button" (click)="nextPage()" [disabled]="page === totalPages">Next</button>
+        </div>
+        <div class="page-size">
+          <label>Rows</label>
+          <select [(ngModel)]="pageSize" (change)="updatePageSize(pageSize)">
+            <option *ngFor="let size of pageSizeOptions" [value]="size">{{ size }}</option>
+          </select>
+        </div>
+      </div>
+      <div class="page-meta" *ngIf="totalControls">Showing {{ controls.length }} of {{ totalControls }}</div>
+
+      <div class="detail-stack" *ngIf="selectedControl && controlEdit">
+        <div class="detail-card">
+          <div class="edit-header">
+            <h5>Control details</h5>
+            <div class="actions" *ngIf="canEdit">
+              <button class="ghost-btn" type="button" *ngIf="!editingControl" (click)="startEditControl()">Edit</button>
+              <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="saveControl()">Save</button>
+              <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="cancelEditControl()">Cancel</button>
+              <button class="ghost-btn danger" type="button" (click)="deleteControl()">Delete</button>
+            </div>
+            <span class="view-only" *ngIf="!canEdit">View only</span>
+          </div>
+          <div class="field-row">
+            <label>
+              Code
+              <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl || !canEdit" />
+            </label>
+            <label>
+              Status
+              <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl || !canEdit">
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <label>Title</label>
+            <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl || !canEdit"></textarea>
+          </div>
+          <div class="field">
+            <label>ISO mappings</label>
+            <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl || !canEdit" />
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl || !canEdit"></textarea>
           </div>
         </div>
-      </section>
+
+        <div class="detail-card">
+          <div class="edit-header">
+            <h5>Topic mappings</h5>
+            <span class="view-only" *ngIf="!canEdit">View only</span>
+          </div>
+          <div class="topic-mapping-list">
+            <div class="topic-mapping primary" *ngIf="getPrimaryTopicMapping(selectedControl) as primary">
+              <span class="topic-label">Primary</span>
+              <span class="topic-name">{{ primary.title }}</span>
+            </div>
+            <div class="topic-mapping related" *ngFor="let mapping of getRelatedTopicMappings(selectedControl)">
+              <span class="topic-label">Related</span>
+              <span class="topic-name">{{ mapping.title }}</span>
+              <button
+                class="ghost-btn danger"
+                type="button"
+                *ngIf="canEdit"
+                (click)="removeRelatedTopic(mapping.topicId)"
+              >
+                Remove
+              </button>
+            </div>
+            <p class="empty" *ngIf="!getRelatedTopicMappings(selectedControl).length">No related topics yet.</p>
+          </div>
+          <div class="topic-mapping-actions" *ngIf="canEdit">
+            <label>
+              Add related topic
+              <select [(ngModel)]="relatedTopicId">
+                <option value="">Select a topic...</option>
+                <option *ngFor="let topic of getAvailableRelatedTopics()" [value]="topic.id">
+                  {{ topic.title }}
+                </option>
+              </select>
+            </label>
+            <button class="ghost-btn" type="button" (click)="addRelatedTopic()">Add</button>
+          </div>
+        </div>
+
+        <div class="detail-card">
+          <div class="edit-header">
+            <h5>Level 3 · Test components</h5>
+            <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewComponent = !showNewComponent">
+              {{ showNewComponent ? 'Close' : 'New component' }}
+            </button>
+          </div>
+
+          <div class="draft-card" *ngIf="showNewComponent && canEdit">
+            <div class="field">
+              <label>Requirement</label>
+              <textarea rows="2" [(ngModel)]="componentDraft.requirement" placeholder="Requirement text"></textarea>
+            </div>
+            <div class="field">
+              <label>Evidence types</label>
+              <input type="text" [(ngModel)]="componentDraft.evidenceTypesText" placeholder="Policy, Screenshot, Log" />
+            </div>
+            <div class="field">
+              <label>Acceptance criteria</label>
+              <input type="text" [(ngModel)]="componentDraft.acceptanceCriteria" placeholder="Evidence clearly meets the requirement." />
+            </div>
+            <div class="field">
+              <label>Partial criteria</label>
+              <input type="text" [(ngModel)]="componentDraft.partialCriteria" placeholder="Evidence is incomplete." />
+            </div>
+            <div class="field">
+              <label>Reject criteria</label>
+              <input type="text" [(ngModel)]="componentDraft.rejectCriteria" placeholder="No relevant evidence." />
+            </div>
+            <button class="ghost-btn" type="button" (click)="createTestComponent()">Add component</button>
+          </div>
+
+          <div class="components" *ngIf="selectedControl?.testComponents?.length">
+            <div class="component" *ngFor="let component of selectedControl?.testComponents">
+              <div class="component-header">
+                <h6>{{ component.requirement }}</h6>
+                <div class="actions" *ngIf="canEdit">
+                  <button class="ghost-btn" type="button" (click)="startEditComponent(component)" *ngIf="editingComponentId !== component.id">Edit</button>
+                  <button class="ghost-btn" type="button" (click)="saveComponent(component)" *ngIf="editingComponentId === component.id">Save</button>
+                  <button class="ghost-btn" type="button" (click)="cancelEditComponent()" *ngIf="editingComponentId === component.id">Cancel</button>
+                  <button class="ghost-btn danger" type="button" (click)="deleteComponent(component)">Delete</button>
+                </div>
+              </div>
+
+              <div class="component-body" *ngIf="editingComponentId !== component.id">
+                <p class="meta">Evidence: {{ formatEvidence(component) || '—' }}</p>
+                <p class="meta">Accept: {{ component.acceptanceCriteria || '—' }}</p>
+                <p class="meta">Partial: {{ component.partialCriteria || '—' }}</p>
+                <p class="meta">Reject: {{ component.rejectCriteria || '—' }}</p>
+              </div>
+
+              <div class="component-body" *ngIf="editingComponentId === component.id && componentEdit">
+                <div class="field">
+                  <label>Requirement</label>
+                  <textarea rows="2" [(ngModel)]="componentEdit.requirement"></textarea>
+                </div>
+                <div class="field">
+                  <label>Evidence types</label>
+                  <input type="text" [(ngModel)]="componentEdit.evidenceTypesText" />
+                </div>
+                <div class="field">
+                  <label>Acceptance</label>
+                  <input type="text" [(ngModel)]="componentEdit.acceptanceCriteria" />
+                </div>
+                <div class="field">
+                  <label>Partial</label>
+                  <input type="text" [(ngModel)]="componentEdit.partialCriteria" />
+                </div>
+                <div class="field">
+                  <label>Reject</label>
+                  <input type="text" [(ngModel)]="componentEdit.rejectCriteria" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="empty" *ngIf="selectedControl && !selectedControl.testComponents?.length">No test components yet.</p>
+        </div>
+
+        <div class="detail-card">
+          <div class="edit-header">
+            <h5>Evidence intelligence</h5>
+            <span class="meta">Derived from test components</span>
+          </div>
+          <div class="evidence-grid">
+            <div>
+              <div class="section-label">Expected evidence</div>
+              <ul *ngIf="getEvidenceTypes().length; else emptyEvidence">
+                <li *ngFor="let item of getEvidenceTypes()">{{ item }}</li>
+              </ul>
+            </div>
+            <div>
+              <div class="section-label">Acceptance signals</div>
+              <ul *ngIf="getAcceptanceRules().length; else emptyEvidence">
+                <li *ngFor="let item of getAcceptanceRules()">{{ item }}</li>
+              </ul>
+            </div>
+            <div>
+              <div class="section-label">Partial signals</div>
+              <ul *ngIf="getPartialRules().length; else emptyEvidence">
+                <li *ngFor="let item of getPartialRules()">{{ item }}</li>
+              </ul>
+            </div>
+            <div>
+              <div class="section-label">Reject signals</div>
+              <ul *ngIf="getRejectRules().length; else emptyEvidence">
+                <li *ngFor="let item of getRejectRules()">{{ item }}</li>
+              </ul>
+            </div>
+          </div>
+          <ng-template #emptyEvidence>
+            <p class="empty">—</p>
+          </ng-template>
+        </div>
+
+        <div class="detail-card">
+          <div class="edit-header">
+            <h5>Explanation &amp; reference</h5>
+          </div>
+          <div class="field">
+            <label>Control statement</label>
+            <p class="reference-text">{{ controlEdit.description || '—' }}</p>
+          </div>
+          <div class="reference-meta">
+            <span>Code: {{ controlEdit.controlCode }}</span>
+            <span *ngIf="selectedControl?.topic">Topic: {{ selectedControl?.topic?.title }}</span>
+            <span *ngIf="selectedControl?.ownerRole">Owner: {{ selectedControl?.ownerRole }}</span>
+          </div>
+          <div class="reference-tags" *ngIf="selectedControl?.isoMappings?.length">
+            <span class="tag" *ngFor="let item of selectedControl?.isoMappings">{{ item }}</span>
+          </div>
+          <div class="mapping-block" *ngIf="isAdmin && selectedControl?.frameworkMappings?.length">
+            <div class="section-label">Framework mappings</div>
+            <div class="mapping-list">
+              <span class="tag" *ngFor="let mapping of selectedControl?.frameworkMappings">
+                {{ mapping.frameworkRef?.externalId || mapping.frameworkRef?.name || mapping.framework }} · {{ mapping.frameworkCode }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <p class="empty" *ngIf="loading">Loading control knowledge base…</p>

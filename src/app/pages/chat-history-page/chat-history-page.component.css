@@ -1,19 +1,19 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
 }
 
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  padding: 16px;
+  border-radius: var(--panel-radius);
+  padding: var(--panel-padding);
   box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--panel-gap);
   min-height: 0;
 }
 

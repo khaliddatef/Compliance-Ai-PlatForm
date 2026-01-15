@@ -7,12 +7,12 @@
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 4px 6px;
+  padding: 2px 4px;
   min-height: 0;
   height: 100%;
   width: 100%;

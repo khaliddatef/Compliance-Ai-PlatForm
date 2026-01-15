@@ -44,6 +44,12 @@ export type ControlContext = {
   testComponents: string[];
 };
 
+export type ControlCandidate = {
+  controlCode: string;
+  title: string;
+  isoMappings?: string[] | null;
+};
+
 type CustomerProbe = {
   // هل فيه دليل Customer فعلاً مرتبط بالسؤال؟
   hasRelevantCustomerEvidence: boolean;
@@ -815,13 +821,29 @@ Structure:
     content?: string | null;
     customerVectorStoreId?: string | null;
     language?: 'ar' | 'en';
+    controlCandidates?: ControlCandidate[];
   }): Promise<DocumentMatchResult> {
     this.assertConfig();
 
-    const { standard, fileName, content, customerVectorStoreId, language: forcedLanguage } = params;
+    const { standard, fileName, content, customerVectorStoreId, language: forcedLanguage, controlCandidates } = params;
     const language = forcedLanguage ?? this.detectLanguage(content || fileName || '');
     const trimmedContent = (content || '').trim();
     const hasContent = Boolean(trimmedContent);
+    const candidates = Array.isArray(controlCandidates) ? controlCandidates : [];
+    const allowedIds = new Set<string>();
+    const candidateLines = candidates.map((candidate) => {
+      const isoList = Array.isArray(candidate.isoMappings)
+        ? candidate.isoMappings.map((value) => String(value)).filter(Boolean)
+        : [];
+      if (candidate.controlCode) {
+        allowedIds.add(candidate.controlCode);
+      }
+      if (isoList.length) {
+        isoList.forEach((code) => allowedIds.add(code));
+      }
+      return `- ${candidate.title} | Code: ${candidate.controlCode} | ISO: ${isoList.join(', ') || '—'}`;
+    });
+    const allowedList = Array.from(allowedIds);
 
     if (!hasContent && !customerVectorStoreId) {
       const fallbackNote =
@@ -855,7 +877,8 @@ Rules:
 - If evidence appears sufficient, set matchStatus="COMPLIANT".
 - If evidence is partial, set matchStatus="PARTIAL".
 - If evidence is unrelated or clearly insufficient, set matchStatus="NOT_COMPLIANT".
-- Use framework-specific control IDs when applicable (e.g., ISO Annex A uses format A.x.y).
+- If candidates are provided, you MUST pick matchControlId from the allowed list only.
+- Use the internal control ID when available. ISO codes are references only.
 - Keep matchNote short (1-2 sentences), supportive, and non-judgmental.
 - Avoid mentioning the framework name unless needed for clarity.
 - Provide up to 3 clear, practical recommendations.
@@ -887,11 +910,15 @@ Return STRICT JSON only.
     const timeout = setTimeout(() => controller.abort(), 45_000);
 
     try {
-      const baseInput = [
-        `Standard: ${standard}`,
-        `Target file name: ${fileName}`,
-        'Analyze the target document only.',
-      ].join('\n');
+    const baseInput = [
+      `Standard: ${standard}`,
+      `Target file name: ${fileName}`,
+      'Analyze the target document only.',
+      allowedList.length ? `Allowed control IDs: ${allowedList.join(', ')}` : '',
+      candidateLines.length ? `Candidate controls:\n${candidateLines.join('\n')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
       const body: any = {
         model: this.model,
@@ -962,6 +989,40 @@ Return STRICT JSON only.
         ? parsed.matchRecommendations
         : [];
 
+      if (allowedList.length && parsed.matchControlId) {
+        const allowedMap = new Map(allowedList.map((value) => [String(value).toLowerCase(), value]));
+        const key = parsed.matchControlId.trim().toLowerCase();
+        const normalized = allowedMap.get(key);
+        if (normalized) {
+          parsed.matchControlId = normalized;
+        } else {
+          parsed.matchControlId = null;
+          parsed.matchStatus = 'UNKNOWN';
+          parsed.matchNote =
+            language === 'ar'
+              ? 'لم أتمكن من مطابقة هذا المستند مع أي كنترول محدد من مرجعنا.'
+              : 'Unable to match this document to a specific control in our knowledge base.';
+        }
+      }
+
+      if (parsed.matchControlId && candidates.length) {
+        const candidateByCode = new Map(
+          candidates.map((candidate) => [candidate.controlCode.toLowerCase(), candidate]),
+        );
+        const matchKey = parsed.matchControlId.toLowerCase();
+        const direct = candidateByCode.get(matchKey);
+        if (direct) {
+          parsed.matchControlId = direct.controlCode;
+        } else {
+          const alias = candidates.find((candidate) =>
+            (candidate.isoMappings || []).some((code) => String(code).toLowerCase() === matchKey),
+          );
+          if (alias) {
+            parsed.matchControlId = alias.controlCode;
+          }
+        }
+      }
+
       return parsed;
     } catch (e: any) {
       const msg = e?.name === 'AbortError' ? 'OpenAI request timed out' : e?.message || String(e);
@@ -1024,7 +1085,7 @@ Language:
 
 Rules:
 - Use ONLY CUSTOMER evidence from file search results.
-- The provided control criteria are the authority for evaluation.
+- The provided control criteria are signals, not rigid rules. Use judgment and explain gaps clearly.
 - If evidence is missing or irrelevant, status MUST be "UNKNOWN".
 - Avoid judgmental/pass-fail language. Be honest and action-oriented.
 - Summary must include a short transparency note (e.g. "Based on your uploaded evidence and our internal control criteria.").

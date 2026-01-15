@@ -1,4 +1,12 @@
 <section class="page">
+  <div class="dashboard-header" *ngIf="!loading && !error">
+    <div>
+      <h2>Dashboard</h2>
+      <p>Read-only snapshot of compliance health and evidence readiness.</p>
+    </div>
+    <a class="cta" routerLink="/home">Continue in chat</a>
+  </div>
+
   <div class="stats-grid" *ngIf="!loading && !error; else loadingState">
     <article class="stat-card" *ngFor="let stat of stats">
       <p class="label">{{ stat.label }}</p>
@@ -10,7 +18,34 @@
   <div class="grid-two" *ngIf="!loading && !error">
     <section class="panel">
       <div class="panel-header">
-        <h3>Controls at Risk</h3>
+        <h3>Top Risks Not Covered</h3>
+        <span class="chip">Risk-driven view</span>
+      </div>
+      <div class="risk-list" *ngIf="riskCoverageRows.length; else emptyRiskCoverage">
+        <div class="risk-row" *ngFor="let row of riskCoverageRows">
+          <div class="risk-main">
+            <div class="risk-title">{{ row.title }}</div>
+            <div class="risk-meta">{{ row.coverage }} covered</div>
+          </div>
+          <button class="risk-controls-btn" type="button" (click)="toggleRiskPopover(row.id)">
+            {{ row.controlCount }} controls
+          </button>
+          <div class="risk-popover" *ngIf="riskPopoverId === row.id">
+            <div class="risk-popover-title">Mapped controls</div>
+            <div class="risk-popover-list">
+              <span *ngFor="let code of row.controlCodes">{{ code }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ng-template #emptyRiskCoverage>
+        <p class="empty">Risk coverage will appear once mappings are available.</p>
+      </ng-template>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Controls Needing Attention</h3>
         <span class="chip">Needs attention</span>
       </div>
       <div class="table" *ngIf="riskRows.length; else emptyRisks">
@@ -19,38 +54,40 @@
           <span>Owner</span>
           <span>Status</span>
           <span>Due</span>
+          <span>Action</span>
         </div>
         <div class="row" *ngFor="let row of riskRows">
           <span>{{ row.control }}</span>
           <span>{{ row.owner }}</span>
-          <span class="status" [class.warn]="row.status !== 'Partial'">{{ row.status }}</span>
+          <span class="status-pill" [class.status-pill--warn]="row.status !== 'Partial'">{{ row.status }}</span>
           <span>{{ row.due }}</span>
+          <button class="open-control" type="button" (click)="openControl(row)">Open</button>
         </div>
       </div>
       <ng-template #emptyRisks>
         <p class="empty">No control risks yet.</p>
       </ng-template>
     </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Recent Activity</h3>
-        <span class="chip muted">Last 48h</span>
-      </div>
-      <div class="activity-list" *ngIf="activityRows.length; else emptyActivity">
-        <div class="activity" *ngFor="let item of activityRows">
-          <div class="activity-main">
-            <div class="activity-title">{{ item.item }}</div>
-            <div class="activity-meta">{{ item.by }}</div>
-          </div>
-          <div class="activity-time">{{ item.time }}</div>
-        </div>
-      </div>
-      <ng-template #emptyActivity>
-        <p class="empty">No recent activity.</p>
-      </ng-template>
-    </section>
   </div>
+
+  <section class="panel" *ngIf="!loading && !error">
+    <div class="panel-header">
+      <h3>Recent Activity</h3>
+      <span class="chip muted">Last 48h</span>
+    </div>
+    <div class="activity-list" *ngIf="activityRows.length; else emptyActivity">
+      <div class="activity" *ngFor="let item of activityRows">
+        <div class="activity-main">
+          <div class="activity-title">{{ item.item }}</div>
+          <div class="activity-meta">{{ item.by }}</div>
+        </div>
+        <div class="activity-time">{{ item.time }}</div>
+      </div>
+    </div>
+    <ng-template #emptyActivity>
+      <p class="empty">No recent activity.</p>
+    </ng-template>
+  </section>
 
   <ng-template #loadingState>
     <p class="empty" *ngIf="loading">Loading dashboard…</p>

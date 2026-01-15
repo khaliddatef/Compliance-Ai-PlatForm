@@ -1,0 +1,105 @@
+<section class="page">
+  <div class="panel">
+    <div class="loading" *ngIf="loading">Loading control details...</div>
+    <div class="error" *ngIf="!loading && error">{{ error }}</div>
+
+    <ng-container *ngIf="!loading && control">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Control details</div>
+          <h2>{{ control.controlCode }} · {{ control.title }}</h2>
+          <p class="sub">{{ control.description || 'No description provided yet.' }}</p>
+        </div>
+        <div class="header-actions">
+          <span class="status-pill" [ngClass]="statusClass">{{ statusLabel }}</span>
+          <a class="ghost-btn" [routerLink]="['/control-kb']" [queryParams]="{ standard: standard }">Back</a>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <div class="card">
+          <h5>Overview</h5>
+          <div class="meta-grid">
+            <div>
+              <div class="label">Primary topic</div>
+              <div class="value">{{ primaryTopicLabel }}</div>
+            </div>
+            <div>
+              <div class="label">Owner role</div>
+              <div class="value">{{ control.ownerRole || '—' }}</div>
+            </div>
+            <div>
+              <div class="label">Test components</div>
+              <div class="value">{{ control._count?.testComponents || control.testComponents?.length || 0 }}</div>
+            </div>
+          </div>
+          <div class="meta-block" *ngIf="relatedTopics.length">
+            <div class="label">Related topics</div>
+            <div class="tag-list">
+              <span class="tag" *ngFor="let topic of relatedTopics">{{ topic }}</span>
+            </div>
+          </div>
+          <div class="meta-block" *ngIf="control.isoMappings?.length">
+            <div class="label">Reference codes</div>
+            <div class="tag-list">
+              <span class="tag" *ngFor="let item of control.isoMappings">{{ item }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h5>Framework mappings</h5>
+          <div class="tag-list" *ngIf="frameworkTags.length; else noFrameworks">
+            <span class="tag" *ngFor="let mapping of frameworkTags">
+              {{ mapping.label }} · {{ mapping.code }}
+            </span>
+          </div>
+          <ng-template #noFrameworks>
+            <p class="empty">No framework mappings yet.</p>
+          </ng-template>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h5>Test components</h5>
+          <span class="muted">Evidence requirements and signals</span>
+        </div>
+        <div class="component-list" *ngIf="control.testComponents?.length; else noComponents">
+          <div class="component" *ngFor="let component of control.testComponents; let idx = index">
+            <div class="component-title">
+              <span class="component-index">#{{ idx + 1 }}</span>
+              <span>{{ component.requirement }}</span>
+            </div>
+            <div class="component-meta">
+              <div>
+                <div class="label">Evidence types</div>
+                <div class="value">{{ formatEvidence(component) || '—' }}</div>
+              </div>
+              <div>
+                <div class="label">Acceptance</div>
+                <div class="value">{{ component.acceptanceCriteria || '—' }}</div>
+              </div>
+              <div>
+                <div class="label">Partial</div>
+                <div class="value">{{ component.partialCriteria || '—' }}</div>
+              </div>
+              <div>
+                <div class="label">Reject</div>
+                <div class="value">{{ component.rejectCriteria || '—' }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <ng-template #noComponents>
+          <p class="empty">No test components yet.</p>
+        </ng-template>
+      </div>
+
+      <div class="card" *ngIf="isAdmin">
+        <h5>Notes</h5>
+        <p class="muted">This view is read-only. Use the Control Knowledge Base page to edit mappings and test components.</p>
+      </div>
+    </ng-container>
+  </div>
+</section>

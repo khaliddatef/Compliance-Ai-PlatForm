@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IngestService } from '../ingest/ingest.service';
 import { AgentService } from '../agent/agent.service';
+import type { ControlCandidate } from '../agent/agent.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -252,12 +253,18 @@ export class UploadService {
       for (const doc of documents) {
         try {
           const excerpt = await this.getDocumentExcerpt(doc.id);
+          const candidates = await this.findControlCandidates(
+            String(standard || 'ISO').toUpperCase(),
+            doc.originalName || '',
+            excerpt,
+          );
           const analysis = await this.agent.analyzeCustomerDocument({
             standard: (standard as any) || 'ISO',
             fileName: doc.originalName,
             content: excerpt,
             customerVectorStoreId,
             language,
+            controlCandidates: candidates,
           });
 
           await this.prisma.document.update({
@@ -282,13 +289,15 @@ export class UploadService {
       });
     }
 
+    const documentsWithReferences = await this.attachFrameworkReferences(analyzedDocs);
+
     return {
       ok: true,
       conversationId,
       standard,
       kind,
       count: documents.length,
-      documents: analyzedDocs,
+      documents: documentsWithReferences,
       ingestResults,
       customerVectorStoreId,
     };
@@ -333,7 +342,8 @@ export class UploadService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return this.attachEvaluationHints(docs);
+    const withHints = await this.attachEvaluationHints(docs);
+    return this.attachFrameworkReferences(withHints);
   }
 
   async listAllForUser(user?: { id: string; role: string }) {
@@ -349,7 +359,8 @@ export class UploadService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return this.attachEvaluationHints(docs);
+    const withHints = await this.attachEvaluationHints(docs);
+    return this.attachFrameworkReferences(withHints);
   }
 
   getDocumentById(id: string) {
@@ -361,6 +372,52 @@ export class UploadService {
       where: { id },
       include: { conversation: { select: { userId: true } } },
     });
+  }
+
+  async reevaluateDocument(id: string, language?: 'ar' | 'en') {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        conversation: { select: { title: true, customerVectorStoreId: true } },
+        _count: { select: { chunks: true } },
+      },
+    });
+    if (!doc) return null;
+
+    const excerpt = await this.getDocumentExcerpt(doc.id);
+    const candidates = await this.findControlCandidates(
+      String(doc.standard || 'ISO').toUpperCase(),
+      doc.originalName || '',
+      excerpt,
+    );
+
+    const analysis = await this.agent.analyzeCustomerDocument({
+      standard: (doc.standard as any) || 'ISO',
+      fileName: doc.originalName,
+      content: excerpt,
+      customerVectorStoreId: doc.conversation?.customerVectorStoreId || undefined,
+      language,
+      controlCandidates: candidates,
+    });
+
+    const updated = await this.prisma.document.update({
+      where: { id: doc.id },
+      data: {
+        docType: analysis.docType,
+        matchControlId: analysis.matchControlId,
+        matchStatus: analysis.matchStatus,
+        matchNote: analysis.matchNote,
+        matchRecommendations: analysis.matchRecommendations,
+        reviewedAt: new Date(),
+      } as any,
+      include: {
+        conversation: { select: { title: true } },
+        _count: { select: { chunks: true } },
+      },
+    });
+
+    const withRefs = await this.attachFrameworkReferences([updated]);
+    return withRefs[0] || updated;
   }
 
   async deleteDocument(id: string) {
@@ -543,6 +600,84 @@ export class UploadService {
     });
   }
 
+  private async attachFrameworkReferences(docs: any[]) {
+    if (!docs?.length) return docs;
+
+    const docsWithControl = docs.filter((doc) => doc?.matchControlId && doc?.standard);
+    if (!docsWithControl.length) return docs;
+
+    const standards = Array.from(
+      new Set(docsWithControl.map((doc) => String(doc.standard || '').toUpperCase()).filter(Boolean)),
+    );
+
+    const activeByStandard = new Map<string, Set<string> | null>();
+    for (const standard of standards) {
+      activeByStandard.set(standard, await this.getActiveFrameworkSet(standard));
+    }
+
+    const controlCodes = Array.from(
+      new Set(docsWithControl.map((doc) => String(doc.matchControlId)).filter(Boolean)),
+    );
+    if (!controlCodes.length) return docs;
+
+    const controls = await this.prisma.controlDefinition.findMany({
+      where: {
+        controlCode: { in: controlCodes },
+        topic: { standard: { in: standards } },
+      },
+      select: {
+        controlCode: true,
+        topic: { select: { standard: true } },
+        frameworkMappings: { select: { framework: true, frameworkCode: true } },
+      },
+    });
+
+    const controlMap = new Map<string, { frameworkMappings: Array<{ framework: string; frameworkCode: string }> }>();
+    for (const control of controls) {
+      const standard = String(control.topic?.standard || '').toUpperCase();
+      if (!standard) continue;
+      controlMap.set(`${standard}::${control.controlCode}`, {
+        frameworkMappings: control.frameworkMappings || [],
+      });
+    }
+
+    return docs.map((doc) => {
+      const standard = String(doc.standard || '').toUpperCase();
+      const controlCode = String(doc.matchControlId || '');
+      if (!standard || !controlCode) return doc;
+
+      const control = controlMap.get(`${standard}::${controlCode}`);
+      if (!control) return doc;
+
+      const active = activeByStandard.get(standard);
+      let mappings = control.frameworkMappings || [];
+      if (active) {
+        mappings = mappings.filter((mapping) => active.has(mapping.framework));
+      }
+
+      if (!mappings.length) {
+        return { ...doc, frameworkReferences: [] };
+      }
+
+      const grouped = new Map<string, Set<string>>();
+      for (const mapping of mappings) {
+        const name = String(mapping.framework || '').trim();
+        if (!name) continue;
+        const code = String(mapping.frameworkCode || '').trim();
+        const set = grouped.get(name) || new Set<string>();
+        if (code) set.add(code);
+        grouped.set(name, set);
+      }
+
+      const references = Array.from(grouped.entries()).map(([name, codes]) => {
+        const codeList = Array.from(codes.values()).filter(Boolean);
+        return codeList.length ? `${name} ${codeList.join(', ')}` : name;
+      });
+
+      return { ...doc, frameworkReferences: references };
+    });
+  }
+
   private defaultMatchNote(status: string) {
     switch (status) {
       case 'COMPLIANT':
@@ -569,5 +704,120 @@ export class UploadService {
     if (!chunks.length) return '';
     const joined = chunks.map((chunk) => chunk.text).join('\n');
     return joined.slice(0, 6000);
+  }
+
+  private normalizeSearchText(value: string) {
+    return value
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[_\-]+/g, ' ')
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private extractSearchTokens(value: string) {
+    const normalized = this.normalizeSearchText(value).toLowerCase();
+    const stopwords = new Set([
+      'policy',
+      'procedure',
+      'document',
+      'template',
+      'report',
+      'assessment',
+      'plan',
+      'guide',
+      'manual',
+      'standard',
+      'framework',
+      'control',
+      'controls',
+      'version',
+    ]);
+    const tokens = normalized
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 3 && !stopwords.has(token));
+    return Array.from(new Set(tokens));
+  }
+
+  private async findControlCandidates(
+    standard: string,
+    fileName: string,
+    content?: string | null,
+  ): Promise<ControlCandidate[]> {
+    let tokens = this.extractSearchTokens(fileName);
+    if (!tokens.length && content) {
+      tokens = this.extractSearchTokens(content.slice(0, 180));
+    }
+    if (!tokens.length) return [];
+
+    const orFilters = tokens.flatMap((token) => [
+      { title: { contains: token } },
+      { description: { contains: token } },
+      { controlCode: { contains: token } },
+      { topic: { title: { contains: token } } },
+    ]);
+
+    const results = await this.prisma.controlDefinition.findMany({
+      where: { topic: { standard }, OR: orFilters },
+      select: {
+        controlCode: true,
+        title: true,
+        description: true,
+        isoMappings: true,
+        topic: { select: { title: true } },
+        frameworkMappings: { select: { framework: true } },
+      },
+      take: 50,
+    });
+
+    const activeFrameworks = await this.getActiveFrameworkSet(standard);
+    const filtered = activeFrameworks
+      ? results.filter((control) => this.isControlAllowed(control, activeFrameworks))
+      : results;
+
+    const scored = filtered
+      .map((control) => {
+        const haystack = [
+          control.controlCode,
+          control.title,
+          control.description || '',
+          control.topic?.title || '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        const score = tokens.reduce((acc, token) => acc + (haystack.includes(token) ? 1 : 0), 0);
+        return { control, score };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.control.title.localeCompare(b.control.title));
+
+    return scored.slice(0, 8).map(({ control }) => ({
+      controlCode: control.controlCode,
+      title: control.title,
+      isoMappings: Array.isArray(control.isoMappings)
+        ? (control.isoMappings as unknown[]).map((value) => String(value))
+        : [],
+    }));
+  }
+
+  private async getActiveFrameworkSet(standard: string) {
+    const frameworks = await this.prisma.framework.findMany({
+      where: { standard },
+      select: { name: true, status: true },
+    });
+    if (!frameworks.length) return null;
+    const enabled = frameworks.filter((item) => item.status === 'enabled').map((item) => item.name);
+    return new Set(enabled);
+  }
+
+  private isControlAllowed(
+    control: { frameworkMappings?: Array<{ framework: string }> },
+    active: Set<string>,
+  ) {
+    if (!active.size) return false;
+    const mappings = control.frameworkMappings || [];
+    if (!mappings.length) return true;
+    return mappings.some((mapping) => active.has(mapping.framework));
   }
 }

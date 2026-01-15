@@ -47,29 +47,45 @@
       </div>
     </div>
 
+    <div class="table skeleton-table" *ngIf="loading">
+      <div class="row skeleton-row" *ngFor="let _ of [1,2,3,4,5,6]">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-pill"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
+      </div>
+    </div>
+
     <div class="table" *ngIf="!loading && visibleFiles.length">
       <div class="row header">
         <span>File</span>
         <span>Framework</span>
         <span>Status</span>
         <span>Uploaded</span>
-        <span>Control</span>
-        <span>Evidence Match</span>
+        <span>Framework references</span>
         <span>Size</span>
         <span>Action</span>
       </div>
       <div class="row" *ngFor="let file of visibleFiles">
         <div class="file-cell">
-          <span class="file-name">{{ file.name }}</span>
+          <span class="file-name" [title]="file.name">{{ file.name }}</span>
           <span class="file-meta" *ngIf="file.chatTitle">Chat: {{ file.chatTitle }}</span>
         </div>
-        <span>{{ file.framework }}</span>
-        <span class="status" [ngClass]="file.statusClass">{{ file.status }}</span>
+        <span class="framework-cell" [title]="file.framework">{{ file.framework }}</span>
+        <span class="status-pill" [ngClass]="file.statusClass">{{ file.status }}</span>
         <span class="date">{{ file.uploadedAt | date: 'MMM d, y' }}</span>
-        <span class="control">{{ file.controlId }}</span>
-        <div class="match-cell">
-          <span class="match-pill" [ngClass]="file.matchClass">{{ file.matchLabel }}</span>
-          <span class="match-note" [title]="file.matchNote">{{ file.matchNote }}</span>
+        <div class="reference-cell">
+          <ng-container *ngIf="file.frameworkReferences.length; else noReference">
+            <span class="reference-item" *ngFor="let reference of file.frameworkReferences" [title]="reference">
+              {{ reference }}
+            </span>
+          </ng-container>
+          <ng-template #noReference>
+            <span class="reference-empty">—</span>
+          </ng-template>
         </div>
         <span>{{ file.size }}</span>
         <div class="action-group">
@@ -79,7 +95,6 @@
       </div>
     </div>
 
-    <p *ngIf="loading" class="empty">Loading uploads…</p>
     <p *ngIf="!loading && !visibleFiles.length && !error" class="empty">No uploads yet.</p>
     <p *ngIf="error" class="empty error">{{ error }}</p>
   </div>

@@ -1,11 +1,14 @@
 export type MessageRole = 'user' | 'assistant';
 export type MessageKind = 'text' | 'action';
 
-export type MessageActionId = 'save' | 'partial' | 'fix' | 'skip';
+export type MessageActionId = 'save' | 'partial' | 'fix' | 'skip' | 'reevaluate';
 
 export type MessageAction = {
   id: MessageActionId;
   label: string;
+  meta?: {
+    documentId?: string;
+  };
 };
 
 export type MessageReference =

@@ -1,22 +1,46 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { ApiService, DashboardResponse } from '../../services/api.service';
 
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule],
   templateUrl: './dashboard-page.component.html',
   styleUrl: './dashboard-page.component.css'
 })
 export class DashboardPageComponent implements OnInit {
   stats: { label: string; value: string; note: string }[] = [];
-  riskRows: { control: string; owner: string; status: string; due: string }[] = [];
+  riskRows: {
+    control: string;
+    owner: string;
+    status: string;
+    due: string;
+    controlDbId?: string | null;
+    title?: string | null;
+  }[] = [];
+  riskCoverageRows: {
+    id: string;
+    title: string;
+    coverage: string;
+    controlCount: number;
+    controlCodes: string[];
+  }[] = [];
   activityRows: { item: string; by: string; time: string }[] = [];
+  evidenceHealth = { high: 0, medium: 0, low: 0, score: 0, total: 0 };
+  auditReadiness = { percent: 0, acceptedControls: 0, totalControls: 0, missingPolicies: 0, missingLogs: 0 };
+  submissionReadiness = { percent: 0, submitted: 0, reviewed: 0 };
   loading = true;
   error = '';
+  riskPopoverId: string | null = null;
 
-  constructor(private readonly api: ApiService) {}
+  constructor(
+    private readonly api: ApiService,
+    private readonly cdr: ChangeDetectorRef,
+    private readonly router: Router,
+  ) {}
 
   ngOnInit() {
     this.refresh();
@@ -25,6 +49,8 @@ export class DashboardPageComponent implements OnInit {
   refresh() {
     this.loading = true;
     this.error = '';
+    this.riskPopoverId = null;
+    this.cdr.markForCheck();
 
     this.api.getDashboard('ISO').subscribe({
       next: (res: DashboardResponse) => {
@@ -33,8 +59,10 @@ export class DashboardPageComponent implements OnInit {
         const evaluated = metrics?.evaluatedControls ?? 0;
         const compliant = metrics?.compliant ?? 0;
         const partial = metrics?.partial ?? 0;
-        const missing = metrics?.missing ?? 0;
-        const awaiting = metrics?.awaitingReview ?? 0;
+
+        this.evidenceHealth = metrics?.evidenceHealth || this.evidenceHealth;
+        this.auditReadiness = metrics?.auditReadiness || this.auditReadiness;
+        this.submissionReadiness = metrics?.submissionReadiness || this.submissionReadiness;
 
         this.stats = [
           {
@@ -43,19 +71,19 @@ export class DashboardPageComponent implements OnInit {
             note: `${compliant + partial}/${evaluated} controls reviewed`,
           },
           {
-            label: 'Open Gaps',
-            value: `${missing}`,
-            note: `${partial} partial`,
+            label: 'Evidence Health Score',
+            value: `${this.evidenceHealth.score}%`,
+            note: `High ${this.evidenceHealth.high} · Medium ${this.evidenceHealth.medium} · Low ${this.evidenceHealth.low}`,
           },
           {
-            label: 'Evidence Items',
-            value: `${metrics?.evidenceItems ?? 0}`,
-            note: `${awaiting} awaiting review`,
+            label: 'Audit Pack Readiness',
+            value: `${this.auditReadiness.percent}%`,
+            note: `Missing policies ${this.auditReadiness.missingPolicies} · Missing logs ${this.auditReadiness.missingLogs}`,
           },
           {
-            label: 'Last Review',
-            value: this.formatRelative(metrics?.lastReviewAt ?? null),
-            note: res?.standard === 'ISO' ? 'ISO 27001' : res?.standard || 'All',
+            label: 'Submission Readiness',
+            value: `${this.submissionReadiness.percent}%`,
+            note: `${this.submissionReadiness.submitted}/${this.submissionReadiness.reviewed} submitted`,
           },
         ];
 
@@ -64,6 +92,16 @@ export class DashboardPageComponent implements OnInit {
           owner: 'Unassigned',
           status: this.mapRiskStatus(row.status),
           due: this.formatShortDate(row.updatedAt),
+          controlDbId: row.controlDbId || null,
+          title: row.title || null,
+        }));
+
+        this.riskCoverageRows = (res?.riskCoverage || []).map((row) => ({
+          id: row.id,
+          title: row.title,
+          coverage: `${row.coveragePercent}%`,
+          controlCount: row.controlCount,
+          controlCodes: row.controlCodes || [],
         }));
 
         this.activityRows = (res?.activity || []).map((item) => ({
@@ -73,6 +111,7 @@ export class DashboardPageComponent implements OnInit {
         }));
 
         this.loading = false;
+        this.cdr.markForCheck();
       },
       error: (err) => {
         if (err?.status === 403) {
@@ -81,6 +120,7 @@ export class DashboardPageComponent implements OnInit {
           this.error = 'Unable to load dashboard data.';
         }
         this.loading = false;
+        this.cdr.markForCheck();
       },
     });
   }
@@ -90,6 +130,15 @@ export class DashboardPageComponent implements OnInit {
     if (value === 'NOT_COMPLIANT') return 'Missing';
     if (value === 'PARTIAL') return 'Partial';
     return 'Unknown';
+  }
+
+  toggleRiskPopover(id: string) {
+    this.riskPopoverId = this.riskPopoverId === id ? null : id;
+  }
+
+  openControl(row: { controlDbId?: string | null }) {
+    if (!row?.controlDbId) return;
+    this.router.navigate(['/control-kb', row.controlDbId], { queryParams: { standard: 'ISO' } });
   }
 
   private formatShortDate(value: string | null) {

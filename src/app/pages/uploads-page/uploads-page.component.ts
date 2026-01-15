@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, UploadDocumentRecord } from '../../services/api.service';
 
@@ -7,16 +7,12 @@ type UploadRow = {
   id: string;
   name: string;
   framework: string;
+  frameworkReferences: string[];
   status: string;
   size: string;
   sizeBytes: number;
   uploadedAt: number;
   chatTitle?: string;
-  controlId: string;
-  matchStatus: string;
-  matchLabel: string;
-  matchClass: string;
-  matchNote: string;
   statusClass: string;
 };
 
@@ -36,7 +32,7 @@ export class UploadsPageComponent implements OnInit {
   statusFilter = 'all';
   sortMode = 'recent';
 
-  constructor(private readonly api: ApiService) {}
+  constructor(private readonly api: ApiService, private readonly cdr: ChangeDetectorRef) {}
 
   ngOnInit() {
     this.refresh();
@@ -45,6 +41,7 @@ export class UploadsPageComponent implements OnInit {
   refresh() {
     this.loading = true;
     this.error = '';
+    this.cdr.markForCheck();
 
     this.api.listAllUploads().subscribe({
       next: (res) => {
@@ -53,10 +50,12 @@ export class UploadsPageComponent implements OnInit {
           .map((doc) => this.mapDoc(doc))
           .sort((a, b) => b.uploadedAt - a.uploadedAt);
         this.loading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.error = 'Unable to load uploaded files right now.';
         this.loading = false;
+        this.cdr.markForCheck();
       },
     });
   }
@@ -66,9 +65,11 @@ export class UploadsPageComponent implements OnInit {
     this.api.deleteUpload(file.id).subscribe({
       next: () => {
         this.files = this.files.filter((item) => item.id !== file.id);
+        this.cdr.markForCheck();
       },
       error: () => {
         this.error = 'Unable to delete this file right now.';
+        this.cdr.markForCheck();
       },
     });
   }
@@ -94,9 +95,7 @@ export class UploadsPageComponent implements OnInit {
           file.framework,
           file.status,
           file.chatTitle || '',
-          file.controlId,
-          file.matchLabel,
-          file.matchNote
+          file.frameworkReferences.join(' ')
         ]
           .join(' ')
           .toLowerCase();
@@ -129,6 +128,7 @@ export class UploadsPageComponent implements OnInit {
       },
       error: () => {
         this.error = 'Unable to download this file right now.';
+        this.cdr.markForCheck();
       },
     });
   }
@@ -138,26 +138,21 @@ export class UploadsPageComponent implements OnInit {
     const sizeBytes = Number(doc.sizeBytes ?? 0);
     const framework = this.standardLabel(doc.standard);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
-    const matchStatus = String(doc.matchStatus || 'PENDING').toUpperCase();
-    const matchMeta = this.mapMatchStatus(matchStatus);
-    const matchNote = doc.matchNote || matchMeta.note;
-    const controlId = doc.matchControlId ? String(doc.matchControlId) : '—';
     const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
+    const frameworkReferences = Array.isArray(doc.frameworkReferences)
+      ? doc.frameworkReferences.filter((ref) => Boolean(ref))
+      : [];
 
     return {
       id: doc.id,
       name: doc.originalName || 'Document',
       framework,
+      frameworkReferences,
       status: statusMeta.label,
       size,
       sizeBytes,
       uploadedAt,
       chatTitle: doc?.conversation?.title,
-      controlId,
-      matchStatus,
-      matchLabel: matchMeta.label,
-      matchClass: matchMeta.className,
-      matchNote,
       statusClass: statusMeta.className,
     };
   }
@@ -175,24 +170,6 @@ export class UploadsPageComponent implements OnInit {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
-
-  private mapMatchStatus(status: string) {
-    switch (status) {
-      case 'COMPLIANT':
-        return { label: 'Matched', className: 'match-ok', note: 'Evidence appears to match this control.' };
-      case 'PARTIAL':
-        return { label: 'Partial', className: 'match-partial', note: 'Evidence partially matches this control.' };
-      case 'NOT_COMPLIANT':
-        return { label: 'Missing', className: 'match-bad', note: 'Evidence does not satisfy this control.' };
-      case 'UNKNOWN':
-        return { label: 'Unknown', className: 'match-unknown', note: 'Insufficient evidence to assess.' };
-      case 'UNMATCHED':
-        return { label: 'Not matched', className: 'match-pending', note: 'Not referenced in evidence review.' };
-      case 'PENDING':
-      default:
-        return { label: 'Pending', className: 'match-pending', note: 'No evidence review yet.' };
-    }
   }
 
   private mapFileStatus(submittedAt?: string | null, reviewedAt?: string | null) {

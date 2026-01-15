@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ControlContext } from '../agent/agent.service';
 
@@ -18,16 +18,33 @@ const toIsoVariants = (value: string) => {
 export class ControlKbService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listTopics(standard: string) {
+  async listTopics(standard: string, framework?: string | null) {
     const topics = await this.prisma.controlTopic.findMany({
       where: { standard },
       orderBy: [{ priority: 'desc' }, { title: 'asc' }],
       include: { _count: { select: { controls: true } } },
     });
 
+    if (!framework) {
+      return topics.map((topic) => ({
+        ...topic,
+        controlCount: topic._count.controls,
+      }));
+    }
+
+    const grouped = await this.prisma.controlDefinition.groupBy({
+      by: ['topicId'],
+      where: {
+        topic: { standard },
+        frameworkMappings: { some: { framework } },
+      },
+      _count: { _all: true },
+    });
+    const countMap = new Map(grouped.map((row) => [row.topicId, row._count._all]));
+
     return topics.map((topic) => ({
       ...topic,
-      controlCount: topic._count.controls,
+      controlCount: countMap.get(topic.id) || 0,
     }));
   }
 
@@ -81,26 +98,155 @@ export class ControlKbService {
     standard: string;
     topicId?: string | null;
     query?: string | null;
+    status?: string | null;
+    ownerRole?: string | null;
+    evidenceType?: string | null;
+    isoMapping?: string | null;
+    framework?: string | null;
     page?: number;
     pageSize?: number;
+    includeDisabled?: boolean;
   }) {
-    const where: any = params.topicId
-      ? { topicId: params.topicId }
-      : { topic: { standard: params.standard } };
-
-    if (params.query) {
-      const q = params.query.trim();
-      if (q) {
-        where.OR = [
-          { controlCode: { contains: q, mode: 'insensitive' } },
-          { title: { contains: q, mode: 'insensitive' } },
-        ];
-      }
+    const includeDisabled = params.includeDisabled === true;
+    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet(params.standard);
+    if (!includeDisabled && activeFrameworks && activeFrameworks.size === 0) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: Math.min(Math.max(params.pageSize || 10, 1), 500),
+      };
+    }
+    const filters: any[] = [{ topic: { standard: params.standard } }];
+    if (params.topicId) {
+      filters.push({
+        OR: [
+          { topicId: params.topicId },
+          { topicMappings: { some: { topicId: params.topicId } } },
+        ],
+      });
+    }
+    const status = includeDisabled ? params.status?.trim().toLowerCase() : null;
+    if (status && status !== 'all') {
+      filters.push({ status });
+    }
+    if (!includeDisabled) {
+      filters.push({ status: 'enabled' });
+    }
+    const ownerRole = params.ownerRole?.trim();
+    if (ownerRole) {
+      filters.push({ ownerRole: { contains: ownerRole } });
+    }
+    const framework = params.framework?.trim();
+    if (framework) {
+      filters.push({ frameworkMappings: { some: { framework } } });
+    }
+    if (!includeDisabled && activeFrameworks) {
+      filters.push({ frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } });
+    }
+    const query = params.query?.trim();
+    if (query) {
+      filters.push({
+        OR: [
+          { controlCode: { contains: query } },
+          { title: { contains: query } },
+        ],
+      });
     }
 
+    const where = filters.length > 1 ? { AND: filters } : filters[0];
     const page = Math.max(1, params.page || 1);
-    const pageSize = Math.min(Math.max(params.pageSize || 10, 1), 10);
+    const pageSize = Math.min(Math.max(params.pageSize || 10, 1), 500);
     const skip = (page - 1) * pageSize;
+    const isoMapping = params.isoMapping?.trim();
+    const evidenceType = params.evidenceType?.trim();
+    const needsEvidenceFilter = Boolean(evidenceType);
+    const needsIsoFilter = Boolean(isoMapping);
+    const frameworkWhere = !includeDisabled && activeFrameworks
+      ? { framework: { in: Array.from(activeFrameworks) } }
+      : undefined;
+
+    const baseSelect: any = {
+      id: true,
+      topicId: true,
+      controlCode: true,
+      title: true,
+      description: true,
+      isoMappings: true,
+      topicMappings: {
+        select: {
+          id: true,
+          topicId: true,
+          relationshipType: true,
+          topic: { select: { id: true, title: true } },
+        },
+        orderBy: [{ relationshipType: 'asc' }, { createdAt: 'asc' }],
+      },
+      frameworkMappings: {
+        where: frameworkWhere,
+        select: {
+          id: true,
+          frameworkId: true,
+          framework: true,
+          frameworkCode: true,
+          frameworkRef: { select: { externalId: true, name: true } },
+        },
+      },
+      ownerRole: true,
+      status: true,
+      sortOrder: true,
+      _count: { select: { testComponents: true } },
+      topic: { select: { title: true, standard: true } },
+    };
+
+    if (needsEvidenceFilter) {
+      baseSelect.testComponents = { select: { evidenceTypes: true } };
+    }
+
+    if (needsEvidenceFilter || needsIsoFilter) {
+      const items = await this.prisma.controlDefinition.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
+        select: baseSelect,
+      });
+
+      let filtered = items;
+
+      if (needsIsoFilter && isoMapping) {
+        const variants = toIsoVariants(isoMapping);
+        filtered = filtered.filter((control) => {
+          const mappings = Array.isArray(control.isoMappings)
+            ? (control.isoMappings as unknown[]).map((entry) => String(entry))
+            : [];
+          const code = String((control as { controlCode?: string }).controlCode || '');
+          return mappings.some((value) => variants.includes(value)) || variants.includes(code);
+        });
+      }
+
+      if (needsEvidenceFilter && evidenceType) {
+        const needle = evidenceType.toLowerCase();
+        filtered = filtered.filter((control) => {
+          const evidence = this.collectEvidence((control as any).testComponents || []);
+          return evidence.some((item) => item.toLowerCase().includes(needle));
+        });
+      }
+
+      const total = filtered.length;
+      const paged = filtered.slice(skip, skip + pageSize).map((control) => {
+        if ('testComponents' in control) {
+          const { testComponents, ...rest } = control as any;
+          return rest;
+        }
+        return control;
+      });
+
+      return {
+        items: paged,
+        total,
+        page,
+        pageSize,
+      };
+    }
 
     const [total, items] = await this.prisma.$transaction([
       this.prisma.controlDefinition.count({ where }),
@@ -109,18 +255,7 @@ export class ControlKbService {
         orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
         skip,
         take: pageSize,
-        select: {
-          id: true,
-          topicId: true,
-          controlCode: true,
-          title: true,
-          description: true,
-          isoMappings: true,
-          ownerRole: true,
-          status: true,
-          sortOrder: true,
-          _count: { select: { testComponents: true } },
-        },
+        select: baseSelect,
       }),
     ]);
 
@@ -132,9 +267,182 @@ export class ControlKbService {
     };
   }
 
+  async listFrameworks(standard: string, includeDisabled = true) {
+    const frameworks = await this.prisma.framework.findMany({
+      where: { standard },
+    });
+
+    const mappings = await this.prisma.controlFrameworkMapping.findMany({
+      where: { control: { topic: { standard } } },
+      select: {
+        framework: true,
+        controlId: true,
+        control: { select: { topicId: true } },
+      },
+    });
+
+    const known = new Set(frameworks.map((item) => item.name));
+    const missing = Array.from(new Set(mappings.map((item) => item.framework))).filter((name) => name && !known.has(name));
+    if (missing.length) {
+      await this.prisma.framework.createMany({
+        data: missing.map((name) => ({ standard, name, status: 'enabled' })),
+      });
+    }
+
+    const refreshed = missing.length
+      ? await this.prisma.framework.findMany({ where: { standard } })
+      : frameworks;
+    const visible = includeDisabled ? refreshed : refreshed.filter((item) => item.status === 'enabled');
+
+    const summary = new Map<string, { controlIds: Set<string>; topicIds: Set<string> }>();
+    for (const mapping of mappings) {
+      const label = String(mapping.framework || '').trim();
+      if (!label) continue;
+      let entry = summary.get(label);
+      if (!entry) {
+        entry = { controlIds: new Set(), topicIds: new Set() };
+        summary.set(label, entry);
+      }
+      entry.controlIds.add(mapping.controlId);
+      if (mapping.control?.topicId) {
+        entry.topicIds.add(mapping.control.topicId);
+      }
+    }
+
+    return visible
+      .map((framework) => {
+        const stats = summary.get(framework.name);
+        const frameworkId = framework.externalId || framework.name;
+        return {
+          id: framework.id,
+          frameworkId,
+          framework: framework.name,
+          status: framework.status,
+          controlCount: stats?.controlIds.size || 0,
+          topicCount: stats?.topicIds.size || 0,
+        };
+      })
+      .sort((a, b) => {
+        const aActive = a.status === 'enabled';
+        const bActive = b.status === 'enabled';
+        if (aActive !== bActive) return aActive ? -1 : 1;
+        return (a.frameworkId || a.framework).localeCompare(b.frameworkId || b.framework);
+      });
+  }
+
+  async updateFramework(
+    id: string,
+    input: {
+      name?: string;
+      status?: string;
+    },
+  ) {
+    const updated = await this.prisma.framework.update({
+      where: { id },
+      data: {
+        name: input.name ?? undefined,
+        status: input.status ?? undefined,
+      },
+    });
+    const counts = await this.getFrameworkCounts(updated.standard, updated.name);
+    return {
+      id: updated.id,
+      frameworkId: updated.externalId || updated.name,
+      framework: updated.name,
+      status: updated.status,
+      controlCount: counts.controlCount,
+      topicCount: counts.topicCount,
+    };
+  }
+
+  async createFramework(input: { standard: string; name: string; status?: string }) {
+    const name = input.name.trim();
+    const standard = input.standard.trim();
+
+    const existing = await this.prisma.framework.findUnique({
+      where: { standard_name: { standard, name } },
+    });
+    if (existing) {
+      const counts = await this.getFrameworkCounts(existing.standard, existing.name);
+      return {
+        id: existing.id,
+        frameworkId: existing.externalId || existing.name,
+        framework: existing.name,
+        status: existing.status,
+        controlCount: counts.controlCount,
+        topicCount: counts.topicCount,
+      };
+    }
+
+    const created = await this.prisma.framework.create({
+      data: {
+        standard,
+        name,
+        status: input.status || 'enabled',
+      },
+    });
+    const counts = await this.getFrameworkCounts(created.standard, created.name);
+    return {
+      id: created.id,
+      frameworkId: created.externalId || created.name,
+      framework: created.name,
+      status: created.status,
+      controlCount: counts.controlCount,
+      topicCount: counts.topicCount,
+    };
+  }
+
+  private async getFrameworkCounts(standard: string, framework: string) {
+    const mappings = await this.prisma.controlFrameworkMapping.findMany({
+      where: {
+        framework,
+        control: { topic: { standard } },
+      },
+      select: {
+        controlId: true,
+        control: { select: { topicId: true } },
+      },
+    });
+
+    const controlIds = new Set<string>();
+    const topicIds = new Set<string>();
+    for (const mapping of mappings) {
+      controlIds.add(mapping.controlId);
+      if (mapping.control?.topicId) {
+        topicIds.add(mapping.control.topicId);
+      }
+    }
+    return { controlCount: controlIds.size, topicCount: topicIds.size };
+  }
+
+  private async getActiveFrameworkSet(standard: string) {
+    const frameworks = await this.prisma.framework.findMany({
+      where: { standard },
+      select: { name: true, status: true },
+    });
+    if (!frameworks.length) return null;
+    const enabled = frameworks.filter((item) => item.status === 'enabled').map((item) => item.name);
+    return new Set(enabled);
+  }
+
   async listControlCatalog(standard: string) {
+    const activeFrameworks = await this.getActiveFrameworkSet(standard);
+    if (activeFrameworks && activeFrameworks.size === 0) {
+      return [];
+    }
+
+    const where = activeFrameworks
+      ? {
+          topic: { standard },
+          OR: [
+            { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } },
+            { frameworkMappings: { none: {} } },
+          ],
+        }
+      : { topic: { standard } };
+
     const controls = await this.prisma.controlDefinition.findMany({
-      where: { topic: { standard } },
+      where,
       orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
       select: {
         controlCode: true,
@@ -150,11 +458,50 @@ export class ControlKbService {
     }));
   }
 
-  async getControl(id: string) {
-    return this.prisma.controlDefinition.findUnique({
+  async getControl(id: string, includeMappings = false) {
+    const control = await this.prisma.controlDefinition.findUnique({
       where: { id },
-      include: { testComponents: { orderBy: { sortOrder: 'asc' } }, topic: true },
+      include: {
+        testComponents: { orderBy: { sortOrder: 'asc' } },
+        topic: true,
+        topicMappings: {
+          select: {
+            id: true,
+            topicId: true,
+            relationshipType: true,
+            topic: { select: { id: true, title: true } },
+          },
+          orderBy: [{ relationshipType: 'asc' }, { createdAt: 'asc' }],
+        },
+        frameworkMappings: includeMappings
+          ? {
+              orderBy: [{ framework: 'asc' }, { frameworkCode: 'asc' }],
+              include: {
+                frameworkRef: { select: { externalId: true, name: true } },
+              },
+            }
+          : false,
+      },
     });
+
+    if (!control) return null;
+    const hasPrimary = control.topicMappings?.some(
+      (mapping) => mapping.relationshipType === 'PRIMARY' && mapping.topicId === control.topicId,
+    );
+    if (!hasPrimary) {
+      await this.prisma.controlTopicMapping.upsert({
+        where: { controlId_topicId: { controlId: control.id, topicId: control.topicId } },
+        update: { relationshipType: 'PRIMARY' },
+        create: {
+          controlId: control.id,
+          topicId: control.topicId,
+          relationshipType: 'PRIMARY',
+        },
+      });
+      return this.getControl(control.id, includeMappings);
+    }
+
+    return control;
   }
 
   async createControl(input: {
@@ -167,23 +514,36 @@ export class ControlKbService {
     status?: string | null;
     sortOrder?: number | null;
   }) {
-    return this.prisma.controlDefinition.create({
-      data: {
-        topicId: input.topicId,
-        controlCode: input.controlCode,
-        title: input.title,
-        description: input.description || null,
-        isoMappings: input.isoMappings ?? undefined,
-        ownerRole: input.ownerRole || null,
-        status: input.status || 'enabled',
-        sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : 0,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const control = await tx.controlDefinition.create({
+        data: {
+          topicId: input.topicId,
+          controlCode: input.controlCode,
+          title: input.title,
+          description: input.description || null,
+          isoMappings: input.isoMappings ?? undefined,
+          ownerRole: input.ownerRole || null,
+          status: input.status || 'enabled',
+          sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : 0,
+        },
+      });
+
+      await tx.controlTopicMapping.create({
+        data: {
+          controlId: control.id,
+          topicId: control.topicId,
+          relationshipType: 'PRIMARY',
+        },
+      });
+
+      return control;
     });
   }
 
   async updateControl(
     id: string,
     input: {
+      topicId?: string;
       controlCode?: string;
       title?: string;
       description?: string | null;
@@ -193,18 +553,102 @@ export class ControlKbService {
       sortOrder?: number | null;
     },
   ) {
-    return this.prisma.controlDefinition.update({
-      where: { id },
-      data: {
-        controlCode: input.controlCode,
-        title: input.title,
-        description: input.description ?? undefined,
-        isoMappings: input.isoMappings ?? undefined,
-        ownerRole: input.ownerRole ?? undefined,
-        status: input.status ?? undefined,
-        sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : undefined,
+    return this.prisma.$transaction(async (tx) => {
+      const control = await tx.controlDefinition.update({
+        where: { id },
+        data: {
+          topicId: input.topicId ?? undefined,
+          controlCode: input.controlCode,
+          title: input.title,
+          description: input.description ?? undefined,
+          isoMappings: input.isoMappings ?? undefined,
+          ownerRole: input.ownerRole ?? undefined,
+          status: input.status ?? undefined,
+          sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : undefined,
+        },
+      });
+
+      if (input.topicId) {
+        await tx.controlTopicMapping.updateMany({
+          where: { controlId: id, relationshipType: 'PRIMARY' },
+          data: { relationshipType: 'RELATED' },
+        });
+
+        await tx.controlTopicMapping.upsert({
+          where: { controlId_topicId: { controlId: id, topicId: input.topicId } },
+          update: { relationshipType: 'PRIMARY' },
+          create: {
+            controlId: id,
+            topicId: input.topicId,
+            relationshipType: 'PRIMARY',
+          },
+        });
+      }
+
+      return control;
+    });
+  }
+
+  async addControlTopicMapping(controlId: string, topicId: string, relationshipType: 'PRIMARY' | 'RELATED') {
+    const control = await this.prisma.controlDefinition.findUnique({
+      where: { id: controlId },
+      select: { id: true, topicId: true, topic: { select: { standard: true } } },
+    });
+    if (!control) throw new BadRequestException('Control not found');
+
+    const topic = await this.prisma.controlTopic.findUnique({
+      where: { id: topicId },
+      select: { id: true, standard: true },
+    });
+    if (!topic) throw new BadRequestException('Topic not found');
+    if (control.topic?.standard && control.topic.standard !== topic.standard) {
+      throw new BadRequestException('Topic standard mismatch');
+    }
+
+    if (relationshipType === 'PRIMARY') {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.controlDefinition.update({
+          where: { id: controlId },
+          data: { topicId },
+        });
+        await tx.controlTopicMapping.updateMany({
+          where: { controlId, relationshipType: 'PRIMARY' },
+          data: { relationshipType: 'RELATED' },
+        });
+        await tx.controlTopicMapping.upsert({
+          where: { controlId_topicId: { controlId, topicId } },
+          update: { relationshipType: 'PRIMARY' },
+          create: { controlId, topicId, relationshipType: 'PRIMARY' },
+        });
+        return this.getControl(controlId, true);
+      });
+    }
+
+    await this.prisma.controlTopicMapping.upsert({
+      where: { controlId_topicId: { controlId, topicId } },
+      update: {},
+      create: {
+        controlId,
+        topicId,
+        relationshipType: 'RELATED',
       },
     });
+
+    return this.getControl(controlId, true);
+  }
+
+  async removeControlTopicMapping(controlId: string, topicId: string) {
+    const mapping = await this.prisma.controlTopicMapping.findUnique({
+      where: { controlId_topicId: { controlId, topicId } },
+      select: { id: true, relationshipType: true },
+    });
+    if (!mapping) return this.getControl(controlId, true);
+    if (mapping.relationshipType === 'PRIMARY') {
+      throw new BadRequestException('Cannot remove primary topic mapping');
+    }
+
+    await this.prisma.controlTopicMapping.delete({ where: { id: mapping.id } });
+    return this.getControl(controlId, true);
   }
 
   async deleteControl(id: string) {
@@ -272,11 +716,16 @@ export class ControlKbService {
         controlCode,
         topic: { standard: params.standard },
       },
-      include: { testComponents: true },
+      include: { testComponents: true, frameworkMappings: { select: { framework: true } } },
     });
 
     const control = direct || (await this.findByIsoMapping(controlCode, params.standard));
     if (!control) return null;
+
+    const activeFrameworks = await this.getActiveFrameworkSet(params.standard);
+    if (activeFrameworks && !this.isControlAllowed(control, activeFrameworks)) {
+      return null;
+    }
 
     const evidence = this.collectEvidence(control.testComponents || []);
 
@@ -293,7 +742,7 @@ export class ControlKbService {
     const variants = toIsoVariants(controlCode);
     const controls = await this.prisma.controlDefinition.findMany({
       where: { topic: { standard } },
-      include: { testComponents: true },
+      include: { testComponents: true, frameworkMappings: { select: { framework: true } } },
     });
 
     return (
@@ -302,6 +751,13 @@ export class ControlKbService {
         return mappings.some((value) => variants.includes(String(value)));
       }) || null
     );
+  }
+
+  private isControlAllowed(control: { frameworkMappings?: Array<{ framework: string }> }, active: Set<string>) {
+    if (!active.size) return false;
+    const mappings = control.frameworkMappings || [];
+    if (!mappings.length) return true;
+    return mappings.some((mapping) => active.has(mapping.framework));
   }
 
   private collectEvidence(testComponents: Array<{ evidenceTypes: unknown }>) {

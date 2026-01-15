@@ -90,6 +90,21 @@ export class UploadController {
     return { ok: true };
   }
 
+  @Post(':id/reevaluate')
+  async reevaluate(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('language') language?: 'ar' | 'en',
+  ) {
+    const doc = await this.uploadService.getDocumentWithOwner(id);
+    if (!doc) throw new NotFoundException('Document not found');
+    this.assertDocAccess(doc, user);
+
+    const updated = await this.uploadService.reevaluateDocument(id, language);
+    if (!updated) throw new NotFoundException('Document not found');
+    return { ok: true, document: updated };
+  }
+
   @Post('submit')
   async submitEvidence(
     @Body()

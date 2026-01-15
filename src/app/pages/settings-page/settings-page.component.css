@@ -7,8 +7,8 @@
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  padding: 16px;
+  border-radius: var(--panel-radius);
+  padding: var(--panel-padding);
   box-shadow: var(--shadow-soft);
 }
 
