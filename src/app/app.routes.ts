@@ -27,7 +27,7 @@ export const routes: Routes = [
       { path: 'dashboard', component: DashboardPageComponent, data: { title: 'Dashboard' } },
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
       { path: 'frameworks', component: FrameworksPageComponent, canActivate: [requireKbGuard], data: { title: 'Frameworks' } },
-      { path: 'framework-controls', component: FrameworkControlsPageComponent, canActivate: [requireKbGuard], data: { title: 'Framework Controls' } },
+      { path: 'framework-controls', component: FrameworkControlsPageComponent, canActivate: [requireKbGuard], data: { title: 'Topics' } },
       { path: 'control-kb/:id', component: ControlDetailPageComponent, canActivate: [requireKbGuard], data: { title: 'Control Details' } },
       { path: 'control-kb', component: ControlKbPageComponent, canActivate: [requireKbGuard], data: { title: 'Control Knowledge Base' } },
       { path: 'settings', component: SettingsPageComponent, data: { title: 'Settings' } },

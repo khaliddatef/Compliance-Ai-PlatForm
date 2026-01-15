@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, ComplianceStandard, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
@@ -65,6 +65,7 @@ export class FrameworkControlsPageComponent implements OnInit {
     private readonly api: ApiService,
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
+    private readonly router: Router,
   ) {}
 
   ngOnInit() {
@@ -103,11 +104,15 @@ export class FrameworkControlsPageComponent implements OnInit {
     });
   }
 
-  toggleTopic(topic: TopicView) {
-    topic.expanded = !topic.expanded;
-    if (topic.expanded && topic.controls.length === 0) {
-      this.loadTopicControls(topic, true);
+  openTopicControls(topic: TopicView) {
+    const params: Record<string, string> = {
+      standard: this.standard,
+      topicId: topic.id,
+    };
+    if (this.framework) {
+      params['framework'] = this.framework;
     }
+    this.router.navigate(['/control-kb'], { queryParams: params });
   }
 
   loadTopicControls(topic: TopicView, reset: boolean) {

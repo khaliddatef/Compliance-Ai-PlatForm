@@ -2,8 +2,8 @@
   <div class="panel">
     <div class="panel-header">
       <div>
-        <h3>{{ frameworkLabel }} Controls</h3>
-        <p class="sub">Topics and controls sourced from the Knowledge Base.</p>
+        <h3>{{ frameworkLabel }} Topics</h3>
+        <p class="sub">Topics sourced from the Knowledge Base.</p>
       </div>
       <button class="ghost-btn" type="button" *ngIf="isAdmin" (click)="showNewTopic = !showNewTopic">
         {{ showNewTopic ? 'Close' : 'New topic' }}
@@ -45,11 +45,10 @@
           <div>
             <h4>{{ topic.title }}</h4>
             <p class="meta">{{ topic.controlCount || 0 }} controls</p>
+            <p class="meta" *ngIf="topic.description">{{ topic.description }}</p>
           </div>
           <div class="topic-actions">
-            <button class="ghost-btn" type="button" (click)="toggleTopic(topic)">
-              {{ topic.expanded ? 'Close' : 'Open controls' }}
-            </button>
+            <button class="ghost-btn" type="button" (click)="openTopicControls(topic)">Open controls</button>
             <ng-container *ngIf="isAdmin">
               <button class="ghost-btn" type="button" (click)="startEditTopic(topic)" *ngIf="editingTopicId !== topic.id">Edit</button>
               <button class="ghost-btn" type="button" (click)="saveTopic(topic)" *ngIf="editingTopicId === topic.id">Save</button>
@@ -86,96 +85,6 @@
           </div>
         </div>
 
-        <div class="topic-body" *ngIf="topic.expanded">
-          <p class="meta" *ngIf="topic.description">{{ topic.description }}</p>
-
-          <div class="draft-card" *ngIf="topic.showNewControl && isAdmin">
-            <h5>New control</h5>
-            <div class="field">
-              <label>Control code</label>
-              <input type="text" [(ngModel)]="topic.draftControl.controlCode" placeholder="GOV-01" />
-            </div>
-            <div class="field">
-              <label>Title</label>
-              <input type="text" [(ngModel)]="topic.draftControl.title" placeholder="Short control title" />
-            </div>
-            <div class="field">
-              <label>ISO mappings</label>
-              <input type="text" [(ngModel)]="topic.draftControl.isoMappingsText" placeholder="A.5.1, A.5.4" />
-            </div>
-            <div class="field">
-              <label>Status</label>
-              <select [(ngModel)]="topic.draftControl.status">
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
-            <button class="ghost-btn" type="button" (click)="createControl(topic)">Add control</button>
-          </div>
-
-          <div class="control-list">
-            <div class="control-row" *ngFor="let control of topic.controls">
-              <div class="control-info">
-                <span class="code">{{ control.controlCode }}</span>
-                <span class="title">{{ control.title }}</span>
-              </div>
-              <div class="control-meta">
-                <span class="status-pill" [class.status-pill--inactive]="control.status === 'disabled'">
-                  {{ control.status || 'enabled' }}
-                </span>
-                <span class="tests">{{ control._count?.testComponents || 0 }} tests</span>
-              </div>
-              <div class="control-actions" *ngIf="isAdmin">
-                <button class="ghost-btn" type="button" (click)="startEditControl(control)">Edit</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="control-edit" *ngIf="editingControlId && controlEdit">
-            <h5>Edit control</h5>
-            <div class="field-row">
-              <label>
-                Control code
-                <input type="text" [(ngModel)]="controlEdit.controlCode" />
-              </label>
-              <label>
-                Status
-                <select [(ngModel)]="controlEdit.status">
-                  <option value="enabled">Enabled</option>
-                  <option value="disabled">Disabled</option>
-                </select>
-              </label>
-            </div>
-            <div class="field">
-              <label>Title</label>
-              <input type="text" [(ngModel)]="controlEdit.title" />
-            </div>
-            <div class="field">
-              <label>ISO mappings</label>
-              <input type="text" [(ngModel)]="controlEdit.isoMappingsText" />
-            </div>
-            <div class="field">
-              <label>Topic</label>
-              <select [(ngModel)]="controlEdit.topicId">
-                <option *ngFor="let option of topics" [value]="option.id">{{ option.title }}</option>
-              </select>
-            </div>
-            <div class="control-edit-actions">
-              <button class="ghost-btn" type="button" (click)="saveControl()">Save</button>
-              <button class="ghost-btn" type="button" (click)="cancelEditControl()">Cancel</button>
-            </div>
-          </div>
-
-          <div class="topic-footer">
-            <button class="ghost-btn" type="button" *ngIf="isAdmin" (click)="toggleNewControl(topic)">
-              {{ topic.showNewControl ? 'Close' : 'Add control' }}
-            </button>
-            <button class="ghost-btn" type="button" (click)="loadMore(topic)" *ngIf="topic.controls.length < topic.total">
-              Load more
-            </button>
-            <span class="meta" *ngIf="topic.total">Showing {{ topic.controls.length }} of {{ topic.total }}</span>
-          </div>
-        </div>
       </article>
     </div>
 

@@ -74,6 +74,8 @@ export class ControlKbPageComponent implements OnInit {
   topicPopoverControlId: string | null = null;
   frameworkPopoverControlId: string | null = null;
   relatedTopicId = '';
+  pendingTopicId = '';
+  pendingFramework = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -122,6 +124,8 @@ export class ControlKbPageComponent implements OnInit {
   ngOnInit() {
     this.route.queryParamMap.subscribe((params) => {
       const next = this.normalizeStandard(params.get('standard'));
+      this.pendingTopicId = String(params.get('topicId') || '').trim();
+      this.pendingFramework = String(params.get('framework') || '').trim();
       const changed = next !== this.standard;
       this.standard = next;
       if (changed) {
@@ -176,6 +180,7 @@ export class ControlKbPageComponent implements OnInit {
     this.api.listControlTopics(this.standard).subscribe({
       next: (topics) => {
         this.topics = topics || [];
+        this.applyQueryFilters();
         this.loading = false;
         this.syncSelectedTopic();
         this.loadFrameworks();
@@ -188,6 +193,20 @@ export class ControlKbPageComponent implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  private applyQueryFilters() {
+    if (this.pendingFramework) {
+      this.frameworkFilter = this.pendingFramework;
+    }
+
+    if (this.pendingTopicId) {
+      const found = this.topics.find((topic) => topic.id === this.pendingTopicId);
+      this.topicFilter = found ? found.id : 'all';
+    }
+
+    this.pendingFramework = '';
+    this.pendingTopicId = '';
   }
 
   selectTopic(topic: ControlTopic) {
