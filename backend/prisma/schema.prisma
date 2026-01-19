@@ -35,7 +35,6 @@ model Message {
 model Document {
   id             String   @id @default(cuid())
   conversationId String
-  standard       String
   kind String @default("CUSTOMER")
   originalName   String
   mimeType       String
@@ -83,7 +82,6 @@ model User {
 
 model ControlTopic {
   id          String   @id @default(cuid())
-  standard    String
   title       String
   description String?
   intent      String?
@@ -97,7 +95,6 @@ model ControlTopic {
   controls ControlDefinition[]
   controlMappings ControlTopicMapping[]
 
-  @@index([standard])
 }
 
 model ControlDefinition {
@@ -181,7 +178,6 @@ model ControlFrameworkMapping {
 model Framework {
   id        String   @id @default(cuid())
   externalId String?
-  standard  String
   name      String
   version   String?
   description String?
@@ -192,8 +188,7 @@ model Framework {
   controlMappings ControlFrameworkMapping[]
   sources FrameworkSource[]
 
-  @@unique([standard, name])
-  @@index([standard])
+  @@unique([name])
 }
 
 model TestComponent {
@@ -427,7 +422,6 @@ model ControlThreatMapping {
 model EvidenceEvaluation {
   id             String   @id @default(cuid())
   conversationId String
-  standard       String
   controlId      String
   status         String
   summary        String

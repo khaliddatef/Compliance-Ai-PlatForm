@@ -9,7 +9,6 @@ const prisma = new PrismaClient({
   adapter: new PrismaBetterSqlite3({ url }),
 });
 
-const STANDARD = 'ISO';
 const filePath = path.resolve(__dirname, '../data/control-kb/tekronyx_GRC_kb_v6_mappings.xlsx');
 
 const normalizeHeader = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -229,7 +228,6 @@ async function seed() {
       return {
         id,
         externalId: id,
-        standard: STANDARD,
         name,
         version: frameworkVersionHeader ? normalizeText(row[frameworkVersionHeader]) || null : null,
         description: frameworkDescriptionHeader
@@ -241,7 +239,6 @@ async function seed() {
     .filter(Boolean) as Array<{
     id: string;
     externalId: string;
-    standard: string;
     name: string;
     version: string | null;
     description: string | null;
@@ -263,7 +260,6 @@ async function seed() {
 
   const topicsData: Array<{
     id: string;
-    standard: string;
     title: string;
     description: string | null;
     intent: string | null;
@@ -284,7 +280,6 @@ async function seed() {
     topicIdSet.add(id);
     topicsData.push({
       id,
-      standard: STANDARD,
       title,
       description: intent || null,
       intent: intent || null,
@@ -389,7 +384,6 @@ async function seed() {
       topicIdSet.add(primaryTopicId);
       topicsData.push({
         id: primaryTopicId,
-        standard: STANDARD,
         title: topicName || primaryTopicId,
         description: topicName || null,
         intent: null,

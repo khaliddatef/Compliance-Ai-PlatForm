@@ -7,15 +7,10 @@
     <button class="icon-button" type="button" (click)="close.emit()" aria-label="Close panel">✕</button>
   </div>
 
-  <app-standard-selector
-    [value]="standard"
-    (valueChange)="standardChange.emit($event)"
-  ></app-standard-selector>
-
   <div class="card status-card" [class.loading]="loading" [class]="statusTone">
     <p class="label">Result</p>
     <h4>{{ loading ? 'Checking…' : result?.status || 'Pending' }}</h4>
-    <p class="summary">{{ result?.summary || 'Select a standard to see the current posture.' }}</p>
+    <p class="summary">{{ result?.summary || 'No assessment yet.' }}</p>
   </div>
 
   <div class="card">

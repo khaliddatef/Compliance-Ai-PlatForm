@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
-import { ChatService, ComplianceStandard } from './chat.service';
+import { ChatService } from './chat.service';
 import { AgentService, ControlContext } from '../agent/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -122,12 +122,10 @@ export class ChatController {
     body: {
       conversationId?: string;
       message: string;
-      standard: ComplianceStandard;
       language?: 'ar' | 'en';
     },
   ) {
     const prompt = (body?.message || '').trim();
-    const standard = body?.standard || 'ISO';
 
     if (!prompt) {
       return {
@@ -135,7 +133,7 @@ export class ChatController {
         reply: 'Empty message.',
         citations: [],
         complianceSummary: {
-          standard,
+          framework: null,
           status: 'UNKNOWN',
           missing: [],
           recommendations: [],
@@ -161,8 +159,9 @@ export class ChatController {
     const customerVectorStoreId = (convRow as any)?.customerVectorStoreId || null;
 
     // 3) Agent answers (Responses API + file_search)
+    const activeFramework = await this.controlKb.getActiveFrameworkLabel();
     const agentOut = await this.agent.answerCompliance({
-      standard,
+      framework: activeFramework,
       question: prompt,
       customerVectorStoreId,
       language: body?.language,
@@ -191,14 +190,12 @@ export class ChatController {
     @Body()
     body: {
       conversationId: string;
-      standard: ComplianceStandard;
       control?: ControlContext;
       controlId?: string;
       language?: 'ar' | 'en';
     },
   ) {
     const conversationId = body?.conversationId;
-    const standard = body?.standard || 'ISO';
     const control = body?.control;
     const controlId = body?.controlId || control?.id;
 
@@ -222,7 +219,7 @@ export class ChatController {
 
     const kbControl = await this.controlKb.getControlContextByCode({
       controlCode: String(controlId),
-      standard,
+      includeDisabled: user?.role === 'ADMIN',
     });
 
     const normalizedControl: ControlContext = kbControl || {
@@ -233,8 +230,9 @@ export class ChatController {
       testComponents: Array.isArray(control?.testComponents) ? control.testComponents : [],
     };
 
+    const activeFramework = await this.controlKb.getActiveFrameworkLabel();
     const evaluation = await this.agent.evaluateControlEvidence({
-      standard,
+      framework: activeFramework,
       control: normalizedControl,
       customerVectorStoreId,
       language: body?.language,
@@ -243,7 +241,6 @@ export class ChatController {
     const saved = await this.prisma.evidenceEvaluation.create({
       data: {
         conversationId,
-        standard,
         controlId: normalizedControl.id,
         status: evaluation.status,
         summary: evaluation.summary,

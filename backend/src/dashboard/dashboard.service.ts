@@ -51,9 +51,8 @@ type RiskCoverage = {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getActiveFrameworkSet(standard: string) {
+  private async getActiveFrameworkSet() {
     const frameworks = await this.prisma.framework.findMany({
-      where: { standard },
       select: { name: true, status: true },
     });
     if (!frameworks.length) return null;
@@ -93,12 +92,10 @@ export class DashboardService {
     return 'low' as const;
   }
 
-  async getDashboard(standard?: string) {
-    const standardKey = (standard || 'ISO').toUpperCase();
-    const activeFrameworks = await this.getActiveFrameworkSet(standardKey);
+  async getDashboard() {
+    const activeFrameworks = await this.getActiveFrameworkSet();
 
     const controls = await this.prisma.controlDefinition.findMany({
-      where: { topic: { standard: standardKey } },
       select: {
         id: true,
         controlCode: true,
@@ -124,7 +121,6 @@ export class DashboardService {
     }
 
     const evaluations = await this.prisma.evidenceEvaluation.findMany({
-      where: { standard: standardKey },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -170,12 +166,16 @@ export class DashboardService {
         )
       : 0;
 
+    const docsWhere = allowedControlCodes.length ? { matchControlId: { in: allowedControlCodes } } : null;
+
     const [totalDocuments, awaitingReview, documents] = await Promise.all([
-      this.prisma.document.count({ where: { standard: standardKey } }),
-      this.prisma.document.count({ where: { standard: standardKey, reviewedAt: null } }),
-      allowedControlCodes.length
+      docsWhere ? this.prisma.document.count({ where: docsWhere }) : Promise.resolve(0),
+      docsWhere
+        ? this.prisma.document.count({ where: { ...docsWhere, reviewedAt: null } })
+        : Promise.resolve(0),
+      docsWhere
         ? this.prisma.document.findMany({
-            where: { standard: standardKey, matchControlId: { in: allowedControlCodes } },
+            where: docsWhere,
             select: {
               matchControlId: true,
               docType: true,
@@ -344,12 +344,14 @@ export class DashboardService {
         updatedAt: evaluation.createdAt.toISOString(),
       }));
 
-    const recentDocs = await this.prisma.document.findMany({
-      where: { standard: standardKey },
-      include: { conversation: { select: { title: true } } },
-      orderBy: { createdAt: 'desc' },
-      take: 6,
-    });
+    const recentDocs = allowedControlCodes.length
+      ? await this.prisma.document.findMany({
+          where: { matchControlId: { in: allowedControlCodes } },
+          include: { conversation: { select: { title: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+        })
+      : [];
 
     const recentEvalActivity = latestEvaluations.slice(0, 6).map((evaluation) => ({
       label: `${evaluation.controlId} reviewed`,
@@ -369,7 +371,6 @@ export class DashboardService {
 
     return {
       ok: true,
-      standard: standardKey,
       metrics: {
         coveragePercent,
         evaluatedControls,

@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ApiService, ComplianceStandard, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
+import { ApiService, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 type TopicForm = {
@@ -39,7 +39,6 @@ type TopicView = ControlTopic & {
   styleUrl: './framework-controls-page.component.css',
 })
 export class FrameworkControlsPageComponent implements OnInit {
-  standard: ComplianceStandard = 'ISO';
   framework = '';
   topics: TopicView[] = [];
   loading = true;
@@ -70,7 +69,6 @@ export class FrameworkControlsPageComponent implements OnInit {
 
   ngOnInit() {
     this.route.queryParamMap.subscribe((params) => {
-      this.standard = this.normalizeStandard(params.get('standard'));
       this.framework = String(params.get('framework') || '').trim();
       this.fetchTopics();
     });
@@ -81,17 +79,13 @@ export class FrameworkControlsPageComponent implements OnInit {
   }
 
   get frameworkLabel() {
-    if (this.framework) return this.framework;
-    if (this.standard === 'ISO') return 'ISO 27001';
-    if (this.standard === 'FRA') return 'FRA Egypt';
-    if (this.standard === 'CBE') return 'CBE Egypt';
-    return this.standard;
+    return this.framework || 'Active framework';
   }
 
   fetchTopics() {
     this.loading = true;
     this.error = '';
-    this.api.listControlTopics(this.standard, this.framework || undefined).subscribe({
+    this.api.listControlTopics(this.framework || undefined).subscribe({
       next: (topics) => {
         const items = (topics || []).filter((topic) => !this.framework || (topic.controlCount || 0) > 0);
         this.topics = items.map((topic) => this.toTopicView(topic));
@@ -106,7 +100,6 @@ export class FrameworkControlsPageComponent implements OnInit {
 
   openTopicControls(topic: TopicView) {
     const params: Record<string, string> = {
-      standard: this.standard,
       topicId: topic.id,
     };
     if (this.framework) {
@@ -125,7 +118,6 @@ export class FrameworkControlsPageComponent implements OnInit {
 
     this.api
       .listControlDefinitions({
-        standard: this.standard,
         topicId: topic.id,
         framework: this.framework || undefined,
         page: topic.page,
@@ -158,7 +150,6 @@ export class FrameworkControlsPageComponent implements OnInit {
 
     this.api
       .createControlTopic({
-        standard: this.standard,
         title,
         description: this.topicDraft.description.trim(),
         mode: this.topicDraft.mode,
@@ -311,13 +302,6 @@ export class FrameworkControlsPageComponent implements OnInit {
           this.error = 'Unable to update control.';
         },
       });
-  }
-
-  normalizeStandard(value?: string | null): ComplianceStandard {
-    const upper = String(value || 'ISO').toUpperCase();
-    if (upper === 'FRA') return 'FRA';
-    if (upper === 'CBE') return 'CBE';
-    return 'ISO';
   }
 
   parseList(value: string) {

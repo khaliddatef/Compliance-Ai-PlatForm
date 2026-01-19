@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 import { Conversation } from '../models/conversation.model';
 import { Message } from '../models/message.model';
-import { ApiService, ComplianceStandard } from './api.service';
+import { ApiService } from './api.service';
 import { AuthService, AuthUser } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
@@ -78,7 +78,7 @@ export class ChatService {
   }
 
   // دي اللي هتستدعيها من الـ component لما تدوس Send
-  sendUserMessage(text: string, standard: ComplianceStandard) {
+  sendUserMessage(text: string) {
     const convo = this.activeConversation();
     if (!convo) return;
 
@@ -100,7 +100,7 @@ export class ChatService {
     });
 
     const language = this.detectLanguage(text) || this.getPreferredLanguage();
-    this.api.sendMessage(text, standard, convo.backendId ?? undefined, language).subscribe({
+    this.api.sendMessage(text, convo.backendId ?? undefined, language).subscribe({
       next: ({ assistantMessage, conversationId }) => {
         // ✅ save backend conversation id on THIS conversation
         this.conversations.update((list) =>

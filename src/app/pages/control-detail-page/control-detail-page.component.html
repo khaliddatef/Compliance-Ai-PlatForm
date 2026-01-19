@@ -10,10 +10,10 @@
           <h2>{{ control.controlCode }} · {{ control.title }}</h2>
           <p class="sub">{{ control.description || 'No description provided yet.' }}</p>
         </div>
-        <div class="header-actions">
-          <span class="status-pill" [ngClass]="statusClass">{{ statusLabel }}</span>
-          <a class="ghost-btn" [routerLink]="['/control-kb']" [queryParams]="{ standard: standard }">Back</a>
-        </div>
+          <div class="header-actions">
+            <span class="status-pill" [ngClass]="statusClass">{{ statusLabel }}</span>
+          <a class="ghost-btn" [routerLink]="['/control-kb']">Back</a>
+          </div>
       </div>
 
       <div class="detail-grid">

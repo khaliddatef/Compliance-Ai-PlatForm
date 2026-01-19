@@ -85,7 +85,7 @@
               type="button"
               *ngFor="let reference of file.frameworkReferences"
               [title]="reference"
-              (click)="openFrameworkReference(reference, file.standard)"
+              (click)="openFrameworkReference(reference)"
             >
               {{ reference }}
             </button>

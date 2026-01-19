@@ -52,7 +52,7 @@ export class DashboardPageComponent implements OnInit {
     this.riskPopoverId = null;
     this.cdr.markForCheck();
 
-    this.api.getDashboard('ISO').subscribe({
+    this.api.getDashboard().subscribe({
       next: (res: DashboardResponse) => {
         const metrics = res?.metrics;
         const coverage = metrics?.coveragePercent ?? 0;
@@ -138,7 +138,7 @@ export class DashboardPageComponent implements OnInit {
 
   openControl(row: { controlDbId?: string | null }) {
     if (!row?.controlDbId) return;
-    this.router.navigate(['/control-kb', row.controlDbId], { queryParams: { standard: 'ISO' } });
+    this.router.navigate(['/control-kb', row.controlDbId]);
   }
 
   private formatShortDate(value: string | null) {

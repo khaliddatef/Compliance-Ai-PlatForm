@@ -5,7 +5,6 @@ import { Subscription, firstValueFrom } from 'rxjs';
 import { Message, MessageAction, MessageActionId } from '../../models/message.model';
 import {
   ApiService,
-  ComplianceStandard,
   ChatApiResponse,
   ControlCatalogItem,
   ControlEvaluation,
@@ -30,8 +29,6 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   uploading = false;
   uploadProgress = 0;
   attachmentResetKey = 0;
-
-  selectedStandard: ComplianceStandard = 'ISO';
 
   private controls: ControlCatalogItem[] = [];
   private controlsLoaded = false;
@@ -133,7 +130,17 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
     // ✅ ارفع الأول (عشان يبقى available في RAG)
     if (files.length) {
-      this.uploadDocs(files, active.id);
+      const deferredText = text || undefined;
+      this.uploadDocs(files, active.id, deferredText);
+      if (text) {
+        this.chatService.appendMessage(active.id, {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: text,
+          timestamp: Date.now(),
+        });
+      }
+      return;
     }
 
     if (text) {
@@ -189,7 +196,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const prompt = this.buildPrompt(text, conversationId);
     const showActions = options.showActions ?? this.isControlFlowActive();
     const language = this.getLanguageHint();
-    this.apiService.sendMessage(prompt, this.selectedStandard, conversationId, language).subscribe({
+    this.apiService.sendMessage(prompt, conversationId, language).subscribe({
       next: (raw: ChatApiResponse) => {
         const replyText = String(raw?.reply ?? raw?.assistantMessage ?? '');
         const externalLinks = Array.isArray(raw?.externalLinks) ? raw.externalLinks : [];
@@ -240,7 +247,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     });
   }
 
-  private uploadDocs(files: File[], conversationId: string) {
+  private uploadDocs(files: File[], conversationId: string, deferredText?: string) {
     const language = this.getLanguageHint();
     const summaryText = this.buildUploadSummary(files, language);
     this.chatService.appendMessage(conversationId, {
@@ -254,7 +261,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     this.uploadProgress = 10;
 
     // ✅ دي اللي شغالة فعلاً في ApiService
-    this.apiService.uploadCustomerFiles(conversationId, this.selectedStandard, files, language).subscribe({
+    this.apiService.uploadCustomerFiles(conversationId, files, language).subscribe({
       next: (res: any) => {
         // backend بيرجع ingestResults وعدد chunks.. إلخ
         const ok = !!res?.ok;
@@ -288,6 +295,9 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         const control = this.getActiveControl();
         if (control && this.isControlFlowActive()) {
           void this.evaluateEvidence(conversationId, control);
+        }
+        if (ok && deferredText) {
+          this.sendMessage(deferredText, conversationId, { hideUserMessage: true });
         }
         this.uploadProgress = 100;
       },
@@ -430,7 +440,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     if (this.controlsLoading || this.controlsLoaded) return;
 
     this.controlsLoading = true;
-    this.apiService.listControlCatalog(this.selectedStandard).subscribe({
+    this.apiService.listControlCatalog().subscribe({
       next: (items) => {
         this.controls = Array.isArray(items) ? items : [];
         this.controlsLoaded = true;
@@ -469,7 +479,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     if (inflight) return inflight;
 
     const request = firstValueFrom(
-      this.apiService.getControlContext(this.selectedStandard, controlId),
+      this.apiService.getControlContext(controlId),
     )
       .then((context) => {
         if (context) {
@@ -600,7 +610,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     }
 
     const language = this.getLanguageHint();
-    this.apiService.evaluateControl(conversationId, this.selectedStandard, payload, language).subscribe({
+    this.apiService.evaluateControl(conversationId, payload, language).subscribe({
       next: (res) => {
         const evaluation = res?.evaluation;
         if (!evaluation) {

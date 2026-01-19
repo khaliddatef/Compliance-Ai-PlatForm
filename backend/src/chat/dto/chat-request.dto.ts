@@ -1,17 +1,4 @@
-import {
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
-
-export enum ComplianceStandard {
-  ISO = 'ISO',
-  FRA = 'FRA',
-  THIRD = 'THIRD',
-}
+import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class ChatRequestDto {
   @IsOptional()
@@ -23,7 +10,4 @@ export class ChatRequestDto {
   @MinLength(2)
   @MaxLength(5000)
   message!: string;
-
-  @IsEnum(ComplianceStandard)
-  standard!: ComplianceStandard;
 }

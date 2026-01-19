@@ -4,6 +4,7 @@
       <div>
         <h3>Frameworks</h3>
         <p class="sub">Level 0 · Browse frameworks mapped in the control knowledge base.</p>
+        <p class="sub">Only one framework can be active at a time (or keep all inactive).</p>
       </div>
       <div class="header-actions">
         <span class="sub">Admin &amp; Manager view</span>
@@ -72,7 +73,7 @@
               class="action-btn action-btn--open"
               type="button"
               [routerLink]="['/framework-controls']"
-              [queryParams]="{ standard: standard, framework: fw.framework }"
+              [queryParams]="{ framework: fw.framework }"
               *ngIf="isAdmin || isManager"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">

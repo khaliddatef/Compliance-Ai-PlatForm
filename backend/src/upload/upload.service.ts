@@ -138,6 +138,54 @@ export class UploadService {
     console.log('[OPENAI] attached file', fileId, 'to', vectorStoreId, 'status=', json?.status);
   }
 
+  private async getVectorStoreFileStatus(vectorStoreId: string, fileId: string): Promise<string | null> {
+    this.assertConfig();
+
+    const resp = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${fileId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const json = await resp.json().catch(() => null);
+      console.error('[OPENAI] vector store file status failed', resp.status, JSON.stringify(json)?.slice(0, 1500));
+      return null;
+    }
+
+    const json = await resp.json().catch(() => null);
+    const status = String(json?.status || '').toLowerCase();
+    return status || null;
+  }
+
+  private async waitForVectorStoreFileReady(
+    vectorStoreId: string,
+    fileId: string,
+    opts: { timeoutMs?: number; intervalMs?: number } = {},
+  ) {
+    const timeoutMs = opts.timeoutMs ?? 45000;
+    const intervalMs = opts.intervalMs ?? 1500;
+    const start = Date.now();
+    let lastStatus = '';
+
+    while (Date.now() - start < timeoutMs) {
+      const status = await this.getVectorStoreFileStatus(vectorStoreId, fileId);
+      if (status) lastStatus = status;
+
+      if (status === 'completed' || status === 'ready') {
+        return { ok: true, status };
+      }
+      if (status === 'failed' || status === 'cancelled' || status === 'expired') {
+        return { ok: false, status };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    return { ok: false, status: lastStatus || 'timeout' };
+  }
+
   private async detachFileFromVectorStore(vectorStoreId: string, fileId: string): Promise<void> {
     this.assertConfig();
 
@@ -194,7 +242,6 @@ export class UploadService {
 
   async saveUploadedFiles(params: {
     conversationId: string;
-    standard: string;
     kind: DocKind;
     files: Express.Multer.File[];
     user: { id: string; role: string };
@@ -202,15 +249,13 @@ export class UploadService {
   }): Promise<{
     ok: true;
     conversationId: string;
-    standard: string;
     kind: DocKind;
     count: number;
     documents: any[];
     ingestResults: IngestResult[];
     customerVectorStoreId?: string | null;
   }> {
-    const { conversationId, standard, kind, files, user, language } = params;
-    const standardKey = String(standard || 'ISO').toUpperCase();
+    const { conversationId, kind, files, user, language } = params;
     if (kind === 'STANDARD') {
       throw new GoneException('Standard uploads are disabled. The KB is the source of truth.');
     }
@@ -263,7 +308,6 @@ export class UploadService {
         return this.prisma.document.create({
           data: {
             conversationId,
-            standard: standardKey,
             kind,
             originalName: f.originalname,
             mimeType: f.mimetype,
@@ -282,6 +326,7 @@ export class UploadService {
           where: { id: doc.id },
           data: { openaiFileId: fileId },
         });
+        doc.openaiFileId = fileId;
       } catch (e: any) {
         console.error(`[OPENAI] ${label} upload/attach failed for`, doc.originalName, e?.message || e);
       }
@@ -319,14 +364,27 @@ export class UploadService {
     if (kind === 'CUSTOMER') {
       for (const doc of documents) {
         try {
-          const excerpt = await this.getDocumentExcerpt(doc.id);
-          const candidates = await this.findControlCandidates(
-            standardKey,
-            doc.originalName || '',
-            excerpt,
-          );
+          const excerpt = String(await this.getDocumentExcerpt(doc.id) || '').trim();
+          if (!excerpt && customerVectorStoreId && doc.openaiFileId) {
+            const waitResult = await this.waitForVectorStoreFileReady(customerVectorStoreId, doc.openaiFileId);
+            if (!waitResult.ok) {
+              await this.prisma.document.update({
+                where: { id: doc.id },
+                data: {
+                  matchStatus: 'UNKNOWN',
+                  matchNote: 'Vector store indexing is still in progress. Please re-evaluate shortly.',
+                  matchRecommendations: ['Wait a moment and re-evaluate the file.'],
+                  reviewedAt: new Date(),
+                } as any,
+              });
+              continue;
+            }
+          }
+
+          const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
+          const activeFramework = await this.getActiveFrameworkLabel();
           const analysis = await this.agent.analyzeCustomerDocument({
-            standard: standardKey as any,
+            framework: activeFramework,
             fileName: doc.originalName,
             content: excerpt,
             customerVectorStoreId,
@@ -361,7 +419,6 @@ export class UploadService {
     return {
       ok: true,
       conversationId,
-      standard: standardKey,
       kind,
       count: documents.length,
       documents: documentsWithReferences,
@@ -372,11 +429,10 @@ export class UploadService {
 
   async listByConversation(params: {
     conversationId: string;
-    standard?: string;
     kind?: DocKind;
     user?: { id: string; role: string };
   }) {
-    const { conversationId, standard, kind, user } = params;
+    const { conversationId, kind, user } = params;
 
     if (user && user.role === 'USER') {
       const conv = await this.prisma.conversation.findUnique({
@@ -399,7 +455,6 @@ export class UploadService {
     const docs = await this.prisma.document.findMany({
       where: {
         conversationId,
-        ...(standard ? { standard } : {}),
         ...(kind ? { kind } : {}),
       },
       include: {
@@ -451,15 +506,36 @@ export class UploadService {
     });
     if (!doc) return null;
 
-    const excerpt = await this.getDocumentExcerpt(doc.id);
-    const candidates = await this.findControlCandidates(
-      String(doc.standard || 'ISO').toUpperCase(),
-      doc.originalName || '',
-      excerpt,
-    );
+    const excerpt = String(await this.getDocumentExcerpt(doc.id) || '').trim();
+    if (!excerpt && doc.conversation?.customerVectorStoreId && doc.openaiFileId) {
+      const waitResult = await this.waitForVectorStoreFileReady(
+        doc.conversation.customerVectorStoreId,
+        doc.openaiFileId,
+      );
+      if (!waitResult.ok) {
+        const pending = await this.prisma.document.update({
+          where: { id: doc.id },
+          data: {
+            matchStatus: 'UNKNOWN',
+            matchNote: 'Vector store indexing is still in progress. Please re-evaluate shortly.',
+            matchRecommendations: ['Wait a moment and re-evaluate the file.'],
+            reviewedAt: new Date(),
+          } as any,
+          include: {
+            conversation: { select: { title: true } },
+            _count: { select: { chunks: true } },
+          },
+        });
+        const withRefs = await this.attachFrameworkReferences([pending]);
+        return withRefs[0] || pending;
+      }
+    }
+
+    const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
+    const activeFramework = await this.getActiveFrameworkLabel();
 
     const analysis = await this.agent.analyzeCustomerDocument({
-      standard: (doc.standard as any) || 'ISO',
+      framework: activeFramework,
       fileName: doc.originalName,
       content: excerpt,
       customerVectorStoreId: doc.conversation?.customerVectorStoreId || undefined,
@@ -522,7 +598,6 @@ export class UploadService {
     documents: Array<{
       openaiFileId?: string | null;
       kind: string;
-      standard: string;
     }>;
     customerVectorStoreId?: string | null;
     deleteVectorStore?: boolean;
@@ -730,17 +805,10 @@ export class UploadService {
   private async attachFrameworkReferences(docs: any[]) {
     if (!docs?.length) return docs;
 
-    const docsWithControl = docs.filter((doc) => doc?.matchControlId && doc?.standard);
+    const docsWithControl = docs.filter((doc) => doc?.matchControlId);
     if (!docsWithControl.length) return docs;
 
-    const standards = Array.from(
-      new Set(docsWithControl.map((doc) => String(doc.standard || '').toUpperCase()).filter(Boolean)),
-    );
-
-    const activeByStandard = new Map<string, Set<string> | null>();
-    for (const standard of standards) {
-      activeByStandard.set(standard, await this.getActiveFrameworkSet(standard));
-    }
+    const activeFrameworks = await this.getActiveFrameworkSet();
 
     const controlCodes = Array.from(
       new Set(docsWithControl.map((doc) => String(doc.matchControlId)).filter(Boolean)),
@@ -750,36 +818,30 @@ export class UploadService {
     const controls = await this.prisma.controlDefinition.findMany({
       where: {
         controlCode: { in: controlCodes },
-        topic: { standard: { in: standards } },
       },
       select: {
         controlCode: true,
-        topic: { select: { standard: true } },
         frameworkMappings: { select: { framework: true, frameworkCode: true } },
       },
     });
 
     const controlMap = new Map<string, { frameworkMappings: Array<{ framework: string; frameworkCode: string }> }>();
     for (const control of controls) {
-      const standard = String(control.topic?.standard || '').toUpperCase();
-      if (!standard) continue;
-      controlMap.set(`${standard}::${control.controlCode}`, {
+      controlMap.set(String(control.controlCode), {
         frameworkMappings: control.frameworkMappings || [],
       });
     }
 
     return docs.map((doc) => {
-      const standard = String(doc.standard || '').toUpperCase();
       const controlCode = String(doc.matchControlId || '');
-      if (!standard || !controlCode) return doc;
+      if (!controlCode) return doc;
 
-      const control = controlMap.get(`${standard}::${controlCode}`);
+      const control = controlMap.get(controlCode);
       if (!control) return doc;
 
-      const active = activeByStandard.get(standard);
       let mappings = control.frameworkMappings || [];
-      if (active) {
-        mappings = mappings.filter((mapping) => active.has(mapping.framework));
+      if (activeFrameworks) {
+        mappings = mappings.filter((mapping) => activeFrameworks.has(mapping.framework));
       }
 
       if (!mappings.length) {
@@ -867,11 +929,7 @@ export class UploadService {
     return Array.from(new Set(tokens));
   }
 
-  private async findControlCandidates(
-    standard: string,
-    fileName: string,
-    content?: string | null,
-  ): Promise<ControlCandidate[]> {
+  private async findControlCandidates(fileName: string, content?: string | null): Promise<ControlCandidate[]> {
     let tokens = this.extractSearchTokens(fileName);
     if (!tokens.length && content) {
       tokens = this.extractSearchTokens(content.slice(0, 180));
@@ -886,7 +944,7 @@ export class UploadService {
     ]);
 
     const results = await this.prisma.controlDefinition.findMany({
-      where: { topic: { standard }, OR: orFilters },
+      where: { OR: orFilters },
       select: {
         controlCode: true,
         title: true,
@@ -898,7 +956,7 @@ export class UploadService {
       take: 50,
     });
 
-    const activeFrameworks = await this.getActiveFrameworkSet(standard);
+    const activeFrameworks = await this.getActiveFrameworkSet();
     const filtered = activeFrameworks
       ? results.filter((control) => this.isControlAllowed(control, activeFrameworks))
       : results;
@@ -928,9 +986,18 @@ export class UploadService {
     }));
   }
 
-  private async getActiveFrameworkSet(standard: string) {
+  private async getActiveFrameworkLabel() {
     const frameworks = await this.prisma.framework.findMany({
-      where: { standard },
+      where: { status: 'enabled' },
+      select: { name: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 1,
+    });
+    return frameworks[0]?.name || null;
+  }
+
+  private async getActiveFrameworkSet() {
+    const frameworks = await this.prisma.framework.findMany({
       select: { name: true, status: true },
     });
     if (!frameworks.length) return null;

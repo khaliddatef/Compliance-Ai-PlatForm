@@ -24,18 +24,17 @@ export class ControlKbController {
   @Get('topics')
   async listTopics(
     @CurrentUser() user: AuthUser,
-    @Query('standard') standard = 'ISO',
     @Query('framework') framework?: string,
   ) {
     this.assertViewAccess(user);
-    return this.service.listTopics(standard.toUpperCase(), framework?.trim() || null);
+    return this.service.listTopics(framework?.trim() || null, user?.role === 'ADMIN');
   }
 
   @Get('frameworks')
-  async listFrameworks(@CurrentUser() user: AuthUser, @Query('standard') standard = 'ISO') {
+  async listFrameworks(@CurrentUser() user: AuthUser) {
     this.assertViewAccess(user);
     const includeDisabled = user?.role === 'ADMIN';
-    return this.service.listFrameworks(standard.toUpperCase(), includeDisabled);
+    return this.service.listFrameworks(includeDisabled);
   }
 
   @Post('frameworks')
@@ -43,14 +42,12 @@ export class ControlKbController {
     @CurrentUser() user: AuthUser,
     @Body()
     body: {
-      standard: string;
       name: string;
       status?: string;
     },
   ) {
     this.assertAdmin(user);
     return this.service.createFramework({
-      standard: body.standard.toUpperCase(),
       name: body.name.trim(),
       status: body.status,
     });
@@ -71,13 +68,14 @@ export class ControlKbController {
   }
 
   @Get('catalog')
-  async listCatalog(@Query('standard') standard = 'ISO') {
-    return this.service.listControlCatalog(standard.toUpperCase());
+  async listCatalog(@CurrentUser() user: AuthUser) {
+    this.assertViewAccess(user);
+    return this.service.listControlCatalog();
   }
 
   @Get('context')
   async getControlContext(
-    @Query('standard') standard = 'ISO',
+    @CurrentUser() user: AuthUser,
     @Query('controlCode') controlCode?: string,
     @Query('controlId') controlId?: string,
   ) {
@@ -85,7 +83,10 @@ export class ControlKbController {
     if (!code) {
       throw new BadRequestException('controlCode is required');
     }
-    return this.service.getControlContextByCode({ controlCode: code, standard: standard.toUpperCase() });
+    return this.service.getControlContextByCode({
+      controlCode: code,
+      includeDisabled: user?.role === 'ADMIN',
+    });
   }
 
   @Post('topics')
@@ -93,7 +94,6 @@ export class ControlKbController {
     @CurrentUser() user: AuthUser,
     @Body()
     body: {
-      standard: string;
       title: string;
       description?: string;
       mode?: string;
@@ -131,7 +131,6 @@ export class ControlKbController {
   @Get('controls')
   async listControls(
     @CurrentUser() user: AuthUser,
-    @Query('standard') standard = 'ISO',
     @Query('topicId') topicId?: string,
     @Query('q') query?: string,
     @Query('status') status?: string,
@@ -145,7 +144,6 @@ export class ControlKbController {
   ) {
     this.assertViewAccess(user);
     return this.service.listControls({
-      standard: standard.toUpperCase(),
       topicId: topicId || null,
       query: query || null,
       status: status || null,

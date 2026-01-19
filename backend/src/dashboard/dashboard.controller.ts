@@ -10,10 +10,10 @@ export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
   @Get()
-  async getDashboard(@Query('standard') standard?: string, @CurrentUser() user?: AuthUser) {
+  async getDashboard(@CurrentUser() user?: AuthUser) {
     if (user?.role === 'USER') {
       throw new ForbiddenException('Dashboard access is restricted');
     }
-    return this.dashboard.getDashboard(standard);
+    return this.dashboard.getDashboard();
   }
 }

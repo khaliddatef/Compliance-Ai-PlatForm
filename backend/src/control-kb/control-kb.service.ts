@@ -19,26 +19,36 @@ const toIsoVariants = (value: string) => {
 export class ControlKbService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listTopics(standard: string, framework?: string | null) {
+  async listTopics(framework?: string | null, includeDisabled = false) {
+    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
+    if (!includeDisabled && activeFrameworks && activeFrameworks.size === 0) {
+      return [];
+    }
+
     const topics = await this.prisma.controlTopic.findMany({
-      where: { standard },
       orderBy: [{ priority: 'desc' }, { title: 'asc' }],
       include: { _count: { select: { controls: true } } },
     });
 
-    if (!framework) {
+    if (!framework && (!activeFrameworks || includeDisabled)) {
       return topics.map((topic) => ({
         ...topic,
         controlCount: topic._count.controls,
       }));
     }
 
+    const where = framework
+      ? { frameworkMappings: { some: { framework } } }
+      : {
+          OR: [
+            { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks || []) } } } },
+            { frameworkMappings: { none: {} } },
+          ],
+        };
+
     const grouped = await this.prisma.controlDefinition.groupBy({
       by: ['topicId'],
-      where: {
-        topic: { standard },
-        frameworkMappings: { some: { framework } },
-      },
+      where,
       _count: { _all: true },
     });
     const countMap = new Map(grouped.map((row) => [row.topicId, row._count._all]));
@@ -50,7 +60,6 @@ export class ControlKbService {
   }
 
   async createTopic(input: {
-    standard: string;
     title: string;
     description?: string | null;
     mode?: string | null;
@@ -59,7 +68,6 @@ export class ControlKbService {
   }) {
     return this.prisma.controlTopic.create({
       data: {
-        standard: input.standard,
         title: input.title,
         description: input.description || null,
         mode: input.mode || 'continuous',
@@ -96,7 +104,6 @@ export class ControlKbService {
   }
 
   async listControls(params: {
-    standard: string;
     topicId?: string | null;
     query?: string | null;
     status?: string | null;
@@ -110,7 +117,7 @@ export class ControlKbService {
     includeDisabled?: boolean;
   }) {
     const includeDisabled = params.includeDisabled === true;
-    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet(params.standard);
+    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
     if (!includeDisabled && activeFrameworks && activeFrameworks.size === 0) {
       return {
         items: [],
@@ -119,7 +126,7 @@ export class ControlKbService {
         pageSize: Math.min(Math.max(params.pageSize || 10, 1), 500),
       };
     }
-    const filters: any[] = [{ topic: { standard: params.standard } }];
+    const filters: any[] = [];
     if (params.topicId) {
       filters.push({
         OR: [
@@ -200,7 +207,7 @@ export class ControlKbService {
       status: true,
       sortOrder: true,
       _count: { select: { testComponents: true } },
-      topic: { select: { title: true, standard: true } },
+      topic: { select: { title: true } },
       ...(needsEvidenceFilter ? { testComponents: { select: { evidenceTypes: true } } } : {}),
     });
 
@@ -276,13 +283,10 @@ export class ControlKbService {
     };
   }
 
-  async listFrameworks(standard: string, includeDisabled = true) {
-    const frameworks = await this.prisma.framework.findMany({
-      where: { standard },
-    });
+  async listFrameworks(includeDisabled = true) {
+    const frameworks = await this.prisma.framework.findMany();
 
     const mappings = await this.prisma.controlFrameworkMapping.findMany({
-      where: { control: { topic: { standard } } },
       select: {
         framework: true,
         controlId: true,
@@ -294,13 +298,11 @@ export class ControlKbService {
     const missing = Array.from(new Set(mappings.map((item) => item.framework))).filter((name) => name && !known.has(name));
     if (missing.length) {
       await this.prisma.framework.createMany({
-        data: missing.map((name) => ({ standard, name, status: 'enabled' })),
+        data: missing.map((name) => ({ name, status: 'disabled' })),
       });
     }
 
-    const refreshed = missing.length
-      ? await this.prisma.framework.findMany({ where: { standard } })
-      : frameworks;
+    const refreshed = missing.length ? await this.prisma.framework.findMany() : frameworks;
     const visible = includeDisabled ? refreshed : refreshed.filter((item) => item.status === 'enabled');
 
     const summary = new Map<string, { controlIds: Set<string>; topicIds: Set<string> }>();
@@ -346,14 +348,27 @@ export class ControlKbService {
       status?: string;
     },
   ) {
-    const updated = await this.prisma.framework.update({
-      where: { id },
-      data: {
-        name: input.name ?? undefined,
-        status: input.status ?? undefined,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.framework.findUnique({ where: { id } });
+      if (!existing) {
+        throw new Error('Framework not found');
+      }
+      const nextStatus = input.status ?? existing.status;
+      if (nextStatus === 'enabled') {
+        await tx.framework.updateMany({
+          where: { id: { not: id }, status: 'enabled' },
+          data: { status: 'disabled', updatedAt: new Date() },
+        });
+      }
+      return tx.framework.update({
+        where: { id },
+        data: {
+          name: input.name ?? undefined,
+          status: input.status ?? undefined,
+        },
+      });
     });
-    const counts = await this.getFrameworkCounts(updated.standard, updated.name);
+    const counts = await this.getFrameworkCounts(updated.name);
     return {
       id: updated.id,
       frameworkId: updated.externalId || updated.name,
@@ -364,15 +379,14 @@ export class ControlKbService {
     };
   }
 
-  async createFramework(input: { standard: string; name: string; status?: string }) {
+  async createFramework(input: { name: string; status?: string }) {
     const name = input.name.trim();
-    const standard = input.standard.trim();
 
     const existing = await this.prisma.framework.findUnique({
-      where: { standard_name: { standard, name } },
+      where: { name },
     });
     if (existing) {
-      const counts = await this.getFrameworkCounts(existing.standard, existing.name);
+      const counts = await this.getFrameworkCounts(existing.name);
       return {
         id: existing.id,
         frameworkId: existing.externalId || existing.name,
@@ -382,15 +396,23 @@ export class ControlKbService {
         topicCount: counts.topicCount,
       };
     }
-
-    const created = await this.prisma.framework.create({
-      data: {
-        standard,
-        name,
-        status: input.status || 'enabled',
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const status = input.status || 'enabled';
+      const created = await tx.framework.create({
+        data: {
+          name,
+          status,
+        },
+      });
+      if (status === 'enabled') {
+        await tx.framework.updateMany({
+          where: { id: { not: created.id }, status: 'enabled' },
+          data: { status: 'disabled', updatedAt: new Date() },
+        });
+      }
+      return created;
     });
-    const counts = await this.getFrameworkCounts(created.standard, created.name);
+    const counts = await this.getFrameworkCounts(created.name);
     return {
       id: created.id,
       frameworkId: created.externalId || created.name,
@@ -401,11 +423,10 @@ export class ControlKbService {
     };
   }
 
-  private async getFrameworkCounts(standard: string, framework: string) {
+  private async getFrameworkCounts(framework: string) {
     const mappings = await this.prisma.controlFrameworkMapping.findMany({
       where: {
         framework,
-        control: { topic: { standard } },
       },
       select: {
         controlId: true,
@@ -424,9 +445,8 @@ export class ControlKbService {
     return { controlCount: controlIds.size, topicCount: topicIds.size };
   }
 
-  private async getActiveFrameworkSet(standard: string) {
+  private async getActiveFrameworkSet() {
     const frameworks = await this.prisma.framework.findMany({
-      where: { standard },
       select: { name: true, status: true },
     });
     if (!frameworks.length) return null;
@@ -434,21 +454,29 @@ export class ControlKbService {
     return new Set(enabled);
   }
 
-  async listControlCatalog(standard: string) {
-    const activeFrameworks = await this.getActiveFrameworkSet(standard);
+  async getActiveFrameworkLabel() {
+    const active = await this.prisma.framework.findFirst({
+      where: { status: 'enabled' },
+      orderBy: { updatedAt: 'desc' },
+      select: { name: true },
+    });
+    return active?.name || null;
+  }
+
+  async listControlCatalog() {
+    const activeFrameworks = await this.getActiveFrameworkSet();
     if (activeFrameworks && activeFrameworks.size === 0) {
       return [];
     }
 
     const where = activeFrameworks
       ? {
-          topic: { standard },
           OR: [
             { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } },
             { frameworkMappings: { none: {} } },
           ],
         }
-      : { topic: { standard } };
+      : {};
 
     const controls = await this.prisma.controlDefinition.findMany({
       where,
@@ -601,18 +629,15 @@ export class ControlKbService {
   async addControlTopicMapping(controlId: string, topicId: string, relationshipType: 'PRIMARY' | 'RELATED') {
     const control = await this.prisma.controlDefinition.findUnique({
       where: { id: controlId },
-      select: { id: true, topicId: true, topic: { select: { standard: true } } },
+      select: { id: true, topicId: true },
     });
     if (!control) throw new BadRequestException('Control not found');
 
     const topic = await this.prisma.controlTopic.findUnique({
       where: { id: topicId },
-      select: { id: true, standard: true },
+      select: { id: true },
     });
     if (!topic) throw new BadRequestException('Topic not found');
-    if (control.topic?.standard && control.topic.standard !== topic.standard) {
-      throw new BadRequestException('Topic standard mismatch');
-    }
 
     if (relationshipType === 'PRIMARY') {
       return this.prisma.$transaction(async (tx) => {
@@ -716,22 +741,25 @@ export class ControlKbService {
     return this.prisma.testComponent.delete({ where: { id } });
   }
 
-  async getControlContextByCode(params: { controlCode: string; standard: string }): Promise<ControlContext | null> {
+  async getControlContextByCode(params: {
+    controlCode: string;
+    includeDisabled?: boolean;
+  }): Promise<ControlContext | null> {
     const controlCode = params.controlCode?.trim();
     if (!controlCode) return null;
 
+    const includeDisabled = params.includeDisabled === true;
     const direct = await this.prisma.controlDefinition.findFirst({
       where: {
         controlCode,
-        topic: { standard: params.standard },
       },
       include: { testComponents: true, frameworkMappings: { select: { framework: true } } },
     });
 
-    const control = direct || (await this.findByIsoMapping(controlCode, params.standard));
+    const control = direct || (await this.findByIsoMapping(controlCode));
     if (!control) return null;
 
-    const activeFrameworks = await this.getActiveFrameworkSet(params.standard);
+    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
     if (activeFrameworks && !this.isControlAllowed(control, activeFrameworks)) {
       return null;
     }
@@ -747,10 +775,9 @@ export class ControlKbService {
     };
   }
 
-  private async findByIsoMapping(controlCode: string, standard: string) {
+  private async findByIsoMapping(controlCode: string) {
     const variants = toIsoVariants(controlCode);
     const controls = await this.prisma.controlDefinition.findMany({
-      where: { topic: { standard } },
       include: { testComponents: true, frameworkMappings: { select: { framework: true } } },
     });
 

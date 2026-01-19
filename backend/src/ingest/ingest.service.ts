@@ -94,7 +94,6 @@ export class IngestService {
         originalName: true,
         mimeType: true,
         kind: true,
-        standard: true,
         conversationId: true,
       },
     });
@@ -105,7 +104,7 @@ export class IngestService {
 
     // ✅ Logs مهمة جدًا للديمو + للتأكد إن kind صح
     console.log(
-      `[INGEST] doc=${doc.id} name=${doc.originalName} kind=${doc.kind} standard=${doc.standard} conv=${doc.conversationId}`,
+      `[INGEST] doc=${doc.id} name=${doc.originalName} kind=${doc.kind} conv=${doc.conversationId}`,
     );
 
     const buffer = await fs.readFile(doc.storagePath);

@@ -3,7 +3,6 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import {
   ApiService,
-  ComplianceStandard,
   ControlDefinitionRecord,
   ControlFrameworkMappingRecord,
   TestComponentRecord,
@@ -18,7 +17,6 @@ import { AuthService } from '../../services/auth.service';
   styleUrl: './control-detail-page.component.css',
 })
 export class ControlDetailPageComponent implements OnInit {
-  standard: ComplianceStandard = 'ISO';
   control?: ControlDefinitionRecord;
   loading = true;
   error = '';
@@ -31,9 +29,6 @@ export class ControlDetailPageComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.route.queryParamMap.subscribe((params) => {
-      this.standard = this.normalizeStandard(params.get('standard'));
-    });
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (!id) return;
@@ -124,12 +119,5 @@ export class ControlDetailPageComponent implements OnInit {
   private getFrameworkLabel(mapping: ControlFrameworkMappingRecord) {
     const ref = mapping.frameworkRef;
     return (ref?.externalId || ref?.name || mapping.framework || '').trim() || '—';
-  }
-
-  private normalizeStandard(value?: string | null): ComplianceStandard {
-    const upper = String(value || 'ISO').toUpperCase();
-    if (upper === 'FRA') return 'FRA';
-    if (upper === 'CBE') return 'CBE';
-    return 'ISO';
   }
 }

@@ -1,10 +1,13 @@
 const { spawn } = require('child_process');
+const path = require('path');
 
 const npmCmd = 'npm';
-const frontend = spawn(npmCmd, ['run', 'dev'], { stdio: 'inherit', shell: true });
+const rootDir = __dirname;
+const frontend = spawn(npmCmd, ['run', 'dev'], { stdio: 'inherit', shell: true, cwd: rootDir });
 const backend = spawn(npmCmd, ['--prefix', 'backend', 'run', 'dev'], {
   stdio: 'inherit',
   shell: true,
+  cwd: rootDir,
 });
 
 const shutdown = (code) => {

@@ -34,8 +34,7 @@ The server enables CORS for `http://localhost:4200` to allow the Angular app to 
   ```json
   {
     "conversationId": "optional-uuid",
-    "message": "How are we handling MFA and logging for finance?",
-    "standard": "ISO"
+    "message": "How are we handling MFA and logging for finance?"
   }
   ```
   Response:
@@ -47,11 +46,9 @@ The server enables CORS for `http://localhost:4200` to allow the Angular app to 
       { "doc": "ISO-27001.pdf", "page": 12, "snippet": "..." }
     ],
     "complianceSummary": {
-      "standard": "ISO",
+      "framework": "ISO 27001",
       "status": "COMPLIANT",
-      "missing": [
-        { "id": "uuid", "title": "Quarterly access review evidence", "severity": "MEDIUM" }
-      ],
+      "missing": ["Quarterly access review evidence"],
       "recommendations": ["Refresh data flow diagrams...", "..."]
     }
   }

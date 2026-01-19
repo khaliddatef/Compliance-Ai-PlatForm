@@ -2,19 +2,19 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map } from 'rxjs/operators';
 
-export type ComplianceStandard = 'ISO' | 'FRA' | 'CBE';
+export type FrameworkLabel = string;
 
 export type Citation = {
   doc: string;
   page: number;
-  kind?: 'STANDARD' | 'CUSTOMER';
+  kind?: 'CUSTOMER';
 };
 
 export type ComplianceSummary = {
-  standard: ComplianceStandard;
+  framework: FrameworkLabel | null;
   status: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN'; // ✅ add UNKNOWN
-  missing: { title: string; details?: string }[];
-  recommendations: { title: string; details?: string }[];
+  missing: string[];
+  recommendations: string[];
 };
 
 export type ExternalLink = {
@@ -98,7 +98,6 @@ export type EvaluateControlResponse = {
 export type UploadDocumentRecord = {
   id: string;
   conversationId: string;
-  standard: string;
   kind: 'CUSTOMER' | 'STANDARD';
   originalName: string;
   mimeType: string;
@@ -170,7 +169,6 @@ export type DashboardActivityItem = {
 
 export type DashboardResponse = {
   ok: boolean;
-  standard: string;
   metrics: DashboardMetrics;
   riskCoverage: {
     id: string;
@@ -186,7 +184,6 @@ export type DashboardResponse = {
 
 export type ControlTopic = {
   id: string;
-  standard: string;
   title: string;
   description?: string | null;
   mode?: string;
@@ -265,28 +262,16 @@ export class ApiService {
 
   uploadCustomerFiles(
     conversationId: string,
-    standard: ComplianceStandard,
     files: File[],
     language?: 'ar' | 'en',
   ) {
     const fd = new FormData();
     for (const f of files) fd.append('files', f);
 
-    let params = new HttpParams()
-      .set('conversationId', conversationId)
-      .set('standard', standard)
-      .set('kind', 'CUSTOMER');
+    let params = new HttpParams().set('conversationId', conversationId).set('kind', 'CUSTOMER');
     if (language) params = params.set('language', language);
 
     return this.http.post('/api/uploads', fd, { params });
-  }
-
-  uploadStandardFiles(standard: ComplianceStandard, files: File[]) {
-    const fd = new FormData();
-    for (const f of files) fd.append('files', f);
-
-    const params = new HttpParams().set('standard', standard);
-    return this.http.post('/api/standards/upload', fd, { params });
   }
 
   listUploads(conversationId: string) {
@@ -317,9 +302,8 @@ export class ApiService {
     );
   }
 
-  getDashboard(standard: ComplianceStandard) {
-    const params = new HttpParams().set('standard', standard);
-    return this.http.get<DashboardResponse>('/api/dashboard', { params });
+  getDashboard() {
+    return this.http.get<DashboardResponse>('/api/dashboard');
   }
 
   submitEvidence(documentIds: string[], controlId: string, status: 'COMPLIANT' | 'PARTIAL', note?: string) {
@@ -333,18 +317,17 @@ export class ApiService {
 
   // ===== Control Knowledge Base =====
 
-  listControlTopics(standard: ComplianceStandard, framework?: string) {
-    let params = new HttpParams().set('standard', standard);
+  listControlTopics(framework?: string) {
+    let params = new HttpParams();
     if (framework) params = params.set('framework', framework);
     return this.http.get<ControlTopic[]>('/api/control-kb/topics', { params });
   }
 
-  listFrameworks(standard: ComplianceStandard) {
-    const params = new HttpParams().set('standard', standard);
-    return this.http.get<FrameworkSummary[]>('/api/control-kb/frameworks', { params });
+  listFrameworks() {
+    return this.http.get<FrameworkSummary[]>('/api/control-kb/frameworks');
   }
 
-  createFramework(payload: { standard: ComplianceStandard; name: string }) {
+  createFramework(payload: { name: string }) {
     return this.http.post<FrameworkSummary>('/api/control-kb/frameworks', payload);
   }
 
@@ -352,18 +335,16 @@ export class ApiService {
     return this.http.patch<FrameworkSummary>(`/api/control-kb/frameworks/${id}`, payload);
   }
 
-  listControlCatalog(standard: ComplianceStandard) {
-    const params = new HttpParams().set('standard', standard);
-    return this.http.get<ControlCatalogItem[]>('/api/control-kb/catalog', { params });
+  listControlCatalog() {
+    return this.http.get<ControlCatalogItem[]>('/api/control-kb/catalog');
   }
 
-  getControlContext(standard: ComplianceStandard, controlCode: string) {
-    const params = new HttpParams().set('standard', standard).set('controlCode', controlCode);
+  getControlContext(controlCode: string) {
+    const params = new HttpParams().set('controlCode', controlCode);
     return this.http.get<ControlContext | null>('/api/control-kb/context', { params });
   }
 
   createControlTopic(payload: {
-    standard: ComplianceStandard;
     title: string;
     description?: string;
     mode?: string;
@@ -382,7 +363,6 @@ export class ApiService {
   }
 
   listControlDefinitions(paramsInput: {
-    standard: ComplianceStandard;
     topicId?: string;
     query?: string;
     status?: string;
@@ -394,7 +374,7 @@ export class ApiService {
     page?: number;
     pageSize?: number;
   }) {
-    let params = new HttpParams().set('standard', paramsInput.standard);
+    let params = new HttpParams();
     if (paramsInput.topicId) params = params.set('topicId', paramsInput.topicId);
     if (paramsInput.query) params = params.set('q', paramsInput.query);
     if (paramsInput.status) params = params.set('status', paramsInput.status);
@@ -474,22 +454,19 @@ export class ApiService {
 
   chat(
     conversationId: string,
-    standard: ComplianceStandard,
     message: string,
     language?: 'ar' | 'en',
   ) {
-    return this.http.post<any>('/api/chat', { conversationId, standard, message, language });
+    return this.http.post<any>('/api/chat', { conversationId, message, language });
   }
 
   evaluateControl(
     conversationId: string,
-    standard: ComplianceStandard,
     control: ControlContext,
     language?: 'ar' | 'en',
   ) {
     return this.http.post<EvaluateControlResponse>('/api/chat/evaluate', {
       conversationId,
-      standard,
       control,
       language,
     });
@@ -521,13 +498,12 @@ export class ApiService {
   // ===== Compat wrapper =====
   sendMessage(
     message: string,
-    standard: ComplianceStandard,
     conversationId?: string,
     language?: 'ar' | 'en',
   ) {
     const convId = conversationId || 'demo-1';
 
-    return this.chat(convId, standard, message, language).pipe(
+    return this.chat(convId, message, language).pipe(
       map((res) => {
         const reply = String(res?.reply ?? '');
         const backendConversationId = String(res?.conversationId ?? convId);
@@ -538,7 +514,7 @@ export class ApiService {
           reply,
           citations: Array.isArray(res?.citations) ? res.citations : [],
           complianceSummary: res?.complianceSummary ?? {
-            standard,
+            framework: null,
             status: 'UNKNOWN', // ✅ default UNKNOWN (never PARTIAL)
             missing: [],
             recommendations: [],

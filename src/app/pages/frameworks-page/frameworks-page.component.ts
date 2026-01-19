@@ -3,7 +3,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { ApiService, ComplianceStandard, FrameworkSummary } from '../../services/api.service';
+import { ApiService, FrameworkSummary } from '../../services/api.service';
 
 @Component({
   selector: 'app-frameworks-page',
@@ -16,7 +16,6 @@ export class FrameworksPageComponent implements OnInit {
   frameworks: FrameworkSummary[] = [];
   loading = true;
   error = '';
-  standard: ComplianceStandard = 'ISO';
   showNewFramework = false;
   newFrameworkName = '';
   creating = false;
@@ -28,18 +27,7 @@ export class FrameworksPageComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.api.listFrameworks(this.standard).subscribe({
-      next: (frameworks) => {
-        this.frameworks = this.sortFrameworks(frameworks || []);
-        this.loading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.error = 'Unable to load frameworks.';
-        this.loading = false;
-        this.cdr.markForCheck();
-      },
-    });
+    this.loadFrameworks();
   }
 
   get isAdmin() {
@@ -64,16 +52,13 @@ export class FrameworksPageComponent implements OnInit {
     if (!name || this.creating) return;
     this.error = '';
     this.creating = true;
-    this.api.createFramework({ standard: this.standard, name }).subscribe({
-      next: (created) => {
-        this.frameworks = this.sortFrameworks([
-          created,
-          ...this.frameworks.filter((item) => item.id !== created.id),
-        ]);
+    this.api.createFramework({ name }).subscribe({
+      next: () => {
         this.newFrameworkName = '';
         this.showNewFramework = false;
         this.error = '';
         this.creating = false;
+        this.loadFrameworks();
         this.cdr.markForCheck();
       },
       error: () => {
@@ -88,24 +73,10 @@ export class FrameworksPageComponent implements OnInit {
     if (!this.isAdmin) return;
     this.error = '';
     const nextStatus = framework.status === 'enabled' ? 'disabled' : 'enabled';
-    const previous = { ...framework };
-    this.frameworks = this.sortFrameworks(
-      this.frameworks.map((item) =>
-        item.id === framework.id ? { ...item, status: nextStatus } : item,
-      ),
-    );
     this.api.updateFramework(framework.id, { status: nextStatus }).subscribe({
-      next: (updated) => {
-        this.frameworks = this.sortFrameworks(
-          this.frameworks.map((item) => (item.id === updated.id ? updated : item)),
-        );
-        this.cdr.markForCheck();
-      },
+      next: () => this.loadFrameworks(),
       error: () => {
         this.error = 'Unable to update framework status.';
-        this.frameworks = this.sortFrameworks(
-          this.frameworks.map((item) => (item.id === previous.id ? previous : item)),
-        );
         this.cdr.markForCheck();
       },
     });
@@ -119,6 +90,22 @@ export class FrameworksPageComponent implements OnInit {
       const aLabel = a.frameworkId || a.framework;
       const bLabel = b.frameworkId || b.framework;
       return aLabel.localeCompare(bLabel);
+    });
+  }
+
+  private loadFrameworks() {
+    this.loading = true;
+    this.api.listFrameworks().subscribe({
+      next: (frameworks) => {
+        this.frameworks = this.sortFrameworks(frameworks || []);
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to load frameworks.';
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
     });
   }
 }

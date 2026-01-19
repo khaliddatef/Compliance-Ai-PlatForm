@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   ApiService,
-  ComplianceStandard,
   ControlDefinitionRecord,
   ControlTopic,
   TestComponentRecord,
@@ -46,7 +45,6 @@ type ComponentForm = {
   styleUrl: './control-kb-page.component.css',
 })
 export class ControlKbPageComponent implements OnInit {
-  standard: ComplianceStandard = 'ISO';
   topics: ControlTopic[] = [];
   controls: ControlDefinitionRecord[] = [];
   selectedTopic?: ControlTopic;
@@ -125,19 +123,9 @@ export class ControlKbPageComponent implements OnInit {
 
   ngOnInit() {
     this.route.queryParamMap.subscribe((params) => {
-      const next = this.normalizeStandard(params.get('standard'));
       this.pendingTopicId = String(params.get('topicId') || '').trim();
       this.pendingFramework = String(params.get('framework') || '').trim();
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
-      const changed = next !== this.standard;
-      this.standard = next;
-      if (changed) {
-        this.selectedTopic = undefined;
-        this.selectedControl = undefined;
-        this.controls = [];
-        this.topicFilter = 'all';
-        this.page = 1;
-      }
       this.refreshTopics();
     });
   }
@@ -170,18 +158,11 @@ export class ControlKbPageComponent implements OnInit {
     return chips;
   }
 
-  get frameworkLabel() {
-    if (this.standard === 'ISO') return 'ISO 27001';
-    if (this.standard === 'FRA') return 'FRA Egypt';
-    if (this.standard === 'CBE') return 'CBE Egypt';
-    return this.standard;
-  }
-
   refreshTopics() {
     this.loading = true;
     this.error = '';
     this.cdr.markForCheck();
-    this.api.listControlTopics(this.standard).subscribe({
+    this.api.listControlTopics().subscribe({
       next: (topics) => {
         this.topics = topics || [];
         this.applyQueryFilters();
@@ -238,7 +219,6 @@ export class ControlKbPageComponent implements OnInit {
 
     this.api
       .listControlDefinitions({
-        standard: this.standard,
         topicId: this.topicFilter !== 'all' ? this.topicFilter : undefined,
         query: this.searchTerm.trim() || undefined,
         status: this.statusFilter !== 'all' ? this.statusFilter : undefined,
@@ -268,7 +248,7 @@ export class ControlKbPageComponent implements OnInit {
   }
 
   loadFrameworks() {
-    this.api.listFrameworks(this.standard).subscribe({
+    this.api.listFrameworks().subscribe({
       next: (frameworks) => {
         const list = frameworks || [];
         const names = list.map((fw) => fw.framework).filter(Boolean);
@@ -308,7 +288,6 @@ export class ControlKbPageComponent implements OnInit {
 
     this.api
       .createControlTopic({
-        standard: this.standard,
         title,
         description: this.topicDraft.description.trim(),
         mode: this.topicDraft.mode,
@@ -757,20 +736,6 @@ export class ControlKbPageComponent implements OnInit {
     this.loadControls();
   }
 
-  updateStandard(next: ComplianceStandard) {
-    this.standard = next;
-    this.frameworkFilter = 'all';
-    this.frameworkQuery = '';
-    this.topicFilter = 'all';
-    this.frameworkRefFilter = '';
-    this.selectedTopic = undefined;
-    this.selectedControl = undefined;
-    this.controls = [];
-    this.page = 1;
-    this.refreshTopics();
-    this.router.navigate([], { queryParams: { standard: next }, queryParamsHandling: 'merge' });
-  }
-
   getControlFrameworkLabels(control: ControlDefinitionRecord) {
     const labels = (control.frameworkMappings || [])
       .map((mapping) => {
@@ -831,7 +796,7 @@ export class ControlKbPageComponent implements OnInit {
 
   openControlPage(control: ControlDefinitionRecord, event?: Event) {
     event?.stopPropagation();
-    this.router.navigate(['/control-kb', control.id], { queryParams: { standard: this.standard } });
+    this.router.navigate(['/control-kb', control.id]);
   }
 
   mapTopicForm(topic: ControlTopic): TopicForm {
@@ -854,13 +819,6 @@ export class ControlKbPageComponent implements OnInit {
       status: control.status || 'enabled',
       sortOrder: typeof control.sortOrder === 'number' ? control.sortOrder : 0,
     };
-  }
-
-  normalizeStandard(value?: string | null): ComplianceStandard {
-    const upper = String(value || 'ISO').toUpperCase();
-    if (upper === 'FRA') return 'FRA';
-    if (upper === 'CBE') return 'CBE';
-    return 'ISO';
   }
 
   getEvidenceTypes() {

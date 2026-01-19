@@ -11,7 +11,7 @@ export type AgentComplianceResponse = {
   reply: string;
   citations: Array<{ doc: string; page: number | null; kind: 'CUSTOMER' }>;
   complianceSummary: {
-    standard: string;
+    framework: string | null;
     status: ComplianceStatus;
     missing: string[];
     recommendations: string[];
@@ -74,11 +74,10 @@ export class AgentService {
     if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing');
   }
 
-  private frameworkLabel(standard: 'ISO' | 'FRA' | 'CBE') {
-    if (standard === 'ISO') return 'ISO/IEC 27001';
-    if (standard === 'FRA') return 'FRA Egypt';
-    if (standard === 'CBE') return 'CBE';
-    return standard;
+  private frameworkLabel(framework?: string | null, language?: 'ar' | 'en') {
+    const value = String(framework || '').trim();
+    if (value) return value;
+    return language === 'ar' ? 'الإطار النشط' : 'the active framework';
   }
 
   private shouldSearchWeb(question: string) {
@@ -282,21 +281,21 @@ Rules:
   // 2) MAIN ANSWER (CUSTOMER ONLY)
   // ---------------------------
   async answerCompliance(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
+    framework?: string | null;
     question: string;
     customerVectorStoreId?: string | null;
     language?: 'ar' | 'en';
   }): Promise<AgentComplianceResponse> {
     this.assertConfig();
 
-    const { standard, question, customerVectorStoreId, language: forcedLanguage } = params;
+    const { framework, question, customerVectorStoreId, language: forcedLanguage } = params;
     const language = forcedLanguage ?? this.detectLanguage(question);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
 
     // ✅ لو مفيش customer store: ندي guidance عام + UNKNOWN
     if (!customerVectorStoreId) {
-      return this.answerGeneral({ standard, question, language });
+      return this.answerGeneral({ framework, question, language });
     }
 
     // ✅ Probe customer store only (يحسم موضوع الملف)
@@ -305,7 +304,7 @@ Rules:
       customerVectorStoreId,
     });
 
-    // ✅ لو مفيش evidence مرتبط: اقفل الباب قبل ما يخلط standard/customer
+    // ✅ لو مفيش evidence مرتبط: اقفل الباب قبل ما يخلط framework/customer
     if (!probe.hasRelevantCustomerEvidence) {
       const externalLinks = await webSearchPromise;
       const extra =
@@ -326,23 +325,23 @@ Rules:
             `It may be unrelated (or not enough detail). Please upload evidence relevant to your question such as: ` +
             `policies, procedures, logs, screenshots, or audit reports.`;
 
-      return {
-        reply:
-          reply +
+        return {
+          reply:
+            reply +
           (probe.customerDocsSeen.length
             ? language === 'ar'
               ? `\n\nالملفات الموجودة: ${probe.customerDocsSeen.slice(0, 5).join(', ')}`
               : `\n\nCustomer docs detected: ${probe.customerDocsSeen.slice(0, 5).join(', ')}`
             : '') +
           extra,
-        citations: [],
-        externalLinks: externalLinks.length ? externalLinks : undefined,
-        complianceSummary: {
-          standard,
-          status: 'UNKNOWN',
-          missing:
-            language === 'ar'
-              ? ['لم يتم العثور على أدلة عميل مناسبة لهذا السؤال.']
+          citations: [],
+          externalLinks: externalLinks.length ? externalLinks : undefined,
+          complianceSummary: {
+            framework: framework ?? null,
+            status: 'UNKNOWN',
+            missing:
+              language === 'ar'
+                ? ['لم يتم العثور على أدلة عميل مناسبة لهذا السؤال.']
               : ['Relevant customer evidence not found for this question.'],
           recommendations:
             language === 'ar'
@@ -383,9 +382,9 @@ Scope & behavior:
 - If the user says they don’t understand, rephrase simply and give a short example.
 - Never present uncertain info as fact.
 - If the user asks for a compliance verdict, explain that formal decisions come from the internal Control Knowledge Base and evidence evaluation.
-- Current framework context: ${this.frameworkLabel(standard)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
+- Current framework context: ${this.frameworkLabel(framework, language)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
 
-Evidence & standards:
+Evidence & guidance:
 - Use ONLY CUSTOMER evidence from file search results.
 - This chat provides guidance only. Do NOT make compliance decisions here.
 - Always set complianceSummary.status to "UNKNOWN".
@@ -426,9 +425,9 @@ Structure:
           complianceSummary: {
             type: 'object',
             additionalProperties: false,
-            required: ['standard', 'status', 'missing', 'recommendations'],
+            required: ['framework', 'status', 'missing', 'recommendations'],
             properties: {
-              standard: { type: 'string' },
+              framework: { type: 'string' },
               status: {
                 type: 'string',
                 enum: ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'],
@@ -448,7 +447,7 @@ Structure:
       const body = {
         model: this.model,
         instructions,
-        input: `Standard=${standard}\nUser question: ${question}\n\nAssess compliance using ONLY customer evidence.`,
+        input: `Framework=${this.frameworkLabel(framework, language)}\nUser question: ${question}\n\nAssess compliance using ONLY customer evidence.`,
         tools: [
           {
             type: 'file_search',
@@ -525,13 +524,13 @@ Structure:
 
       if (!parsed.complianceSummary) {
         parsed.complianceSummary = {
-          standard,
+          framework: framework ?? null,
           status: 'UNKNOWN',
           missing: [],
           recommendations: [],
         };
       } else {
-        parsed.complianceSummary.standard = standard;
+        parsed.complianceSummary.framework = framework ?? null;
         parsed.complianceSummary.status = 'UNKNOWN';
       }
 
@@ -559,7 +558,7 @@ Structure:
         citations: [],
         externalLinks: externalLinks.length ? externalLinks : undefined,
         complianceSummary: {
-          standard,
+          framework: framework ?? null,
           status: 'UNKNOWN',
           missing:
             language === 'ar'
@@ -586,13 +585,13 @@ Structure:
   // 2A) GENERAL ANSWER (NO CUSTOMER EVIDENCE)
   // ---------------------------
   private async answerGeneral(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
+    framework?: string | null;
     question: string;
     language?: 'ar' | 'en';
   }): Promise<AgentComplianceResponse> {
     this.assertConfig();
 
-    const { standard, question, language: forcedLanguage } = params;
+    const { framework, question, language: forcedLanguage } = params;
     const language = forcedLanguage ?? this.detectLanguage(question);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
@@ -614,7 +613,7 @@ Guidance rules:
 - If unclear, ask up to 2 clarifying questions (one at a time) before giving detailed steps.
 - If the user says they don’t understand, rephrase simply and give a short example.
 - Never claim compliance without customer evidence.
-- Current framework context: ${this.frameworkLabel(standard)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
+- Current framework context: ${this.frameworkLabel(framework, language)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
 - Always set complianceSummary.status to "UNKNOWN".
 - Because there is no customer evidence here, citations must be an empty array.
 
@@ -653,9 +652,9 @@ Structure:
           complianceSummary: {
             type: 'object',
             additionalProperties: false,
-            required: ['standard', 'status', 'missing', 'recommendations'],
+            required: ['framework', 'status', 'missing', 'recommendations'],
             properties: {
-              standard: { type: 'string' },
+              framework: { type: 'string' },
               status: {
                 type: 'string',
                 enum: ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'],
@@ -675,7 +674,7 @@ Structure:
       const body = {
         model: this.model,
         instructions,
-        input: `Standard=${standard}\nUser question: ${question}\nProvide guidance without claiming compliance.`,
+        input: `Framework=${this.frameworkLabel(framework, language)}\nUser question: ${question}\nProvide guidance without claiming compliance.`,
         text: {
           format: {
             type: 'json_schema',
@@ -736,13 +735,13 @@ Structure:
 
       if (!parsed.complianceSummary) {
         parsed.complianceSummary = {
-          standard,
+          framework: framework ?? null,
           status: 'UNKNOWN',
           missing: [],
           recommendations: [],
         };
       } else {
-        parsed.complianceSummary.standard = standard;
+        parsed.complianceSummary.framework = framework ?? null;
         parsed.complianceSummary.status = 'UNKNOWN';
       }
 
@@ -753,9 +752,9 @@ Structure:
 
       const reply =
         language === 'ar'
-          ? `أنا مساعد امتثال للأمن السيبراني. أقدر أوضح متطلبات ${this.frameworkLabel(standard)} وما الأدلة المطلوبة عادةً. ` +
+          ? `أنا مساعد امتثال للأمن السيبراني. أقدر أوضح متطلبات ${this.frameworkLabel(framework, language)} وما الأدلة المطلوبة عادةً. ` +
             `لو عايز تقييم امتثال فعلي، من فضلك ارفع الأدلة الخاصة بكم.`
-          : `I’m a cybersecurity compliance assistant. I can explain ${this.frameworkLabel(standard)} requirements and what evidence is typically needed. ` +
+          : `I’m a cybersecurity compliance assistant. I can explain ${this.frameworkLabel(framework, language)} requirements and what evidence is typically needed. ` +
             `To assess your compliance, please upload customer evidence (policies, procedures, screenshots, audit logs, access review records, etc.).`;
       const externalLinks = wantsWeb ? await webSearchPromise : [];
       const extra =
@@ -772,7 +771,7 @@ Structure:
         citations: [],
         externalLinks: externalLinks.length ? externalLinks : undefined,
         complianceSummary: {
-          standard,
+          framework: framework ?? null,
           status: 'UNKNOWN',
           missing:
             language === 'ar'
@@ -799,7 +798,7 @@ Structure:
   // 2B) DOCUMENT-LEVEL MATCHING (SINGLE CUSTOMER DOC)
   // ---------------------------
   async analyzeCustomerDocument(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
+    framework?: string | null;
     fileName: string;
     content?: string | null;
     customerVectorStoreId?: string | null;
@@ -808,7 +807,8 @@ Structure:
   }): Promise<DocumentMatchResult> {
     this.assertConfig();
 
-    const { standard, fileName, content, customerVectorStoreId, language: forcedLanguage, controlCandidates } = params;
+    const { framework, fileName, content, customerVectorStoreId, language: forcedLanguage, controlCandidates } =
+      params;
     const language = forcedLanguage ?? this.detectLanguage(content || fileName || '');
     const trimmedContent = (content || '').trim();
     const hasContent = Boolean(trimmedContent);
@@ -847,7 +847,7 @@ Structure:
     }
 
     const instructions = `
-You are a supportive cybersecurity compliance teammate for ${this.frameworkLabel(standard)}.
+You are a supportive cybersecurity compliance teammate for ${this.frameworkLabel(framework, language)}.
 Analyze ONE customer document and decide whether it is valid evidence for a specific control.
 
 Language:
@@ -894,7 +894,7 @@ Return STRICT JSON only.
 
     try {
     const baseInput = [
-      `Standard: ${standard}`,
+      `Framework: ${this.frameworkLabel(framework, language)}`,
       `Target file name: ${fileName}`,
       'Analyze the target document only.',
       allowedList.length ? `Allowed control IDs: ${allowedList.join(', ')}` : '',
@@ -1027,14 +1027,14 @@ Return STRICT JSON only.
   // 3) CONTROL-LEVEL EVIDENCE EVALUATION
   // ---------------------------
   async evaluateControlEvidence(params: {
-    standard: 'ISO' | 'FRA' | 'CBE';
+    framework?: string | null;
     control: ControlContext;
     customerVectorStoreId?: string | null;
     language?: 'ar' | 'en';
   }): Promise<AgentControlEvaluation> {
     this.assertConfig();
 
-    const { standard, control, customerVectorStoreId, language } = params;
+    const { framework, control, customerVectorStoreId, language } = params;
 
     if (!customerVectorStoreId) {
       const languageLabel = language === 'ar' ? 'ar' : 'en';
@@ -1114,7 +1114,7 @@ Rules:
 
     try {
       const context = [
-        `Standard: ${standard}`,
+        `Framework: ${this.frameworkLabel(framework, language)}`,
         `Control: ${control.id} — ${control.title}`,
         `Summary: ${control.summary}`,
         `Evidence needed: ${(control.evidence || []).join('; ')}`,

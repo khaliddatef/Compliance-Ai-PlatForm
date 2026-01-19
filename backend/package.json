@@ -13,6 +13,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "start:all": "node ../start-all.js",
     "db:sync": "prisma db push && prisma generate",
     "seed:control-kb": "ts-node scripts/seed-control-kb.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",

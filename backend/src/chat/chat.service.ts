@@ -5,7 +5,6 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 type Role = 'user' | 'assistant';
-export type ComplianceStandard = 'ISO' | 'FRA' | 'CBE';
 
 export type RagHit = {
   documentId: string;
@@ -88,7 +87,7 @@ export class ChatService {
 
     const docs = await this.prisma.document.findMany({
       where: { conversationId },
-      select: { openaiFileId: true, kind: true, standard: true, storagePath: true },
+      select: { openaiFileId: true, kind: true, storagePath: true },
     });
 
     // transaction علشان كله يتمسح مرة واحدة
@@ -168,13 +167,12 @@ export class ChatService {
 
   async retrieveTopChunks(params: {
     conversationId: string;
-    standard: ComplianceStandard;
     kind: 'STANDARD' | 'CUSTOMER';
     query: string;
     topK?: number;
     maxScan?: number;
   }): Promise<RagHit[]> {
-    const { conversationId, standard, kind, query, topK = 5, maxScan = 300 } = params;
+    const { conversationId, kind, query, topK = 5, maxScan = 300 } = params;
 
     const qTokens = this.tokenize(query);
     if (qTokens.length === 0) return [];
@@ -183,7 +181,6 @@ export class ChatService {
       where: {
         document: {
           conversationId,
-          standard,
           kind,
         },
       },

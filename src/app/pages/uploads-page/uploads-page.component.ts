@@ -7,7 +7,6 @@ import { ApiService, UploadDocumentRecord } from '../../services/api.service';
 type UploadRow = {
   id: string;
   name: string;
-  standard: string;
   framework: string;
   frameworkReferences: string[];
   status: string;
@@ -140,12 +139,11 @@ export class UploadsPageComponent implements OnInit {
     });
   }
 
-  openFrameworkReference(reference: string, standard: string) {
+  openFrameworkReference(reference: string) {
     const trimmed = String(reference || '').trim();
     if (!trimmed) return;
     this.router.navigate(['/control-kb'], {
       queryParams: {
-        standard: String(standard || 'ISO').toUpperCase(),
         frameworkRef: trimmed,
       },
     });
@@ -154,18 +152,17 @@ export class UploadsPageComponent implements OnInit {
   private mapDoc(doc: UploadDocumentRecord): UploadRow {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
-    const framework = this.standardLabel(doc.standard);
-    const uploaderLabel = this.formatUploader(doc);
-    const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
-    const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
     const frameworkReferences = Array.isArray(doc.frameworkReferences)
       ? doc.frameworkReferences.filter((ref) => Boolean(ref))
       : [];
+    const framework = frameworkReferences[0] || 'Unknown';
+    const uploaderLabel = this.formatUploader(doc);
+    const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
+    const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
 
     return {
       id: doc.id,
       name: doc.originalName || 'Document',
-      standard: String(doc.standard || ''),
       framework,
       frameworkReferences,
       status: statusMeta.label,
@@ -176,13 +173,6 @@ export class UploadsPageComponent implements OnInit {
       uploaderLabel,
       statusClass: statusMeta.className,
     };
-  }
-
-  private standardLabel(standard: string) {
-    if (standard === 'ISO') return 'ISO 27001';
-    if (standard === 'FRA') return 'FRA';
-    if (standard === 'CBE') return 'CBE';
-    return standard || 'Unknown';
   }
 
   private formatSize(bytes: number) {

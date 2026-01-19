@@ -18,7 +18,7 @@ Other scripts:
 - `src/app/app.routes.ts` – routes: chat (`/`) and documents (`/documents`), wrapped by `AppShellComponent`.
 - Shell & layout: `components/app-shell`, `components/sidebar`.
 - Chat experience: `pages/chat-page`, `components/chat-header`, `message-list`, `message-bubble`, `composer`.
-- Compliance summary: `components/right-panel`, `standard-selector`.
+- Compliance summary: `components/right-panel`.
 - Documents workflow: `pages/documents-page`, `components/upload-dropzone`, `uploaded-files-list`.
 - Services: `services/api.service.ts` (mock assistant + compliance), `chat.service.ts` (conversations + localStorage), `upload.service.ts` (mock progress + localStorage).
 - Models: `models/` for messages, conversations, compliance results, and uploads.
@@ -40,4 +40,4 @@ Other scripts:
 
 - Conversations and uploads persist locally via `localStorage`; clear storage to reset.
 - Animations are CSS-based (transitions, subtle fades/slides).
-- To add more standards or mock responses, extend `ApiService`.
+- To add more framework-specific mock responses, extend `ApiService`.

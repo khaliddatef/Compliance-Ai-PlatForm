@@ -42,7 +42,6 @@ export class UploadController {
   @Get()
   async list(
     @Query('conversationId') conversationId: string,
-    @Query('standard') standard?: string,
     @Query('kind') kind?: DocKind,
     @Query('all') all?: string,
     @CurrentUser() user?: AuthUser,
@@ -57,7 +56,6 @@ export class UploadController {
 
     const docs = await this.uploadService.listByConversation({
       conversationId,
-      standard,
       kind,
       user,
     });
@@ -156,7 +154,6 @@ export class UploadController {
   )
   async upload(
     @Query('conversationId') conversationId: string,
-    @Query('standard') standard: string,
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: AuthUser,
     @Query('kind') kind: DocKind = 'CUSTOMER',
@@ -168,7 +165,6 @@ export class UploadController {
 
     return this.uploadService.saveUploadedFiles({
       conversationId,
-      standard,
       kind,
       files,
       user,
