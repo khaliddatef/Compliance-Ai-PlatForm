@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ControlContext } from '../agent/agent.service';
 
@@ -103,6 +104,7 @@ export class ControlKbService {
     evidenceType?: string | null;
     isoMapping?: string | null;
     framework?: string | null;
+    frameworkRef?: string | null;
     page?: number;
     pageSize?: number;
     includeDisabled?: boolean;
@@ -160,13 +162,15 @@ export class ControlKbService {
     const skip = (page - 1) * pageSize;
     const isoMapping = params.isoMapping?.trim();
     const evidenceType = params.evidenceType?.trim();
+    const frameworkRef = params.frameworkRef?.trim();
     const needsEvidenceFilter = Boolean(evidenceType);
     const needsIsoFilter = Boolean(isoMapping);
+    const needsFrameworkRefFilter = Boolean(frameworkRef);
     const frameworkWhere = !includeDisabled && activeFrameworks
       ? { framework: { in: Array.from(activeFrameworks) } }
       : undefined;
 
-    const baseSelect: any = {
+    const select = Prisma.validator<Prisma.ControlDefinitionSelect>()({
       id: true,
       topicId: true,
       controlCode: true,
@@ -197,17 +201,14 @@ export class ControlKbService {
       sortOrder: true,
       _count: { select: { testComponents: true } },
       topic: { select: { title: true, standard: true } },
-    };
+      ...(needsEvidenceFilter ? { testComponents: { select: { evidenceTypes: true } } } : {}),
+    });
 
-    if (needsEvidenceFilter) {
-      baseSelect.testComponents = { select: { evidenceTypes: true } };
-    }
-
-    if (needsEvidenceFilter || needsIsoFilter) {
+    if (needsEvidenceFilter || needsIsoFilter || needsFrameworkRefFilter) {
       const items = await this.prisma.controlDefinition.findMany({
         where,
         orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
-        select: baseSelect,
+        select,
       });
 
       let filtered = items;
@@ -228,6 +229,14 @@ export class ControlKbService {
         filtered = filtered.filter((control) => {
           const evidence = this.collectEvidence((control as any).testComponents || []);
           return evidence.some((item) => item.toLowerCase().includes(needle));
+        });
+      }
+
+      if (needsFrameworkRefFilter && frameworkRef) {
+        const needle = frameworkRef.toLowerCase();
+        filtered = filtered.filter((control) => {
+          const references = this.buildFrameworkReferences(control.frameworkMappings || []);
+          return references.some((ref) => ref.toLowerCase().includes(needle));
         });
       }
 
@@ -255,7 +264,7 @@ export class ControlKbService {
         orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
         skip,
         take: pageSize,
-        select: baseSelect,
+        select,
       }),
     ]);
 
@@ -758,6 +767,29 @@ export class ControlKbService {
     const mappings = control.frameworkMappings || [];
     if (!mappings.length) return true;
     return mappings.some((mapping) => active.has(mapping.framework));
+  }
+
+  private buildFrameworkReferences(mappings: unknown) {
+    const grouped = new Map<string, Set<string>>();
+    const list = Array.isArray(mappings) ? mappings : [];
+    for (const mapping of list) {
+      if (!mapping || typeof mapping !== 'object') continue;
+      const name =
+        'framework' in mapping ? String((mapping as { framework?: string | null }).framework || '').trim() : '';
+      if (!name) continue;
+      const code =
+        'frameworkCode' in mapping
+          ? String((mapping as { frameworkCode?: string | null }).frameworkCode || '').trim()
+          : '';
+      const set = grouped.get(name) || new Set<string>();
+      if (code) set.add(code);
+      grouped.set(name, set);
+    }
+
+    return Array.from(grouped.entries()).map(([name, codes]) => {
+      const list = Array.from(codes.values()).filter(Boolean);
+      return list.length ? `${name} ${list.join(', ')}` : name;
+    });
   }
 
   private collectEvidence(testComponents: Array<{ evidenceTypes: unknown }>) {

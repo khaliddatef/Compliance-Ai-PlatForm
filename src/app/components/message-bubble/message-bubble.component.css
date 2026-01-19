@@ -1,43 +1,43 @@
 .bubble {
   display: flex;
-  gap: 10px;
-  width: fit-content;
-  max-width: 82%;
+  gap: 8px;
+  max-width: 76%;
+  min-width: min(220px, 100%);
 }
 
 .bubble.from-user {
   flex-direction: row-reverse;
-  width: fit-content;
-  max-width: 60%;
-  gap: 0;
+  max-width: 76%;
+  gap: 8px;
   margin-left: auto;
 }
 
 .avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: var(--surface-3);
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--surface-1);
   border: 1px solid var(--border-subtle);
   display: grid;
   place-items: center;
-  font-weight: 700;
-  color: var(--ink-strong);
+  font-weight: 600;
+  color: var(--ink-muted);
+  font-size: 12px;
 }
 
 .bubble.from-user .avatar {
-  background: linear-gradient(135deg, var(--accent-500), var(--accent-300));
-  color: white;
-  border: none;
+  background: var(--surface-1);
+  color: var(--ink-muted);
+  border: 1px solid var(--border-subtle);
 }
 
 .bubble-body {
   flex: 0 1 auto;
-  background: var(--surface-2);
+  background: var(--surface-1);
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  padding: 12px;
-  box-shadow: var(--shadow-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: none;
 }
 
 .bubble.action-message .bubble-body {
@@ -46,16 +46,16 @@
 }
 
 .bubble.from-user .bubble-body {
-  background: linear-gradient(135deg, var(--accent-500), var(--accent-300));
-  color: #0b1330;
-  border: none;
-  box-shadow: var(--shadow-raised);
+  background: var(--accent-050);
+  border: 1px solid var(--accent-200);
+  color: var(--ink-strong);
+  box-shadow: none;
 }
 
 .content {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   color: inherit;
 }
 
@@ -63,28 +63,29 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--surface-3);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   font-weight: 600;
   color: var(--ink-strong);
   width: fit-content;
+  font-size: 12px;
 }
 
 .action-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .action-btn {
   border: 1px solid var(--border-subtle);
-  background: var(--surface-1);
+  background: transparent;
   color: var(--ink-strong);
-  padding: 6px 10px;
-  border-radius: 999px;
+  padding: 4px 10px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
@@ -101,6 +102,7 @@
   display: flex;
   gap: 8px;
   line-height: 1.5;
+  width: 100%;
 }
 
 .bullet-mark {
@@ -114,6 +116,8 @@
 
 .text {
   color: inherit;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .citation {
@@ -130,37 +134,67 @@
   border-color: rgba(255, 255, 255, 0.5);
 }
 
+.bubble.rtl .bubble-body {
+  direction: rtl;
+  text-align: right;
+}
+
+.bubble.rtl .line {
+  flex-direction: row-reverse;
+}
+
+.bubble.rtl .text {
+  text-align: right;
+}
+
+.bubble.rtl .action-buttons {
+  justify-content: flex-end;
+}
+
+.bubble.rtl .meta {
+  direction: rtl;
+}
+
 .meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
   color: var(--ink-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .bubble.from-user .meta {
-  color: rgba(10, 24, 41, 0.85);
+  color: var(--ink-muted);
 }
 
 .meta-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-left: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.bubble-body:hover .meta-actions,
+.bubble-body:focus-within .meta-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .meta-reference {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
+  padding: 2px 6px;
+  border-radius: 8px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-1);
   color: var(--ink-muted);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -177,7 +211,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--surface-1);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
   padding: 12px;
   font-size: 12px;
   color: var(--ink-strong);
@@ -238,8 +272,8 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--ink-muted);
-  padding: 4px;
-  border-radius: 8px;
+  padding: 2px;
+  border-radius: 6px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -317,5 +351,12 @@
     max-width: 100%;
     width: 100%;
     margin-left: 0;
+  }
+}
+
+@media (hover: none) {
+  .meta-actions {
+    opacity: 1;
+    pointer-events: auto;
   }
 }

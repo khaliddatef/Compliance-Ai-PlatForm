@@ -61,6 +61,7 @@ export class ControlKbPageComponent implements OnInit {
   statusFilter = 'all';
   ownerRoleFilter = '';
   evidenceFilter = '';
+  frameworkRefFilter = '';
   page = 1;
   pageSize = 10;
   pageSizeOptions = [10, 50, 100, 500];
@@ -76,6 +77,7 @@ export class ControlKbPageComponent implements OnInit {
   relatedTopicId = '';
   pendingTopicId = '';
   pendingFramework = '';
+  pendingFrameworkRef = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -126,6 +128,7 @@ export class ControlKbPageComponent implements OnInit {
       const next = this.normalizeStandard(params.get('standard'));
       this.pendingTopicId = String(params.get('topicId') || '').trim();
       this.pendingFramework = String(params.get('framework') || '').trim();
+      this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
       const changed = next !== this.standard;
       this.standard = next;
       if (changed) {
@@ -163,6 +166,7 @@ export class ControlKbPageComponent implements OnInit {
     if (this.statusFilter !== 'all') chips.push({ label: 'Status', value: this.statusFilter });
     if (this.evidenceFilter.trim()) chips.push({ label: 'Evidence', value: this.evidenceFilter.trim() });
     if (this.ownerRoleFilter.trim()) chips.push({ label: 'Owner', value: this.ownerRoleFilter.trim() });
+    if (this.frameworkRefFilter.trim()) chips.push({ label: 'Framework ref', value: this.frameworkRefFilter.trim() });
     return chips;
   }
 
@@ -200,6 +204,10 @@ export class ControlKbPageComponent implements OnInit {
       this.frameworkFilter = this.pendingFramework;
     }
 
+    if (this.pendingFrameworkRef) {
+      this.frameworkRefFilter = this.pendingFrameworkRef;
+    }
+
     if (this.pendingTopicId) {
       const found = this.topics.find((topic) => topic.id === this.pendingTopicId);
       this.topicFilter = found ? found.id : 'all';
@@ -207,6 +215,7 @@ export class ControlKbPageComponent implements OnInit {
 
     this.pendingFramework = '';
     this.pendingTopicId = '';
+    this.pendingFrameworkRef = '';
   }
 
   selectTopic(topic: ControlTopic) {
@@ -236,6 +245,7 @@ export class ControlKbPageComponent implements OnInit {
         ownerRole: this.ownerRoleFilter.trim() || undefined,
         evidenceType: this.evidenceFilter.trim() || undefined,
         framework: this.frameworkFilter !== 'all' ? this.frameworkFilter : undefined,
+        frameworkRef: this.frameworkRefFilter.trim() || undefined,
         page: this.page,
         pageSize: this.pageSize,
       })
@@ -739,6 +749,7 @@ export class ControlKbPageComponent implements OnInit {
     this.statusFilter = 'all';
     this.ownerRoleFilter = '';
     this.evidenceFilter = '';
+    this.frameworkRefFilter = '';
     this.frameworkPopoverControlId = null;
     this.topicPopoverControlId = null;
     this.page = 1;
@@ -751,6 +762,7 @@ export class ControlKbPageComponent implements OnInit {
     this.frameworkFilter = 'all';
     this.frameworkQuery = '';
     this.topicFilter = 'all';
+    this.frameworkRefFilter = '';
     this.selectedTopic = undefined;
     this.selectedControl = undefined;
     this.controls = [];

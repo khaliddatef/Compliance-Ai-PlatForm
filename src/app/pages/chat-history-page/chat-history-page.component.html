@@ -11,35 +11,73 @@
       </div>
     </div>
 
-    <div class="history-list" *ngIf="conversations.length; else emptyState">
-      <div class="history-item" *ngFor="let conversation of conversations; trackBy: trackById">
-        <div class="history-main">
-          <div class="title">{{ conversation.title }}</div>
-          <div class="meta">
-            <span>{{ conversation.messages.length }} messages</span>
-            <span>Updated {{ conversation.updatedAt | date: 'short' }}</span>
+    <ng-container *ngIf="isPrivileged; else userHistory">
+      <div class="history-list" *ngIf="filteredRemoteConversations.length; else remoteEmpty">
+        <div class="history-item" *ngFor="let conversation of filteredRemoteConversations; trackBy: trackByRemoteId">
+          <div class="history-main">
+            <div class="title">{{ conversation.title || 'Untitled chat' }}</div>
+            <div class="meta">
+              <span>{{ conversation.messageCount }} messages</span>
+              <span *ngIf="conversation.user?.name">By {{ conversation.user?.name }}</span>
+              <span *ngIf="conversation.user?.email">{{ conversation.user?.email }}</span>
+              <span>Updated {{ conversation.updatedAt | date: 'short' }}</span>
+            </div>
+          </div>
+          <div class="history-actions">
+            <button class="action-btn" type="button" (click)="openRemoteConversation(conversation.id)">
+              View
+            </button>
           </div>
         </div>
-        <div class="history-actions">
-          <button class="action-btn" type="button" (click)="openConversation(conversation.id)">
-            Open
-          </button>
-          <button
-            class="action-btn danger"
-            type="button"
-            (click)="deleteConversation(conversation.id, $event)"
-          >
-            Delete
-          </button>
+      </div>
+
+      <ng-template #remoteEmpty>
+        <div class="empty" *ngIf="remoteLoading">
+          <h4>Loading chats</h4>
+          <p>Please wait while we load chat history.</p>
+        </div>
+        <div class="empty error" *ngIf="!remoteLoading && remoteError">
+          <h4>Unable to load</h4>
+          <p>{{ remoteError }}</p>
+        </div>
+        <div class="empty" *ngIf="!remoteLoading && !remoteError">
+          <h4>No chats yet</h4>
+          <p>Chats created by users will appear here.</p>
+        </div>
+      </ng-template>
+    </ng-container>
+
+    <ng-template #userHistory>
+      <div class="history-list" *ngIf="localConversations.length; else emptyState">
+        <div class="history-item" *ngFor="let conversation of localConversations; trackBy: trackById">
+          <div class="history-main">
+            <div class="title">{{ conversation.title }}</div>
+            <div class="meta">
+              <span>{{ conversation.messages.length }} messages</span>
+              <span>Updated {{ conversation.updatedAt | date: 'short' }}</span>
+            </div>
+          </div>
+          <div class="history-actions">
+            <button class="action-btn" type="button" (click)="openConversation(conversation.id)">
+              Open
+            </button>
+            <button
+              class="action-btn danger"
+              type="button"
+              (click)="deleteConversation(conversation.id, $event)"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <ng-template #emptyState>
-      <div class="empty">
-        <h4>No chats yet</h4>
-        <p>Start a new chat from Home and your history will appear here.</p>
-      </div>
+      <ng-template #emptyState>
+        <div class="empty">
+          <h4>No chats yet</h4>
+          <p>Start a new chat from Home and your history will appear here.</p>
+        </div>
+      </ng-template>
     </ng-template>
   </div>
 </section>

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword, verifyPassword } from './password.util';
 
@@ -17,6 +18,8 @@ const SEED_USERS: Array<{ name: string; email: string; role: AuthUser['role'] }>
   { name: 'Omar', email: 'wasamy.omar@tekronyx.com', role: 'MANAGER' },
   { name: 'Khaled', email: 'khaled@tekronyx.com', role: 'ADMIN' },
 ];
+
+type AuthTokenPayload = JwtPayload & { sub: string };
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -46,6 +49,28 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  issueToken(user: AuthUser) {
+    const payload = { sub: user.id };
+    return jwt.sign(payload, this.getJwtSecret(), {
+      expiresIn: this.getJwtTtl() as jwt.SignOptions['expiresIn'],
+    });
+  }
+
+  verifyToken(token: string): AuthTokenPayload {
+    const payload = jwt.verify(token, this.getJwtSecret());
+    if (!payload || typeof payload === 'string') {
+      throw new Error('Invalid token payload');
+    }
+    if (!payload.sub || typeof payload.sub !== 'string') {
+      throw new Error('Invalid token subject');
+    }
+    return payload as AuthTokenPayload;
+  }
+
+  getJwtTtl() {
+    return process.env.JWT_EXPIRES_IN || '8h';
+  }
+
   async getUserById(id: string): Promise<AuthUser | null> {
     const rows = await this.prisma.$queryRaw<AuthUser[]>`
       SELECT id, name, email, role
@@ -62,6 +87,15 @@ export class AuthService implements OnModuleInit {
       email: user.email,
       role,
     };
+  }
+
+  private getJwtSecret() {
+    const secret = process.env.JWT_SECRET;
+    if (secret) return secret;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET is missing');
+    }
+    return 'dev-secret-change-me';
   }
 
   private async ensureSchema() {

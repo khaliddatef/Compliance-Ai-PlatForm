@@ -53,25 +53,24 @@
   margin-bottom: 12px;
 }
 
-.search {
+.search-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 240px;
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 8px 10px;
-  min-width: 220px;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
-.search input {
-  border: none;
-  background: transparent;
+.search-row input {
+  flex: 1 1 320px;
+  min-width: 220px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 10px 12px;
   outline: none;
-  width: 100%;
   font: inherit;
   color: var(--ink-strong);
+  background: var(--surface-1);
 }
 
 .filter-group {
@@ -194,14 +193,20 @@
   min-width: 0;
 }
 
-.reference-item {
-  font-size: 12px;
-  color: var(--ink-muted);
+.reference-link {
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--accent-500);
+  cursor: pointer;
   line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+
+.reference-link:hover,
+.reference-link:focus-visible {
+  text-decoration: underline;
 }
 
 .download-btn {
@@ -271,8 +276,50 @@
 }
 
 @media (max-width: 900px) {
+  .panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panel-header .primary-btn {
+    width: 100%;
+  }
+
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-row input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .filter-group {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .filter-group label {
+    width: 100%;
+  }
+
+  .filter-group select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .table {
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .row {
-    grid-template-columns: 1fr;
+    min-width: 720px;
+    padding: 8px 10px;
   }
 
   .filters {
@@ -281,5 +328,17 @@
 
   .filter-group select {
     min-width: 120px;
+  }
+
+  .download-btn,
+  .delete-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 600px) {
+  .filter-group {
+    grid-template-columns: 1fr;
   }
 }

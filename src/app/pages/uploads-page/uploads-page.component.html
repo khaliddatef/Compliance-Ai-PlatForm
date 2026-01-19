@@ -9,41 +9,41 @@
     </div>
 
     <div class="filters">
-      <div class="search">
+      <div class="search-row">
         <input
           type="search"
-          placeholder="Search by file, chat, or framework..."
+          placeholder="Search uploads..."
           [(ngModel)]="searchTerm"
         />
-      </div>
-      <div class="filter-group">
-        <label>
-          Framework
-          <select [(ngModel)]="frameworkFilter">
-            <option *ngFor="let option of frameworkOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
-              {{ option }}
-            </option>
-          </select>
-        </label>
-        <label>
-          Status
-          <select [(ngModel)]="statusFilter">
-            <option *ngFor="let option of statusOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
-              {{ option }}
-            </option>
-          </select>
-        </label>
-        <label>
-          Sort
-          <select [(ngModel)]="sortMode">
-            <option value="recent">Newest</option>
-            <option value="oldest">Oldest</option>
-            <option value="name-asc">Name A-Z</option>
-            <option value="name-desc">Name Z-A</option>
-            <option value="size-desc">Size: Large-Small</option>
-            <option value="size-asc">Size: Small-Large</option>
-          </select>
-        </label>
+        <div class="filter-group">
+          <label>
+            Framework
+            <select [(ngModel)]="frameworkFilter">
+              <option *ngFor="let option of frameworkOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
+                {{ option }}
+              </option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select [(ngModel)]="statusFilter">
+              <option *ngFor="let option of statusOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
+                {{ option }}
+              </option>
+            </select>
+          </label>
+          <label>
+            Sort
+            <select [(ngModel)]="sortMode">
+              <option value="recent">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="size-desc">Size: Large-Small</option>
+              <option value="size-asc">Size: Small-Large</option>
+            </select>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -70,25 +70,32 @@
         <span>Action</span>
       </div>
       <div class="row" *ngFor="let file of visibleFiles">
-        <div class="file-cell">
+        <div class="file-cell" data-label="File">
           <span class="file-name" [title]="file.name">{{ file.name }}</span>
           <span class="file-meta" *ngIf="file.chatTitle">Chat: {{ file.chatTitle }}</span>
+          <span class="file-meta" *ngIf="file.uploaderLabel">Uploaded by: {{ file.uploaderLabel }}</span>
         </div>
-        <span class="framework-cell" [title]="file.framework">{{ file.framework }}</span>
-        <span class="status-pill" [ngClass]="file.statusClass">{{ file.status }}</span>
-        <span class="date">{{ file.uploadedAt | date: 'MMM d, y' }}</span>
-        <div class="reference-cell">
+        <span class="framework-cell" data-label="Framework" [title]="file.framework">{{ file.framework }}</span>
+        <span class="status-pill" data-label="Status" [ngClass]="file.statusClass">{{ file.status }}</span>
+        <span class="date" data-label="Uploaded">{{ file.uploadedAt | date: 'MMM d, y' }}</span>
+        <div class="reference-cell" data-label="Framework references">
           <ng-container *ngIf="file.frameworkReferences.length; else noReference">
-            <span class="reference-item" *ngFor="let reference of file.frameworkReferences" [title]="reference">
+            <button
+              class="reference-link"
+              type="button"
+              *ngFor="let reference of file.frameworkReferences"
+              [title]="reference"
+              (click)="openFrameworkReference(reference, file.standard)"
+            >
               {{ reference }}
-            </span>
+            </button>
           </ng-container>
           <ng-template #noReference>
             <span class="reference-empty">—</span>
           </ng-template>
         </div>
-        <span>{{ file.size }}</span>
-        <div class="action-group">
+        <span data-label="Size">{{ file.size }}</span>
+        <div class="action-group" data-label="Action">
           <button class="download-btn" type="button" (click)="downloadFile(file)">Download</button>
           <button class="delete-btn" type="button" (click)="deleteFile(file)">Delete</button>
         </div>

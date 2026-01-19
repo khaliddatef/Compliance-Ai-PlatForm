@@ -1,0 +1,22 @@
+<div class="chat-layout">
+  <section class="chat-main">
+    <app-chat-header
+      [title]="title"
+      [subtitle]="subtitle"
+      status="View only"
+      [showAction]="true"
+      actionLabel="Back to history"
+      (actionClicked)="backToHistory()"
+    ></app-chat-header>
+
+    <div class="viewer-state" *ngIf="loading || error">
+      <div class="state-card" *ngIf="loading">Loading conversation...</div>
+      <div class="state-card error" *ngIf="error">{{ error }}</div>
+    </div>
+
+    <app-message-list
+      *ngIf="!loading && !error"
+      [messages]="messages"
+    ></app-message-list>
+  </section>
+</div>

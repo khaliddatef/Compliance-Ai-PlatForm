@@ -8,6 +8,7 @@ import { FrameworkControlsPageComponent } from './pages/framework-controls-page/
 import { LoginPageComponent } from './pages/login-page/login-page.component';
 import { SettingsPageComponent } from './pages/settings-page/settings-page.component';
 import { ChatHistoryPageComponent } from './pages/chat-history-page/chat-history-page.component';
+import { ChatViewerPageComponent } from './pages/chat-viewer-page/chat-viewer-page.component';
 import { ControlKbPageComponent } from './pages/control-kb-page/control-kb-page.component';
 import { ControlDetailPageComponent } from './pages/control-detail-page/control-detail-page.component';
 import { requireAuthGuard } from './guards/require-auth.guard';
@@ -24,6 +25,7 @@ export const routes: Routes = [
     children: [
       { path: 'home', component: ChatPageComponent, data: { title: 'Home' } },
       { path: 'history', component: ChatHistoryPageComponent, data: { title: 'Chat History' } },
+      { path: 'history/:conversationId', component: ChatViewerPageComponent, data: { title: 'Chat View' } },
       { path: 'dashboard', component: DashboardPageComponent, data: { title: 'Dashboard' } },
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
       { path: 'frameworks', component: FrameworksPageComponent, canActivate: [requireKbGuard], data: { title: 'Frameworks' } },

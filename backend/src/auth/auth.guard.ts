@@ -7,12 +7,20 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    const userId = String(req.headers['x-user-id'] || '').trim();
-    if (!userId) {
-      throw new UnauthorizedException('Missing user context');
+    const header = String(req.headers['authorization'] || '').trim();
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    if (!match) {
+      throw new UnauthorizedException('Missing auth token');
     }
 
-    const user = await this.auth.getUserById(userId);
+    let payload: { sub: string };
+    try {
+      payload = this.auth.verifyToken(match[1]);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    const user = await this.auth.getUserById(payload.sub);
     if (!user) {
       throw new UnauthorizedException('Invalid user');
     }

@@ -1,11 +1,13 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ApiService, UploadDocumentRecord } from '../../services/api.service';
 
 type UploadRow = {
   id: string;
   name: string;
+  standard: string;
   framework: string;
   frameworkReferences: string[];
   status: string;
@@ -13,6 +15,7 @@ type UploadRow = {
   sizeBytes: number;
   uploadedAt: number;
   chatTitle?: string;
+  uploaderLabel?: string;
   statusClass: string;
 };
 
@@ -32,7 +35,11 @@ export class UploadsPageComponent implements OnInit {
   statusFilter = 'all';
   sortMode = 'recent';
 
-  constructor(private readonly api: ApiService, private readonly cdr: ChangeDetectorRef) {}
+  constructor(
+    private readonly api: ApiService,
+    private readonly cdr: ChangeDetectorRef,
+    private readonly router: Router,
+  ) {}
 
   ngOnInit() {
     this.refresh();
@@ -133,10 +140,22 @@ export class UploadsPageComponent implements OnInit {
     });
   }
 
+  openFrameworkReference(reference: string, standard: string) {
+    const trimmed = String(reference || '').trim();
+    if (!trimmed) return;
+    this.router.navigate(['/control-kb'], {
+      queryParams: {
+        standard: String(standard || 'ISO').toUpperCase(),
+        frameworkRef: trimmed,
+      },
+    });
+  }
+
   private mapDoc(doc: UploadDocumentRecord): UploadRow {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
     const framework = this.standardLabel(doc.standard);
+    const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
     const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
     const frameworkReferences = Array.isArray(doc.frameworkReferences)
@@ -146,6 +165,7 @@ export class UploadsPageComponent implements OnInit {
     return {
       id: doc.id,
       name: doc.originalName || 'Document',
+      standard: String(doc.standard || ''),
       framework,
       frameworkReferences,
       status: statusMeta.label,
@@ -153,6 +173,7 @@ export class UploadsPageComponent implements OnInit {
       sizeBytes,
       uploadedAt,
       chatTitle: doc?.conversation?.title,
+      uploaderLabel,
       statusClass: statusMeta.className,
     };
   }
@@ -180,6 +201,15 @@ export class UploadsPageComponent implements OnInit {
       return { label: 'Reviewed', className: 'reviewed' };
     }
     return { label: 'Uploaded', className: 'uploaded' };
+  }
+
+  private formatUploader(doc: UploadDocumentRecord) {
+    const user = doc.conversation?.user;
+    if (!user) return '';
+    const name = String(user?.name || '').trim();
+    const email = String(user?.email || '').trim();
+    if (name && email) return `${name} · ${email}`;
+    return name || email;
   }
 
   private sortFiles(list: UploadRow[]) {

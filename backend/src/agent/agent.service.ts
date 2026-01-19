@@ -9,7 +9,7 @@ export type ExternalLink = {
 
 export type AgentComplianceResponse = {
   reply: string;
-  citations: Array<{ doc: string; page: number | null; kind: 'STANDARD' | 'CUSTOMER' }>;
+  citations: Array<{ doc: string; page: number | null; kind: 'CUSTOMER' }>;
   complianceSummary: {
     standard: string;
     status: ComplianceStatus;
@@ -25,7 +25,7 @@ export type AgentControlEvaluation = {
   satisfied: string[];
   missing: string[];
   recommendations: string[];
-  citations: Array<{ doc: string; page: number | null; kind: 'STANDARD' | 'CUSTOMER' }>;
+  citations: Array<{ doc: string; page: number | null; kind: 'CUSTOMER' }>;
 };
 
 export type DocumentMatchResult = {
@@ -72,20 +72,6 @@ export class AgentService {
 
   private assertConfig() {
     if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing');
-  }
-
-  private stdStoreIdFor(standard: 'ISO' | 'FRA' | 'CBE'): string {
-    const key =
-      standard === 'ISO'
-        ? process.env.OPENAI_VECTOR_STORE_STD_ISO
-        : standard === 'FRA'
-          ? process.env.OPENAI_VECTOR_STORE_STD_FRA
-          : process.env.OPENAI_VECTOR_STORE_STD_CBE;
-
-    if (!key) {
-      throw new Error(`Missing env var for standard vector store: OPENAI_VECTOR_STORE_STD_${standard}`);
-    }
-    return key;
   }
 
   private frameworkLabel(standard: 'ISO' | 'FRA' | 'CBE') {
@@ -171,7 +157,7 @@ export class AgentService {
   }
 
   // ---------------------------
-  // 1) CUSTOMER-ONLY PROBE (NO STANDARD!)
+  // 1) CUSTOMER-ONLY PROBE
   // ---------------------------
   private async probeCustomerEvidence(params: {
     question: string;
@@ -183,7 +169,6 @@ export class AgentService {
 You are validating whether the CUSTOMER uploaded evidence is relevant to the user's question.
 
 You MUST use ONLY the CUSTOMER vector store search results.
-Do NOT use any STANDARD documents.
 Return STRICT JSON only.
 
 Rules:
@@ -294,7 +279,7 @@ Rules:
   }
 
   // ---------------------------
-  // 2) MAIN ANSWER (STANDARD + CUSTOMER)
+  // 2) MAIN ANSWER (CUSTOMER ONLY)
   // ---------------------------
   async answerCompliance(params: {
     standard: 'ISO' | 'FRA' | 'CBE';
@@ -305,7 +290,6 @@ Rules:
     this.assertConfig();
 
     const { standard, question, customerVectorStoreId, language: forcedLanguage } = params;
-    const stdVectorStoreId = this.stdStoreIdFor(standard);
     const language = forcedLanguage ?? this.detectLanguage(question);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
@@ -402,12 +386,12 @@ Scope & behavior:
 - Current framework context: ${this.frameworkLabel(standard)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
 
 Evidence & standards:
-- STANDARD documents are reference only and MUST NEVER be treated as CUSTOMER evidence.
+- Use ONLY CUSTOMER evidence from file search results.
 - This chat provides guidance only. Do NOT make compliance decisions here.
 - Always set complianceSummary.status to "UNKNOWN".
 
 Transparency:
-- If you reference standard guidance, say it is reference material and not a compliance decision.
+- If you reference framework requirements, say it is guidance and not a compliance decision.
 
 Return STRICT JSON only.
 Keep answers concise, supportive, and action-oriented.
@@ -435,7 +419,7 @@ Structure:
               properties: {
                 doc: { type: 'string' },
                 page: { type: ['number', 'null'] },
-                kind: { type: 'string', enum: ['STANDARD', 'CUSTOMER'] },
+                kind: { type: 'string', enum: ['CUSTOMER'] },
               },
             },
           },
@@ -464,11 +448,11 @@ Structure:
       const body = {
         model: this.model,
         instructions,
-        input: `Standard=${standard}\nUser question: ${question}\n\nAssess compliance using BOTH stores but NEVER treat STANDARD as customer evidence.`,
+        input: `Standard=${standard}\nUser question: ${question}\n\nAssess compliance using ONLY customer evidence.`,
         tools: [
           {
             type: 'file_search',
-            vector_store_ids: [stdVectorStoreId, customerVectorStoreId],
+            vector_store_ids: [customerVectorStoreId],
             max_num_results: 8,
           },
         ],
@@ -529,14 +513,15 @@ Structure:
         parsed.externalLinks = externalLinks.length ? externalLinks : undefined;
       }
 
-      parsed.citations = (parsed.citations || []).map((c) => ({
-        doc: c.doc,
-        page: c.page ?? null,
-        kind: c.kind,
-      }));
-
-      parsed.complianceSummary.standard = standard;
-      parsed.complianceSummary.status = 'UNKNOWN';
+      parsed.citations = Array.isArray(parsed.citations)
+        ? parsed.citations
+            .filter((c) => String((c as any)?.kind || '').toUpperCase() === 'CUSTOMER')
+            .map((c) => ({
+              doc: c.doc,
+              page: c.page ?? null,
+              kind: 'CUSTOMER',
+            }))
+        : [];
 
       if (!parsed.complianceSummary) {
         parsed.complianceSummary = {
@@ -545,9 +530,10 @@ Structure:
           missing: [],
           recommendations: [],
         };
+      } else {
+        parsed.complianceSummary.standard = standard;
+        parsed.complianceSummary.status = 'UNKNOWN';
       }
-      parsed.complianceSummary.standard = standard;
-      parsed.complianceSummary.status = 'UNKNOWN';
 
       return parsed;
     } catch (e: any) {
@@ -582,11 +568,11 @@ Structure:
           recommendations:
             language === 'ar'
               ? [
-                  'تأكد من OPENAI_API_KEY وإعدادات الموديل والـ vector stores',
+                  'تأكد من OPENAI_API_KEY وإعدادات الموديل',
                   'راجع سجلات OpenAI في لوحة التحكم',
                 ]
               : [
-                  'Verify OPENAI_API_KEY, model, and vector store IDs',
+                  'Verify OPENAI_API_KEY and model configuration',
                   'Check OpenAI logs in the platform dashboard',
                 ],
         },
@@ -630,9 +616,10 @@ Guidance rules:
 - Never claim compliance without customer evidence.
 - Current framework context: ${this.frameworkLabel(standard)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
 - Always set complianceSummary.status to "UNKNOWN".
+- Because there is no customer evidence here, citations must be an empty array.
 
 Transparency:
-- If you reference standard guidance, say it is reference material and not a compliance decision.
+- If you reference framework requirements, say it is guidance and not a compliance decision.
 
 Return STRICT JSON only.
 Structure:
@@ -659,7 +646,7 @@ Structure:
               properties: {
                 doc: { type: 'string' },
                 page: { type: ['number', 'null'] },
-                kind: { type: 'string', enum: ['STANDARD', 'CUSTOMER'] },
+                kind: { type: 'string', enum: ['CUSTOMER'] },
               },
             },
           },
@@ -745,11 +732,7 @@ Structure:
         parsed.externalLinks = externalLinks.length ? externalLinks : undefined;
       }
 
-      parsed.citations = (parsed.citations || []).map((c) => ({
-        doc: c.doc,
-        page: c.page ?? null,
-        kind: c.kind,
-      }));
+      parsed.citations = [];
 
       if (!parsed.complianceSummary) {
         parsed.complianceSummary = {
@@ -1217,9 +1200,9 @@ Rules:
         missing: control.testComponents ?? [],
         recommendations:
           languageLabel === 'ar'
-            ? ['تأكد من OPENAI_API_KEY وإعدادات الـ vector store', 'ارفع الأدلة بصيغ PDF/DOCX/صور وأعد المحاولة']
+            ? ['تأكد من OPENAI_API_KEY وإعدادات فهرسة الأدلة', 'ارفع الأدلة بصيغ PDF/DOCX/صور وأعد المحاولة']
             : [
-                'Verify OPENAI_API_KEY and vector store setup',
+                'Verify OPENAI_API_KEY and evidence indexing setup',
                 'Upload evidence in PDF/DOCX/image formats and retry',
               ],
         citations: [],

@@ -1,13 +1,64 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import xlsx from 'xlsx';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require('pdf-parse');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const mammoth = require('mammoth');
 
 @Injectable()
 export class IngestService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private detectFileType(doc: { mimeType?: string | null; storagePath?: string | null; originalName?: string | null }) {
+    const mime = String(doc.mimeType || '').toLowerCase();
+    const name = String(doc.originalName || '');
+    const storagePath = String(doc.storagePath || '');
+    const ext = path.extname(storagePath || name).toLowerCase();
+
+    const isPdf = mime === 'application/pdf' || ext === '.pdf';
+    const isDocx =
+      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === '.docx';
+    const isXlsx =
+      mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || ext === '.xlsx';
+
+    return { isPdf, isDocx, isXlsx, ext, mime };
+  }
+
+  private async extractTextFromPdf(buffer: Buffer) {
+    const parsed = await pdfParse(buffer);
+    return String(parsed?.text || '').trim();
+  }
+
+  private async extractTextFromDocx(buffer: Buffer) {
+    const result = await mammoth.extractRawText({ buffer });
+    return String(result?.value || '').trim();
+  }
+
+  private extractTextFromXlsx(buffer: Buffer) {
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
+    const lines: string[] = [];
+
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+      const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as Array<unknown[]>;
+      if (!rows.length) continue;
+      lines.push(`Sheet: ${sheetName}`);
+      for (const row of rows) {
+        const line = row
+          .map((cell) => String(cell ?? '').trim())
+          .filter(Boolean)
+          .join(' ');
+        if (line) lines.push(line);
+      }
+    }
+
+    return lines.join('\n').trim();
+  }
 
   private chunkText(text: string, chunkSize = 1200, overlap = 200): string[] {
     const clean = (text || '')
@@ -41,6 +92,7 @@ export class IngestService {
         id: true,
         storagePath: true,
         originalName: true,
+        mimeType: true,
         kind: true,
         standard: true,
         conversationId: true,
@@ -57,9 +109,22 @@ export class IngestService {
     );
 
     const buffer = await fs.readFile(doc.storagePath);
+    const fileType = this.detectFileType(doc);
+    let text = '';
 
-    const parsed = await pdfParse(buffer);
-    const text = (parsed?.text || '').trim();
+    try {
+      if (fileType.isPdf) {
+        text = await this.extractTextFromPdf(buffer);
+      } else if (fileType.isDocx) {
+        text = await this.extractTextFromDocx(buffer);
+      } else if (fileType.isXlsx) {
+        text = this.extractTextFromXlsx(buffer);
+      } else {
+        return { ok: false as const, message: 'Unsupported file type for ingest' };
+      }
+    } catch (error: any) {
+      return { ok: false as const, message: error?.message || 'Failed to extract text' };
+    }
 
     const chunks = this.chunkText(text);
 

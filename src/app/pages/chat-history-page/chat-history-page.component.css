@@ -145,6 +145,11 @@
   text-align: center;
 }
 
+.empty.error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.06);
+}
+
 .empty h4 {
   margin: 0 0 6px;
   font-size: 14px;

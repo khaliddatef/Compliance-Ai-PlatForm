@@ -29,6 +29,13 @@ export type AuthUserResponse = {
   role: 'ADMIN' | 'MANAGER' | 'USER';
 };
 
+export type AuthLoginResponse = {
+  user: AuthUserResponse;
+  token: string;
+  tokenType?: string;
+  expiresIn?: string;
+};
+
 export type ChatApiResponse = {
   conversationId: string;
   assistantMessage: string;
@@ -37,6 +44,24 @@ export type ChatApiResponse = {
   citations: Citation[];
   complianceSummary: ComplianceSummary;
   externalLinks?: ExternalLink[];
+};
+
+export type ChatConversationSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
+  user?: AuthUserResponse | null;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
 };
 
 export type ControlContext = {
@@ -80,7 +105,7 @@ export type UploadDocumentRecord = {
   sizeBytes: number;
   createdAt: string;
   docType?: string | null;
-  conversation?: { title: string };
+  conversation?: { title: string; user?: { name: string; email: string } | null };
   _count?: { chunks: number };
   matchControlId?: string | null;
   matchStatus?: string;
@@ -365,6 +390,7 @@ export class ApiService {
     evidenceType?: string;
     isoMapping?: string;
     framework?: string;
+    frameworkRef?: string;
     page?: number;
     pageSize?: number;
   }) {
@@ -376,6 +402,7 @@ export class ApiService {
     if (paramsInput.evidenceType) params = params.set('evidenceType', paramsInput.evidenceType);
     if (paramsInput.isoMapping) params = params.set('isoMapping', paramsInput.isoMapping);
     if (paramsInput.framework) params = params.set('framework', paramsInput.framework);
+    if (paramsInput.frameworkRef) params = params.set('frameworkRef', paramsInput.frameworkRef);
     if (paramsInput.page) params = params.set('page', paramsInput.page);
     if (paramsInput.pageSize) params = params.set('pageSize', paramsInput.pageSize);
     return this.http.get<ControlDefinitionListResponse>('/api/control-kb/controls', { params });
@@ -471,12 +498,24 @@ export class ApiService {
   // ===== Auth =====
 
   login(email: string, password: string) {
-    return this.http.post<{ user: AuthUserResponse }>('/api/auth/login', { email, password });
+    return this.http.post<AuthLoginResponse>('/api/auth/login', { email, password });
   }
 
   // ✅ DELETE conversation in backend
   deleteConversation(conversationId: string) {
     return this.http.delete<{ ok: boolean }>(`/api/chat/${conversationId}`);
+  }
+
+  listChatConversations() {
+    return this.http.get<ChatConversationSummary[]>('/api/chat/conversations');
+  }
+
+  getChatConversation(conversationId: string) {
+    return this.http.get<ChatConversationSummary>(`/api/chat/${conversationId}`);
+  }
+
+  listChatMessages(conversationId: string) {
+    return this.http.get<ChatMessageRecord[]>(`/api/chat/${conversationId}/messages`);
   }
 
   // ===== Compat wrapper =====

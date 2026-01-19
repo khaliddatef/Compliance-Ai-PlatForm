@@ -2,10 +2,11 @@ import { Injectable, computed, effect, signal } from '@angular/core';
 import { Conversation } from '../models/conversation.model';
 import { Message } from '../models/message.model';
 import { ApiService, ComplianceStandard } from './api.service';
+import { AuthService, AuthUser } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
-  private readonly storageKey = 'compliance-ai-conversations';
+  private storageKey = 'compliance-ai-conversations:anon';
   private readonly isBrowser = typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
   readonly conversations = signal<Conversation[]>(this.loadInitialConversations());
@@ -14,10 +15,23 @@ export class ChatService {
     this.conversations().find((c) => c.id === this.activeConversationId()),
   );
 
-  constructor(private api: ApiService) {
+  constructor(private api: ApiService, private readonly auth: AuthService) {
+    this.storageKey = this.buildStorageKey(this.auth.user());
+    this.conversations.set(this.loadInitialConversations());
+    this.activeConversationId.set(this.conversations()[0]?.id || '');
+
     effect(() => {
       if (!this.isBrowser) return;
       localStorage.setItem(this.storageKey, JSON.stringify(this.conversations()));
+    });
+
+    effect(() => {
+      const nextKey = this.buildStorageKey(this.auth.user());
+      if (nextKey === this.storageKey) return;
+      this.storageKey = nextKey;
+      const nextConversations = this.loadInitialConversations();
+      this.conversations.set(nextConversations);
+      this.activeConversationId.set(nextConversations[0]?.id || '');
     });
   }
 
@@ -246,5 +260,10 @@ export class ChatService {
     };
 
     return [starter];
+  }
+
+  private buildStorageKey(user: AuthUser | null) {
+    const key = user?.id || user?.email || 'anon';
+    return `compliance-ai-conversations:${key}`;
   }
 }

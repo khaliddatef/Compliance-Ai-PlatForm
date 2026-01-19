@@ -1,4 +1,9 @@
-<div class="bubble" [class.from-user]="message.role === 'user'" [class.action-message]="message.kind === 'action'">
+<div
+  class="bubble"
+  [class.from-user]="message.role === 'user'"
+  [class.action-message]="message.kind === 'action'"
+  [class.rtl]="isArabic"
+>
   <div class="avatar" aria-hidden="true" *ngIf="message.role === 'assistant'">
     <span>AI</span>
   </div>

@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UploadService } from '../upload/upload.service';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 type Role = 'user' | 'assistant';
 export type ComplianceStandard = 'ISO' | 'FRA' | 'CBE';
@@ -15,7 +18,10 @@ export type RagHit = {
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   async addMessage(params: {
     conversationId?: string;
@@ -73,12 +79,17 @@ export class ChatService {
 
   // ✅ Delete conversation + dependent data (messages + docs + chunks)
   async deleteConversation(conversationId: string) {
-    const exists = await this.prisma.conversation.findUnique({
+    const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { id: true },
+      select: { id: true, customerVectorStoreId: true },
     });
 
-    if (!exists) throw new NotFoundException('Conversation not found');
+    if (!conversation) throw new NotFoundException('Conversation not found');
+
+    const docs = await this.prisma.document.findMany({
+      where: { conversationId },
+      select: { openaiFileId: true, kind: true, standard: true, storagePath: true },
+    });
 
     // transaction علشان كله يتمسح مرة واحدة
     await this.prisma.$transaction(async (tx) => {
@@ -96,6 +107,29 @@ export class ChatService {
       // 4) finally delete conversation
       await tx.conversation.delete({ where: { id: conversationId } });
     });
+
+    try {
+      await this.uploadService.cleanupOpenAiResources({
+        documents: docs,
+        customerVectorStoreId: conversation.customerVectorStoreId || null,
+        deleteVectorStore: true,
+      });
+    } catch (e: any) {
+      console.error('[OPENAI] cleanup failed for conversation', conversationId, e?.message || e);
+    }
+
+    for (const doc of docs) {
+      const storagePath = String(doc.storagePath || '');
+      if (!storagePath) continue;
+      const resolvedPath = path.isAbsolute(storagePath)
+        ? storagePath
+        : path.resolve(process.cwd(), storagePath);
+      try {
+        await fs.unlink(resolvedPath);
+      } catch {
+        // ignore missing file
+      }
+    }
 
     return { ok: true };
   }

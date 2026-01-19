@@ -41,6 +41,7 @@ model Document {
   mimeType       String
   sizeBytes      Int
   storagePath    String
+  openaiFileId   String?
   docType        String?
   matchControlId String?
   matchStatus    String?

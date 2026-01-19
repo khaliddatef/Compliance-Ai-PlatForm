@@ -11,5 +11,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [PrismaModule, IngestModule, AuthModule],
   controllers: [UploadController, StandardsController],
   providers: [UploadService, AgentService],
+  exports: [UploadService],
 })
 export class UploadModule {}

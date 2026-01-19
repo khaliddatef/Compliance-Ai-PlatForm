@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  GoneException,
   ForbiddenException,
   Get,
   NotFoundException,
@@ -14,6 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
 import type { Response } from 'express';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -21,6 +23,13 @@ import { UploadService } from './upload.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/auth.service';
+import {
+  CUSTOMER_ALLOWED_EXTENSIONS,
+  CUSTOMER_ALLOWED_MIME_TYPES,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_FILES,
+  makeFileFilter,
+} from './upload.validation';
 
 type DocKind = 'CUSTOMER' | 'STANDARD';
 
@@ -132,7 +141,19 @@ export class UploadController {
 
   // ✅ UPLOAD
   @Post()
-  @UseInterceptors(FilesInterceptor('files'))
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_UPLOAD_FILES, {
+      storage: diskStorage({
+        destination: './uploads',
+        filename: (_, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          cb(null, `${unique}${path.extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_UPLOAD_FILES },
+      fileFilter: makeFileFilter(CUSTOMER_ALLOWED_MIME_TYPES, CUSTOMER_ALLOWED_EXTENSIONS),
+    }),
+  )
   async upload(
     @Query('conversationId') conversationId: string,
     @Query('standard') standard: string,
@@ -141,6 +162,10 @@ export class UploadController {
     @Query('kind') kind: DocKind = 'CUSTOMER',
     @Query('language') language?: 'ar' | 'en',
   ) {
+    if (kind === 'STANDARD') {
+      throw new GoneException('Standard uploads are disabled. Use the KB instead.');
+    }
+
     return this.uploadService.saveUploadedFiles({
       conversationId,
       standard,

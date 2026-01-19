@@ -433,8 +433,8 @@
           </div>
           <div class="reference-meta">
             <span>Code: {{ controlEdit.controlCode }}</span>
-            <span *ngIf="selectedControl?.topic">Topic: {{ selectedControl?.topic?.title }}</span>
-            <span *ngIf="selectedControl?.ownerRole">Owner: {{ selectedControl?.ownerRole }}</span>
+            <span *ngIf="selectedControl?.topic as topic">Topic: {{ topic.title }}</span>
+            <span *ngIf="selectedControl?.ownerRole as ownerRole">Owner: {{ ownerRole }}</span>
           </div>
           <div class="reference-tags" *ngIf="selectedControl?.isoMappings?.length">
             <span class="tag" *ngFor="let item of selectedControl?.isoMappings">{{ item }}</span>

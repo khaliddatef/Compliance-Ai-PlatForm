@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
 import { ChatService, ComplianceStandard } from './chat.service';
 import { AgentService, ControlContext } from '../agent/agent.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,6 +24,95 @@ export class ChatController {
   ) {
     await this.assertConversationAccess(conversationId, user);
     return this.chatService.deleteConversation(conversationId);
+  }
+
+  @Get('conversations')
+  async listConversations(@CurrentUser() user: AuthUser) {
+    const isPrivileged = user.role !== 'USER';
+    const where = isPrivileged ? { userId: { not: null } } : { userId: user.id };
+
+    const rows = await this.prisma.conversation.findMany({
+      where,
+      include: {
+        user: { select: { id: true, name: true, email: true, role: true } },
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { content: true, createdAt: true },
+        },
+        _count: { select: { messages: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      messageCount: row._count.messages,
+      lastMessage: row.messages[0]?.content ?? null,
+      lastMessageAt: row.messages[0]?.createdAt ?? null,
+      user: row.user
+        ? {
+            id: row.user.id,
+            name: row.user.name,
+            email: row.user.email,
+            role: row.user.role,
+          }
+        : null,
+    }));
+  }
+
+  @Get(':conversationId/messages')
+  async listConversationMessages(
+    @Param('conversationId') conversationId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertConversationAccess(conversationId, user);
+    const messages = await this.chatService.listMessages(conversationId);
+    return messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt,
+    }));
+  }
+
+  @Get(':conversationId')
+  async getConversation(
+    @Param('conversationId') conversationId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertConversationAccess(conversationId, user);
+
+    const row = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        user: { select: { id: true, name: true, email: true, role: true } },
+        _count: { select: { messages: true } },
+      },
+    });
+
+    if (!row) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    return {
+      id: row.id,
+      title: row.title,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      messageCount: row._count.messages,
+      user: row.user
+        ? {
+            id: row.user.id,
+            name: row.user.name,
+            email: row.user.email,
+            role: row.user.role,
+          }
+        : null,
+    };
   }
 
   @Post()

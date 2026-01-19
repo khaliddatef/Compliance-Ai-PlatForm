@@ -25,6 +25,12 @@ export class AuthController {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    return { user };
+    const token = this.auth.issueToken(user);
+    return {
+      user,
+      token,
+      tokenType: 'Bearer',
+      expiresIn: this.auth.getJwtTtl(),
+    };
   }
 }

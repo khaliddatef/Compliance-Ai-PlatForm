@@ -1,11 +1,10 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, GoneException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IngestService } from '../ingest/ingest.service';
 import { AgentService } from '../agent/agent.service';
 import type { ControlCandidate } from '../agent/agent.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-
 
 type DocKind = 'CUSTOMER' | 'STANDARD';
 
@@ -34,6 +33,10 @@ export class UploadService {
 
   private assertConfig() {
     if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing');
+  }
+
+  private hasOpenAiConfig() {
+    return !!this.apiKey;
   }
 
   private async ensureUploadsDir(): Promise<string> {
@@ -135,6 +138,60 @@ export class UploadService {
     console.log('[OPENAI] attached file', fileId, 'to', vectorStoreId, 'status=', json?.status);
   }
 
+  private async detachFileFromVectorStore(vectorStoreId: string, fileId: string): Promise<void> {
+    this.assertConfig();
+
+    const resp = await fetch(
+      `https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${fileId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const json = await resp.json().catch(() => null);
+      console.error('[OPENAI] detach file failed', resp.status, JSON.stringify(json)?.slice(0, 1500));
+      throw new Error(`Detach file failed: ${resp.status}`);
+    }
+  }
+
+  private async deleteOpenAiFile(fileId: string): Promise<void> {
+    this.assertConfig();
+
+    const resp = await fetch(`https://api.openai.com/v1/files/${fileId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const json = await resp.json().catch(() => null);
+      console.error('[OPENAI] delete file failed', resp.status, JSON.stringify(json)?.slice(0, 1500));
+      throw new Error(`Delete file failed: ${resp.status}`);
+    }
+  }
+
+  private async deleteVectorStore(vectorStoreId: string): Promise<void> {
+    this.assertConfig();
+
+    const resp = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const json = await resp.json().catch(() => null);
+      console.error('[OPENAI] delete vector store failed', resp.status, JSON.stringify(json)?.slice(0, 1500));
+      throw new Error(`Delete vector store failed: ${resp.status}`);
+    }
+  }
+
   async saveUploadedFiles(params: {
     conversationId: string;
     standard: string;
@@ -153,6 +210,10 @@ export class UploadService {
     customerVectorStoreId?: string | null;
   }> {
     const { conversationId, standard, kind, files, user, language } = params;
+    const standardKey = String(standard || 'ISO').toUpperCase();
+    if (kind === 'STANDARD') {
+      throw new GoneException('Standard uploads are disabled. The KB is the source of truth.');
+    }
 
     const existingConversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -202,7 +263,7 @@ export class UploadService {
         return this.prisma.document.create({
           data: {
             conversationId,
-            standard,
+            standard: standardKey,
             kind,
             originalName: f.originalname,
             mimeType: f.mimetype,
@@ -213,17 +274,23 @@ export class UploadService {
       }),
     );
 
-    // Upload CUSTOMER docs to OpenAI + attach to customer vector store
-    if (kind === 'CUSTOMER') {
-      console.log('[OPENAI] uploading customer files count=', documents.length, 'conv=', conversationId);
+    const attachToVectorStore = async (doc: any, vectorStoreId: string, label: string) => {
+      try {
+        const fileId = await this.uploadFileToOpenAI(doc.storagePath, doc.originalName, doc.mimeType);
+        await this.attachFileToVectorStore(vectorStoreId, fileId);
+        await this.prisma.document.update({
+          where: { id: doc.id },
+          data: { openaiFileId: fileId },
+        });
+      } catch (e: any) {
+        console.error(`[OPENAI] ${label} upload/attach failed for`, doc.originalName, e?.message || e);
+      }
+    };
 
+    if (kind === 'CUSTOMER' && customerVectorStoreId) {
+      console.log('[OPENAI] uploading customer files count=', documents.length, 'conv=', conversationId);
       for (const doc of documents) {
-        try {
-          const fileId = await this.uploadFileToOpenAI(doc.storagePath, doc.originalName, doc.mimeType);
-          await this.attachFileToVectorStore(customerVectorStoreId!, fileId);
-        } catch (e: any) {
-          console.error('[OPENAI] customer upload/attach failed for', doc.originalName, e?.message || e);
-        }
+        await attachToVectorStore(doc, customerVectorStoreId, 'customer');
       }
     }
 
@@ -254,12 +321,12 @@ export class UploadService {
         try {
           const excerpt = await this.getDocumentExcerpt(doc.id);
           const candidates = await this.findControlCandidates(
-            String(standard || 'ISO').toUpperCase(),
+            standardKey,
             doc.originalName || '',
             excerpt,
           );
           const analysis = await this.agent.analyzeCustomerDocument({
-            standard: (standard as any) || 'ISO',
+            standard: standardKey as any,
             fileName: doc.originalName,
             content: excerpt,
             customerVectorStoreId,
@@ -294,7 +361,7 @@ export class UploadService {
     return {
       ok: true,
       conversationId,
-      standard,
+      standard: standardKey,
       kind,
       count: documents.length,
       documents: documentsWithReferences,
@@ -337,7 +404,7 @@ export class UploadService {
       },
       include: {
         _count: { select: { chunks: true } },
-        conversation: { select: { title: true } },
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -354,7 +421,7 @@ export class UploadService {
         : undefined,
       include: {
         _count: { select: { chunks: true } },
-        conversation: { select: { title: true } },
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -421,7 +488,10 @@ export class UploadService {
   }
 
   async deleteDocument(id: string) {
-    const doc = await this.prisma.document.findUnique({ where: { id } });
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: { conversation: { select: { customerVectorStoreId: true } } },
+    });
     if (!doc) return null;
 
     await this.prisma.document.delete({ where: { id } });
@@ -436,7 +506,64 @@ export class UploadService {
       // ignore missing file
     }
 
+    try {
+      await this.cleanupOpenAiResources({
+        documents: [doc],
+        customerVectorStoreId: doc.conversation?.customerVectorStoreId || null,
+      });
+    } catch (e: any) {
+      console.error('[OPENAI] cleanup failed for doc', doc.id, e?.message || e);
+    }
+
     return doc;
+  }
+
+  async cleanupOpenAiResources(params: {
+    documents: Array<{
+      openaiFileId?: string | null;
+      kind: string;
+      standard: string;
+    }>;
+    customerVectorStoreId?: string | null;
+    deleteVectorStore?: boolean;
+  }) {
+    if (!this.hasOpenAiConfig()) {
+      return;
+    }
+
+    const documents = Array.isArray(params.documents) ? params.documents : [];
+    for (const doc of documents) {
+      const fileId = doc.openaiFileId;
+      if (!fileId) continue;
+
+      let vectorStoreId: string | null = null;
+      const kind = String(doc.kind || '').toUpperCase();
+      if (kind === 'CUSTOMER') {
+        vectorStoreId = params.customerVectorStoreId || null;
+      }
+
+      if (vectorStoreId) {
+        try {
+          await this.detachFileFromVectorStore(vectorStoreId, fileId);
+        } catch (e: any) {
+          console.error('[OPENAI] detach failed for file', fileId, e?.message || e);
+        }
+      }
+
+      try {
+        await this.deleteOpenAiFile(fileId);
+      } catch (e: any) {
+        console.error('[OPENAI] delete failed for file', fileId, e?.message || e);
+      }
+    }
+
+    if (params.deleteVectorStore && params.customerVectorStoreId) {
+      try {
+        await this.deleteVectorStore(params.customerVectorStoreId);
+      } catch (e: any) {
+        console.error('[OPENAI] delete vector store failed', e?.message || e);
+      }
+    }
   }
 
   async ensureDocsAccess(documentIds: string[], user: { id: string; role: string }) {
