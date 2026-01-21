@@ -118,6 +118,7 @@ export type UploadDocumentRecord = {
 export type UploadListResponse = {
   ok: boolean;
   conversationId?: string;
+  activeFramework?: string | null;
   documents: UploadDocumentRecord[];
 };
 

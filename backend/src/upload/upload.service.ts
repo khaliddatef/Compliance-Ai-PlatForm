@@ -986,7 +986,7 @@ export class UploadService {
     }));
   }
 
-  private async getActiveFrameworkLabel() {
+  async getActiveFrameworkLabel() {
     const frameworks = await this.prisma.framework.findMany({
       where: { status: 'enabled' },
       select: { name: true, updatedAt: true },

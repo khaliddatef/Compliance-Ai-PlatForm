@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { Message } from '../../models/message.model';
@@ -26,6 +26,7 @@ export class ChatViewerPageComponent implements OnInit {
     private readonly api: ApiService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
+    private readonly cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit() {
@@ -34,6 +35,7 @@ export class ChatViewerPageComponent implements OnInit {
       if (!id) {
         this.error = 'Conversation not found.';
         this.loading = false;
+        this.cdr.markForCheck();
         return;
       }
       this.conversationId = id;
@@ -48,6 +50,7 @@ export class ChatViewerPageComponent implements OnInit {
   private loadConversation(conversationId: string) {
     this.loading = true;
     this.error = '';
+    this.cdr.markForCheck();
 
     forkJoin({
       meta: this.api.getChatConversation(conversationId),
@@ -57,12 +60,16 @@ export class ChatViewerPageComponent implements OnInit {
         this.title = meta?.title || 'Chat';
         this.subtitle = this.buildSubtitle(meta);
         this.messages = this.mapMessages(messages);
+        this.cdr.markForCheck();
       },
       error: () => {
         this.error = 'Unable to load this conversation.';
+        this.loading = false;
+        this.cdr.markForCheck();
       },
       complete: () => {
         this.loading = false;
+        this.cdr.markForCheck();
       },
     });
   }

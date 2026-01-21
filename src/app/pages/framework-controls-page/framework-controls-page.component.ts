@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
@@ -65,6 +65,7 @@ export class FrameworkControlsPageComponent implements OnInit {
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
+    private readonly cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit() {
@@ -85,15 +86,18 @@ export class FrameworkControlsPageComponent implements OnInit {
   fetchTopics() {
     this.loading = true;
     this.error = '';
+    this.cdr.markForCheck();
     this.api.listControlTopics(this.framework || undefined).subscribe({
       next: (topics) => {
         const items = (topics || []).filter((topic) => !this.framework || (topic.controlCount || 0) > 0);
         this.topics = items.map((topic) => this.toTopicView(topic));
         this.loading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.error = 'Unable to load topics.';
         this.loading = false;
+        this.cdr.markForCheck();
       },
     });
   }
@@ -115,6 +119,7 @@ export class FrameworkControlsPageComponent implements OnInit {
       topic.page = 1;
       topic.controls = [];
     }
+    this.cdr.markForCheck();
 
     this.api
       .listControlDefinitions({
@@ -129,10 +134,12 @@ export class FrameworkControlsPageComponent implements OnInit {
           topic.total = res?.total || 0;
           topic.controls = reset ? items : [...topic.controls, ...items];
           topic.loading = false;
+          this.cdr.markForCheck();
         },
         error: () => {
           topic.loading = false;
           this.error = 'Unable to load controls.';
+          this.cdr.markForCheck();
         },
       });
   }

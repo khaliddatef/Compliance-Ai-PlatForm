@@ -1,7 +1,10 @@
 :host {
   display: block;
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   background: linear-gradient(180deg, var(--surface-0) 0%, var(--surface-1) 100%);
 }
@@ -14,6 +17,7 @@
   align-items: stretch;
   position: relative;
   overflow: hidden;
+  min-height: 0;
 }
 
 .shell-main {

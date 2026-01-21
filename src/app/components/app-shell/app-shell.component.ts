@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, OnInit, effect } from '@angular/core';
+import { ApplicationRef, Component, HostListener, OnInit, effect } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { SidebarComponent } from '../sidebar/sidebar.component';
@@ -21,7 +21,8 @@ export class AppShellComponent implements OnInit {
   constructor(
     private readonly layout: LayoutService,
     private readonly router: Router,
-    private readonly route: ActivatedRoute
+    private readonly route: ActivatedRoute,
+    private readonly appRef: ApplicationRef
   ) {
     effect(() => {
       this.sidebarOpen = this.layout.sidebarOpen();
@@ -33,7 +34,10 @@ export class AppShellComponent implements OnInit {
     this.updatePageTitle();
     this.router.events
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
-      .subscribe(() => this.updatePageTitle());
+      .subscribe(() => {
+        this.updatePageTitle();
+        this.scheduleLayoutRefresh();
+      });
   }
 
   @HostListener('window:resize')
@@ -66,5 +70,19 @@ export class AppShellComponent implements OnInit {
       current = current.firstChild;
     }
     this.pageTitle = current?.snapshot.data['title'] ?? 'Home';
+  }
+
+  private scheduleLayoutRefresh() {
+    if (typeof window === 'undefined') return;
+
+    const triggerResize = () => {
+      this.appRef.tick();
+      window.dispatchEvent(new Event('resize'));
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(triggerResize));
+    } else {
+      setTimeout(triggerResize, 0);
+    }
   }
 }

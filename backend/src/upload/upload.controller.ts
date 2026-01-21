@@ -46,10 +46,11 @@ export class UploadController {
     @Query('all') all?: string,
     @CurrentUser() user?: AuthUser,
   ) {
+    const activeFramework = await this.uploadService.getActiveFrameworkLabel();
     const allRequested = String(all || '').toLowerCase();
     if (allRequested === 'true' || allRequested === '1') {
       const docs = await this.uploadService.listAllForUser(user);
-      return { ok: true, documents: docs };
+      return { ok: true, documents: docs, activeFramework };
     }
 
     if (!conversationId) return { ok: false, message: 'conversationId is required' };
@@ -60,7 +61,7 @@ export class UploadController {
       user,
     });
 
-    return { ok: true, conversationId, documents: docs };
+    return { ok: true, conversationId, documents: docs, activeFramework };
   }
 
   @Get(':id/download')

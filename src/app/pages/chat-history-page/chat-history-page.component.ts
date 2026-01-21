@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChatService } from '../../services/chat.service';
 import { Conversation } from '../../models/conversation.model';
@@ -25,6 +25,7 @@ export class ChatHistoryPageComponent implements OnInit {
     private readonly router: Router,
     private readonly api: ApiService,
     private readonly auth: AuthService,
+    private readonly cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit() {
@@ -91,16 +92,21 @@ export class ChatHistoryPageComponent implements OnInit {
   private loadRemoteConversations() {
     this.remoteLoading = true;
     this.remoteError = '';
+    this.cdr.markForCheck();
 
     this.api.listChatConversations().subscribe({
       next: (items) => {
         this.remoteConversations = Array.isArray(items) ? items : [];
+        this.cdr.markForCheck();
       },
       error: () => {
         this.remoteError = 'Unable to load chat history.';
+        this.remoteLoading = false;
+        this.cdr.markForCheck();
       },
       complete: () => {
         this.remoteLoading = false;
+        this.cdr.markForCheck();
       },
     });
   }

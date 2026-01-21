@@ -33,6 +33,7 @@ export class UploadsPageComponent implements OnInit {
   frameworkFilter = 'all';
   statusFilter = 'all';
   sortMode = 'recent';
+  activeFramework = '';
 
   constructor(
     private readonly api: ApiService,
@@ -52,8 +53,9 @@ export class UploadsPageComponent implements OnInit {
     this.api.listAllUploads().subscribe({
       next: (res) => {
         const docs = Array.isArray(res?.documents) ? res.documents : [];
+        this.activeFramework = String(res?.activeFramework || '').trim();
         this.files = docs
-          .map((doc) => this.mapDoc(doc))
+          .map((doc) => this.mapDoc(doc, this.activeFramework))
           .sort((a, b) => b.uploadedAt - a.uploadedAt);
         this.loading = false;
         this.cdr.markForCheck();
@@ -149,12 +151,14 @@ export class UploadsPageComponent implements OnInit {
     });
   }
 
-  private mapDoc(doc: UploadDocumentRecord): UploadRow {
+  private mapDoc(doc: UploadDocumentRecord, activeFramework: string): UploadRow {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
-    const frameworkReferences = Array.isArray(doc.frameworkReferences)
+    const rawReferences = Array.isArray(doc.frameworkReferences)
       ? doc.frameworkReferences.filter((ref) => Boolean(ref))
       : [];
+    const fallbackFramework = activeFramework ? [activeFramework] : [];
+    const frameworkReferences = rawReferences.length ? rawReferences : fallbackFramework;
     const framework = frameworkReferences[0] || 'Unknown';
     const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
