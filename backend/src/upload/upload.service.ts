@@ -809,6 +809,7 @@ export class UploadService {
     if (!docsWithControl.length) return docs;
 
     const activeFrameworks = await this.getActiveFrameworkSet();
+    const { version: activeFrameworkVersion } = await this.getActiveFrameworkInfo();
 
     const controlCodes = Array.from(
       new Set(docsWithControl.map((doc) => String(doc.matchControlId)).filter(Boolean)),
@@ -821,14 +822,32 @@ export class UploadService {
       },
       select: {
         controlCode: true,
-        frameworkMappings: { select: { framework: true, frameworkCode: true } },
+        isoMappings: true,
+        frameworkMappings: {
+          select: {
+            framework: true,
+            frameworkCode: true,
+            frameworkRef: { select: { version: true } },
+          },
+        },
       },
     });
 
-    const controlMap = new Map<string, { frameworkMappings: Array<{ framework: string; frameworkCode: string }> }>();
+    const controlMap = new Map<
+      string,
+      {
+        frameworkMappings: Array<{
+          framework: string;
+          frameworkCode: string;
+          frameworkRef?: { version?: string | null } | null;
+        }>;
+        isoMappings?: unknown;
+      }
+    >();
     for (const control of controls) {
       controlMap.set(String(control.controlCode), {
         frameworkMappings: control.frameworkMappings || [],
+        isoMappings: control.isoMappings,
       });
     }
 
@@ -844,27 +863,54 @@ export class UploadService {
         mappings = mappings.filter((mapping) => activeFrameworks.has(mapping.framework));
       }
 
-      if (!mappings.length) {
-        return { ...doc, frameworkReferences: [] };
-      }
-
-      const grouped = new Map<string, Set<string>>();
+      const codes = new Set<string>();
+      let detectedVersion = '';
       for (const mapping of mappings) {
         const name = String(mapping.framework || '').trim();
         if (!name) continue;
         const code = String(mapping.frameworkCode || '').trim();
-        const set = grouped.get(name) || new Set<string>();
-        if (code) set.add(code);
-        grouped.set(name, set);
+        if (code) codes.add(code);
+        if (!detectedVersion) {
+          const version = this.normalizeFrameworkVersion(mapping.frameworkRef?.version, name);
+          if (version) detectedVersion = version;
+        }
       }
 
-      const references = Array.from(grouped.entries()).map(([name, codes]) => {
-        const codeList = Array.from(codes.values()).filter(Boolean);
-        return codeList.length ? `${name} ${codeList.join(', ')}` : name;
-      });
+      if (!codes.size) {
+        const useIsoFallback =
+          !activeFrameworks ||
+          Array.from(activeFrameworks).some((value) => value.toLowerCase().includes('iso'));
+        if (useIsoFallback) {
+          const iso = Array.isArray(control.isoMappings)
+            ? control.isoMappings.map((value) => String(value).trim()).filter(Boolean)
+            : [];
+          iso.forEach((value) => codes.add(value));
+        }
+      }
+
+      const references = codes.size
+        ? Array.from(codes.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        : (() => {
+            const versionLabel = this.formatVersionLabel(detectedVersion || activeFrameworkVersion);
+            return versionLabel ? [versionLabel] : [];
+          })();
 
       return { ...doc, frameworkReferences: references };
     });
+  }
+
+  private normalizeFrameworkVersion(version?: string | null, frameworkName?: string | null) {
+    const raw = String(version || '').trim();
+    if (raw) return raw;
+    const name = String(frameworkName || '');
+    const match = name.match(/\b(v?\d{4})\b/i);
+    return match ? match[1] : '';
+  }
+
+  private formatVersionLabel(version?: string | null) {
+    const raw = String(version || '').trim();
+    if (!raw) return '';
+    return /^v/i.test(raw) ? raw : `v${raw}`;
   }
 
   private defaultMatchNote(status: string) {
@@ -944,7 +990,7 @@ export class UploadService {
     ]);
 
     const results = await this.prisma.controlDefinition.findMany({
-      where: { OR: orFilters },
+      where: { AND: [{ status: 'enabled' }, { OR: orFilters }] },
       select: {
         controlCode: true,
         title: true,
@@ -986,14 +1032,21 @@ export class UploadService {
     }));
   }
 
-  async getActiveFrameworkLabel() {
-    const frameworks = await this.prisma.framework.findMany({
+  async getActiveFrameworkInfo() {
+    const active = await this.prisma.framework.findFirst({
       where: { status: 'enabled' },
-      select: { name: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
-      take: 1,
+      select: { name: true, version: true },
     });
-    return frameworks[0]?.name || null;
+    return {
+      name: active?.name || null,
+      version: active?.version || null,
+    };
+  }
+
+  async getActiveFrameworkLabel() {
+    const active = await this.getActiveFrameworkInfo();
+    return active.name;
   }
 
   private async getActiveFrameworkSet() {

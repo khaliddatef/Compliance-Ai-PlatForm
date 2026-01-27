@@ -65,7 +65,7 @@
         <span>Framework</span>
         <span>Status</span>
         <span>Uploaded</span>
-        <span>Framework references</span>
+        <span>Control reference</span>
         <span>Size</span>
         <span>Action</span>
       </div>
@@ -78,7 +78,7 @@
         <span class="framework-cell" data-label="Framework" [title]="file.framework">{{ file.framework }}</span>
         <span class="status-pill" data-label="Status" [ngClass]="file.statusClass">{{ file.status }}</span>
         <span class="date" data-label="Uploaded">{{ file.uploadedAt | date: 'MMM d, y' }}</span>
-        <div class="reference-cell" data-label="Framework references">
+        <div class="reference-cell" data-label="Control reference">
           <ng-container *ngIf="file.frameworkReferences.length; else noReference">
             <button
               class="reference-link"

@@ -20,8 +20,8 @@ export class ControlKbService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listTopics(framework?: string | null, includeDisabled = false) {
-    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
-    if (!includeDisabled && activeFrameworks && activeFrameworks.size === 0) {
+    const activeFrameworks = await this.getActiveFrameworkSet();
+    if (activeFrameworks && activeFrameworks.size === 0) {
       return [];
     }
 
@@ -30,28 +30,29 @@ export class ControlKbService {
       include: { _count: { select: { controls: true } } },
     });
 
-    if (!framework && (!activeFrameworks || includeDisabled)) {
+    if (!framework && !activeFrameworks) {
       return topics.map((topic) => ({
         ...topic,
         controlCount: topic._count.controls,
       }));
     }
 
-    const where = framework
-      ? { frameworkMappings: { some: { framework } } }
-      : {
-          OR: [
-            { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks || []) } } } },
-            { frameworkMappings: { none: {} } },
-          ],
-        };
+    const frameworkFilter = framework ? { frameworkMappings: { some: { framework } } } : null;
+    const activeFilter = activeFrameworks
+      ? { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } }
+      : null;
+    const where = frameworkFilter && activeFilter
+      ? { AND: [frameworkFilter, activeFilter] }
+      : frameworkFilter || activeFilter || undefined;
 
     const grouped = await this.prisma.controlDefinition.groupBy({
       by: ['topicId'],
       where,
       _count: { _all: true },
     });
-    const countMap = new Map(grouped.map((row) => [row.topicId, row._count._all]));
+    const countMap = new Map(
+      grouped.map((row) => [row.topicId, (row as { _count?: { _all?: number } })._count?._all ?? 0]),
+    );
 
     return topics.map((topic) => ({
       ...topic,
@@ -116,9 +117,8 @@ export class ControlKbService {
     pageSize?: number;
     includeDisabled?: boolean;
   }) {
-    const includeDisabled = params.includeDisabled === true;
-    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
-    if (!includeDisabled && activeFrameworks && activeFrameworks.size === 0) {
+    const activeFrameworks = await this.getActiveFrameworkSet();
+    if (activeFrameworks && activeFrameworks.size === 0) {
       return {
         items: [],
         total: 0,
@@ -135,12 +135,9 @@ export class ControlKbService {
         ],
       });
     }
-    const status = includeDisabled ? params.status?.trim().toLowerCase() : null;
+    const status = params.status?.trim().toLowerCase();
     if (status && status !== 'all') {
       filters.push({ status });
-    }
-    if (!includeDisabled) {
-      filters.push({ status: 'enabled' });
     }
     const ownerRole = params.ownerRole?.trim();
     if (ownerRole) {
@@ -150,7 +147,7 @@ export class ControlKbService {
     if (framework) {
       filters.push({ frameworkMappings: { some: { framework } } });
     }
-    if (!includeDisabled && activeFrameworks) {
+    if (activeFrameworks) {
       filters.push({ frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } });
     }
     const query = params.query?.trim();
@@ -173,9 +170,11 @@ export class ControlKbService {
     const needsEvidenceFilter = Boolean(evidenceType);
     const needsIsoFilter = Boolean(isoMapping);
     const needsFrameworkRefFilter = Boolean(frameworkRef);
-    const frameworkWhere = !includeDisabled && activeFrameworks
+    const frameworkWhere = activeFrameworks
       ? { framework: { in: Array.from(activeFrameworks) } }
-      : undefined;
+      : framework
+        ? { framework }
+        : undefined;
 
     const select = Prisma.validator<Prisma.ControlDefinitionSelect>()({
       id: true,
@@ -200,7 +199,7 @@ export class ControlKbService {
           frameworkId: true,
           framework: true,
           frameworkCode: true,
-          frameworkRef: { select: { externalId: true, name: true } },
+          frameworkRef: { select: { externalId: true, name: true, version: true } },
         },
       },
       ownerRole: true,
@@ -464,19 +463,8 @@ export class ControlKbService {
   }
 
   async listControlCatalog() {
-    const activeFrameworks = await this.getActiveFrameworkSet();
-    if (activeFrameworks && activeFrameworks.size === 0) {
-      return [];
-    }
-
-    const where = activeFrameworks
-      ? {
-          OR: [
-            { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } },
-            { frameworkMappings: { none: {} } },
-          ],
-        }
-      : {};
+    const baseWhere = { status: 'enabled' };
+    const where = baseWhere;
 
     const controls = await this.prisma.controlDefinition.findMany({
       where,
@@ -514,7 +502,7 @@ export class ControlKbService {
           ? {
               orderBy: [{ framework: 'asc' }, { frameworkCode: 'asc' }],
               include: {
-                frameworkRef: { select: { externalId: true, name: true } },
+                frameworkRef: { select: { externalId: true, name: true, version: true } },
               },
             }
           : false,
@@ -623,6 +611,13 @@ export class ControlKbService {
       }
 
       return control;
+    });
+  }
+
+  async updateControlActivation(id: string, status: 'enabled' | 'disabled') {
+    return this.prisma.controlDefinition.update({
+      where: { id },
+      data: { status },
     });
   }
 
@@ -758,9 +753,7 @@ export class ControlKbService {
 
     const control = direct || (await this.findByIsoMapping(controlCode));
     if (!control) return null;
-
-    const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
-    if (activeFrameworks && !this.isControlAllowed(control, activeFrameworks)) {
+    if (!includeDisabled && String(control.status || '').toLowerCase() !== 'enabled') {
       return null;
     }
 
@@ -797,7 +790,8 @@ export class ControlKbService {
   }
 
   private buildFrameworkReferences(mappings: unknown) {
-    const grouped = new Map<string, Set<string>>();
+    const codes = new Set<string>();
+    let detectedVersion = '';
     const list = Array.isArray(mappings) ? mappings : [];
     for (const mapping of list) {
       if (!mapping || typeof mapping !== 'object') continue;
@@ -808,15 +802,37 @@ export class ControlKbService {
         'frameworkCode' in mapping
           ? String((mapping as { frameworkCode?: string | null }).frameworkCode || '').trim()
           : '';
-      const set = grouped.get(name) || new Set<string>();
-      if (code) set.add(code);
-      grouped.set(name, set);
+      const frameworkRef =
+        'frameworkRef' in mapping
+          ? (mapping as { frameworkRef?: { version?: string | null } | null }).frameworkRef
+          : null;
+      if (code) codes.add(code);
+      if (!detectedVersion) {
+        const version = this.normalizeFrameworkVersion(frameworkRef?.version, name);
+        if (version) detectedVersion = version;
+      }
     }
 
-    return Array.from(grouped.entries()).map(([name, codes]) => {
-      const list = Array.from(codes.values()).filter(Boolean);
-      return list.length ? `${name} ${list.join(', ')}` : name;
-    });
+    if (codes.size) {
+      return Array.from(codes.values());
+    }
+
+    const versionLabel = this.formatVersionLabel(detectedVersion);
+    return versionLabel ? [versionLabel] : [];
+  }
+
+  private normalizeFrameworkVersion(version?: string | null, frameworkName?: string | null) {
+    const raw = String(version || '').trim();
+    if (raw) return raw;
+    const name = String(frameworkName || '');
+    const match = name.match(/\b(v?\d{4})\b/i);
+    return match ? match[1] : '';
+  }
+
+  private formatVersionLabel(version?: string | null) {
+    const raw = String(version || '').trim();
+    if (!raw) return '';
+    return /^v/i.test(raw) ? raw : `v${raw}`;
   }
 
   private collectEvidence(testComponents: Array<{ evidenceTypes: unknown }>) {

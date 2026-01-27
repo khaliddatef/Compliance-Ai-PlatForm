@@ -142,6 +142,10 @@ export class ControlKbPageComponent implements OnInit {
     return this.isAdmin;
   }
 
+  get canToggleActivation() {
+    return this.isAdmin || this.isManager;
+  }
+
   get activeFilterChips() {
     const chips: Array<{ label: string; value: string }> = [];
     const search = this.searchTerm.trim();
@@ -151,7 +155,10 @@ export class ControlKbPageComponent implements OnInit {
       const topic = this.topics.find((item) => item.id === this.topicFilter);
       chips.push({ label: 'Topic', value: topic?.title || this.topicFilter });
     }
-    if (this.statusFilter !== 'all') chips.push({ label: 'Status', value: this.statusFilter });
+    if (this.statusFilter !== 'all') {
+      const activationLabel = this.statusFilter === 'enabled' ? 'active' : 'inactive';
+      chips.push({ label: 'Activation', value: activationLabel });
+    }
     if (this.evidenceFilter.trim()) chips.push({ label: 'Evidence', value: this.evidenceFilter.trim() });
     if (this.ownerRoleFilter.trim()) chips.push({ label: 'Owner', value: this.ownerRoleFilter.trim() });
     if (this.frameworkRefFilter.trim()) chips.push({ label: 'Framework ref', value: this.frameworkRefFilter.trim() });
@@ -247,13 +254,67 @@ export class ControlKbPageComponent implements OnInit {
       });
   }
 
+  isControlEnabled(control: ControlDefinitionRecord) {
+    return this.getControlStatusValue(control) === 'enabled';
+  }
+
+  toggleControlStatus(control: ControlDefinitionRecord, event?: Event) {
+    event?.stopPropagation();
+    if (!this.canToggleActivation) return;
+    const nextStatus = this.isControlEnabled(control) ? 'disabled' : 'enabled';
+    this.api
+      .updateControlActivation(control.id, { status: nextStatus })
+      .subscribe({
+        next: () => {
+          this.applyControlStatus(control.id, nextStatus);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.error = 'Unable to update control status.';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  private applyControlStatus(controlId: string, status: string) {
+    const normalizedStatus = status === 'disabled' ? 'disabled' : 'enabled';
+    const shouldFilterOut = this.statusFilter !== 'all' && this.statusFilter !== normalizedStatus;
+
+    if (shouldFilterOut) {
+      const hadControl = this.controls.some((control) => control.id === controlId);
+      this.controls = this.controls.filter((control) => control.id !== controlId);
+      if (hadControl && this.totalControls > 0) {
+        this.totalControls -= 1;
+      }
+      this.totalPages = Math.max(1, Math.ceil(this.totalControls / this.pageSize));
+      if (this.selectedControl?.id === controlId) {
+        this.selectedControl = undefined;
+        this.controlEdit = null;
+        this.editingControl = false;
+      }
+      return;
+    }
+
+    this.controls = this.controls.map((control) =>
+      control.id === controlId ? { ...control, status: normalizedStatus } : control,
+    );
+
+    if (this.selectedControl?.id === controlId) {
+      this.selectedControl = { ...this.selectedControl, status: normalizedStatus };
+      if (this.controlEdit) {
+        this.controlEdit = { ...this.controlEdit, status: normalizedStatus };
+      }
+    }
+  }
+
   loadFrameworks() {
     this.api.listFrameworks().subscribe({
       next: (frameworks) => {
         const list = frameworks || [];
-        const names = list.map((fw) => fw.framework).filter(Boolean);
-        this.frameworkOptions = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
         this.frameworkStatusMap = new Map(list.map((fw) => [fw.framework, fw.status]));
+        const enabled = list.filter((fw) => fw.status === 'enabled').map((fw) => fw.framework).filter(Boolean);
+        const names = enabled.length ? enabled : list.map((fw) => fw.framework).filter(Boolean);
+        this.frameworkOptions = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
         this.cdr.markForCheck();
       },
       error: () => {
@@ -770,7 +831,7 @@ export class ControlKbPageComponent implements OnInit {
 
   getControlStatusLabel(control: ControlDefinitionRecord) {
     const status = this.getControlStatusValue(control);
-    return status === 'enabled' ? 'enabled' : 'disabled';
+    return status === 'enabled' ? 'active' : 'inactive';
   }
 
   getControlStatusClass(control: ControlDefinitionRecord) {
@@ -778,20 +839,30 @@ export class ControlKbPageComponent implements OnInit {
     return status === 'enabled' ? 'status-enabled' : 'status-disabled';
   }
 
-  private getControlStatusValue(control: ControlDefinitionRecord) {
-    if (this.frameworkFilter !== 'all') {
-      const status = this.getFrameworkStatus(this.frameworkFilter);
-      return status || 'disabled';
-    }
-
-    const mappings = control.frameworkMappings || [];
-    if (!mappings.length) return control.status || 'enabled';
-    const hasEnabled = mappings.some((mapping) => this.getFrameworkStatus(mapping.framework) === 'enabled');
-    return hasEnabled ? 'enabled' : 'disabled';
+  isFrameworkEnabled(control: ControlDefinitionRecord) {
+    return this.getFrameworkStatusValue(control) === 'enabled';
   }
 
-  private getFrameworkStatus(name: string) {
-    return this.frameworkStatusMap.get(name) || null;
+  getFrameworkStatusLabel(control: ControlDefinitionRecord) {
+    const status = this.getFrameworkStatusValue(control);
+    return status === 'enabled' ? 'enabled' : 'disabled';
+  }
+
+  getFrameworkStatusClass(control: ControlDefinitionRecord) {
+    const status = this.getFrameworkStatusValue(control);
+    return status === 'enabled' ? 'status-enabled' : 'status-disabled';
+  }
+
+  private getControlStatusValue(control: ControlDefinitionRecord) {
+    return control.status === 'disabled' ? 'disabled' : 'enabled';
+  }
+
+  private getFrameworkStatusValue(control: ControlDefinitionRecord) {
+    const mappings = control.frameworkMappings || [];
+    if (!mappings.length) return 'disabled';
+    if (!this.frameworkStatusMap.size) return 'enabled';
+    const hasEnabled = mappings.some((mapping) => this.frameworkStatusMap.get(mapping.framework) === 'enabled');
+    return hasEnabled ? 'enabled' : 'disabled';
   }
 
   openControlPage(control: ControlDefinitionRecord, event?: Event) {

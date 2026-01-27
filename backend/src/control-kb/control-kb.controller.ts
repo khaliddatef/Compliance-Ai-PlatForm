@@ -203,6 +203,23 @@ export class ControlKbController {
     return this.service.updateControl(id, body);
   }
 
+  @Patch('controls/:id/activation')
+  async updateControlActivation(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      status?: string;
+    },
+  ) {
+    this.assertViewAccess(user);
+    const status = String(body.status || '').toLowerCase();
+    if (status !== 'enabled' && status !== 'disabled') {
+      throw new BadRequestException('status must be enabled or disabled');
+    }
+    return this.service.updateControlActivation(id, status);
+  }
+
   @Post('controls/:id/topics')
   async addControlTopicMapping(
     @CurrentUser() user: AuthUser,

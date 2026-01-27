@@ -24,6 +24,7 @@
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-pill"></div>
+          <div class="skeleton skeleton-pill"></div>
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-line"></div>
         </div>
@@ -78,11 +79,11 @@
               </select>
             </label>
             <label>
-              Status
+              Activation
               <select [(ngModel)]="statusFilter" (change)="applyFilters()">
                 <option value="all">All</option>
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
+                <option value="enabled">Active</option>
+                <option value="disabled">Inactive</option>
               </select>
             </label>
             <label>
@@ -137,7 +138,8 @@
           <span>Frameworks</span>
           <span>Topic</span>
           <span>References</span>
-          <span>Status</span>
+          <span>Framework status</span>
+          <span>Activation</span>
           <span>Tests</span>
           <span>Actions</span>
         </div>
@@ -198,9 +200,21 @@
             </div>
           </div>
           <span class="reference-cell" [title]="getControlReferenceCodes(control)">{{ getControlReferenceCodes(control) }}</span>
+          <span class="status-pill" [ngClass]="getFrameworkStatusClass(control)">{{ getFrameworkStatusLabel(control) }}</span>
           <span class="status-pill" [ngClass]="getControlStatusClass(control)">{{ getControlStatusLabel(control) }}</span>
           <span class="tests">{{ control._count?.testComponents || 0 }}</span>
-          <button class="ghost-btn open-btn" type="button" (click)="openControlPage(control, $event)">Open</button>
+          <div class="action-group" (click)="$event.stopPropagation()">
+            <button class="ghost-btn open-btn" type="button" (click)="openControlPage(control, $event)">Open</button>
+            <button
+              class="ghost-btn toggle-btn"
+              type="button"
+              *ngIf="canToggleActivation"
+              [class.danger]="isControlEnabled(control)"
+              (click)="toggleControlStatus(control, $event)"
+            >
+              {{ isControlEnabled(control) ? 'Deactivate' : 'Activate' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -249,10 +263,10 @@
               <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl || !canEdit" />
             </label>
             <label>
-              Status
+              Activation
               <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl || !canEdit">
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
+                <option value="enabled">Active</option>
+                <option value="disabled">Inactive</option>
               </select>
             </label>
           </div>

@@ -34,6 +34,7 @@ export class UploadsPageComponent implements OnInit {
   statusFilter = 'all';
   sortMode = 'recent';
   activeFramework = '';
+  activeFrameworkVersion = '';
 
   constructor(
     private readonly api: ApiService,
@@ -54,8 +55,9 @@ export class UploadsPageComponent implements OnInit {
       next: (res) => {
         const docs = Array.isArray(res?.documents) ? res.documents : [];
         this.activeFramework = String(res?.activeFramework || '').trim();
+        this.activeFrameworkVersion = String(res?.activeFrameworkVersion || '').trim();
         this.files = docs
-          .map((doc) => this.mapDoc(doc, this.activeFramework))
+          .map((doc) => this.mapDoc(doc, this.activeFramework, this.activeFrameworkVersion))
           .sort((a, b) => b.uploadedAt - a.uploadedAt);
         this.loading = false;
         this.cdr.markForCheck();
@@ -151,15 +153,20 @@ export class UploadsPageComponent implements OnInit {
     });
   }
 
-  private mapDoc(doc: UploadDocumentRecord, activeFramework: string): UploadRow {
+  private mapDoc(
+    doc: UploadDocumentRecord,
+    activeFramework: string,
+    activeFrameworkVersion: string,
+  ): UploadRow {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
     const rawReferences = Array.isArray(doc.frameworkReferences)
       ? doc.frameworkReferences.filter((ref) => Boolean(ref))
       : [];
-    const fallbackFramework = activeFramework ? [activeFramework] : [];
-    const frameworkReferences = rawReferences.length ? rawReferences : fallbackFramework;
-    const framework = frameworkReferences[0] || 'Unknown';
+    const versionLabel = this.formatVersionLabel(activeFrameworkVersion, activeFramework);
+    const fallbackReferences = versionLabel ? [versionLabel] : [];
+    const frameworkReferences = rawReferences.length ? rawReferences : fallbackReferences;
+    const framework = activeFramework || 'Unknown';
     const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
     const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
@@ -177,6 +184,14 @@ export class UploadsPageComponent implements OnInit {
       uploaderLabel,
       statusClass: statusMeta.className,
     };
+  }
+
+  private formatVersionLabel(version: string, frameworkName: string) {
+    const raw = String(version || '').trim();
+    if (raw) return raw.toLowerCase().startsWith('v') ? raw : `v${raw}`;
+    const match = String(frameworkName || '').match(/\b(v?\d{4})\b/i);
+    if (!match) return '';
+    return match[1].toLowerCase().startsWith('v') ? match[1] : `v${match[1]}`;
   }
 
   private formatSize(bytes: number) {

@@ -119,6 +119,7 @@ export type UploadListResponse = {
   ok: boolean;
   conversationId?: string;
   activeFramework?: string | null;
+  activeFrameworkVersion?: string | null;
   documents: UploadDocumentRecord[];
 };
 
@@ -411,6 +412,10 @@ export class ApiService {
     payload: Partial<ControlDefinitionRecord> & { topicId?: string },
   ) {
     return this.http.patch<ControlDefinitionRecord>(`/api/control-kb/controls/${id}`, payload);
+  }
+
+  updateControlActivation(id: string, payload: { status: 'enabled' | 'disabled' }) {
+    return this.http.patch<ControlDefinitionRecord>(`/api/control-kb/controls/${id}/activation`, payload);
   }
 
   addControlTopicMapping(

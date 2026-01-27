@@ -51,23 +51,13 @@ type RiskCoverage = {
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getActiveFrameworkSet() {
-    const frameworks = await this.prisma.framework.findMany({
-      select: { name: true, status: true },
-    });
-    if (!frameworks.length) return null;
-    const enabled = frameworks.filter((item) => item.status === 'enabled').map((item) => item.name);
-    return new Set(enabled);
-  }
-
-  private isControlAllowed(
-    control: { frameworkMappings?: Array<{ framework: string }> },
-    active: Set<string>,
-  ) {
-    if (!active.size) return false;
-    const mappings = control.frameworkMappings || [];
-    if (!mappings.length) return true;
-    return mappings.some((mapping) => active.has(mapping.framework));
+  private chunk<T>(items: T[], size = 900) {
+    if (!items.length) return [];
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+      chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
   }
 
   private isGovernanceControl(controlCode: string, topicTitle: string | null | undefined) {
@@ -93,9 +83,8 @@ export class DashboardService {
   }
 
   async getDashboard() {
-    const activeFrameworks = await this.getActiveFrameworkSet();
-
     const controls = await this.prisma.controlDefinition.findMany({
+      where: { status: 'enabled' },
       select: {
         id: true,
         controlCode: true,
@@ -105,11 +94,10 @@ export class DashboardService {
       },
     });
 
-    const allowedControls = activeFrameworks
-      ? controls.filter((control) => this.isControlAllowed(control, activeFrameworks))
-      : controls;
+    const allowedControls = controls;
 
     const allowedControlCodes = allowedControls.map((control) => control.controlCode);
+    const allowedControlCodeSet = new Set(allowedControlCodes);
     const allowedControlIds = allowedControls.map((control) => control.id);
     const controlIdToCode = new Map<string, string>();
     const controlCodeToId = new Map<string, string>();
@@ -132,7 +120,7 @@ export class DashboardService {
     }
 
     const latestEvaluations = Array.from(latestByControl.values()).filter((evaluation) =>
-      allowedControlCodes.includes(String(evaluation.controlId)),
+      allowedControlCodeSet.has(String(evaluation.controlId)),
     );
     const statusCounts = {
       COMPLIANT: 0,
@@ -166,16 +154,26 @@ export class DashboardService {
         )
       : 0;
 
-    const docsWhere = allowedControlCodes.length ? { matchControlId: { in: allowedControlCodes } } : null;
+    let totalDocuments = 0;
+    let awaitingReview = 0;
+    const documents: Array<{
+      matchControlId: string | null;
+      docType: string | null;
+      originalName: string;
+      matchStatus: string | null;
+      reviewedAt: Date | null;
+      submittedAt: Date | null;
+      createdAt: Date;
+      conversation?: { title: string } | null;
+    }> = [];
 
-    const [totalDocuments, awaitingReview, documents] = await Promise.all([
-      docsWhere ? this.prisma.document.count({ where: docsWhere }) : Promise.resolve(0),
-      docsWhere
-        ? this.prisma.document.count({ where: { ...docsWhere, reviewedAt: null } })
-        : Promise.resolve(0),
-      docsWhere
-        ? this.prisma.document.findMany({
-            where: docsWhere,
+    if (allowedControlCodes.length) {
+      for (const chunk of this.chunk(allowedControlCodes)) {
+        const [chunkTotal, chunkAwaiting, chunkDocs] = await Promise.all([
+          this.prisma.document.count({ where: { matchControlId: { in: chunk } } }),
+          this.prisma.document.count({ where: { matchControlId: { in: chunk }, reviewedAt: null } }),
+          this.prisma.document.findMany({
+            where: { matchControlId: { in: chunk } },
             select: {
               matchControlId: true,
               docType: true,
@@ -183,10 +181,16 @@ export class DashboardService {
               matchStatus: true,
               reviewedAt: true,
               submittedAt: true,
+              createdAt: true,
+              conversation: { select: { title: true } },
             },
-          })
-        : Promise.resolve([]),
-    ]);
+          }),
+        ]);
+        totalDocuments += chunkTotal;
+        awaitingReview += chunkAwaiting;
+        documents.push(...chunkDocs);
+      }
+    }
 
     const lastReviewAt = evaluations[0]?.createdAt ?? null;
 
@@ -243,12 +247,19 @@ export class DashboardService {
       percent: reviewedDocs ? Math.round((submittedDocs / reviewedDocs) * 100) : 0,
     };
 
-    const evidenceMappings = allowedControlIds.length
-      ? await this.prisma.controlEvidenceMapping.findMany({
-          where: { controlId: { in: allowedControlIds } },
+    const evidenceMappings: Array<{
+      controlId: string;
+      evidenceRequest: { artifact: string | null; description: string | null } | null;
+    }> = [];
+    if (allowedControlIds.length) {
+      for (const chunk of this.chunk(allowedControlIds)) {
+        const rows = await this.prisma.controlEvidenceMapping.findMany({
+          where: { controlId: { in: chunk } },
           include: { evidenceRequest: { select: { artifact: true, description: true } } },
-        })
-      : [];
+        });
+        evidenceMappings.push(...rows);
+      }
+    }
 
     let missingPolicies = 0;
     let missingLogs = 0;
@@ -278,12 +289,19 @@ export class DashboardService {
       controlIdToStatus.set(control.id, statusByControlCode.get(control.controlCode) || 'UNKNOWN');
     }
 
-    const riskMappings = allowedControlIds.length
-      ? await this.prisma.controlRiskMapping.findMany({
-          where: { controlId: { in: allowedControlIds } },
+    const riskMappings: Array<{
+      controlId: string;
+      risk: { id: string; title: string | null } | null;
+    }> = [];
+    if (allowedControlIds.length) {
+      for (const chunk of this.chunk(allowedControlIds)) {
+        const rows = await this.prisma.controlRiskMapping.findMany({
+          where: { controlId: { in: chunk } },
           include: { risk: { select: { id: true, title: true } } },
-        })
-      : [];
+        });
+        riskMappings.push(...rows);
+      }
+    }
 
     const riskBucket = new Map<string, { title: string; controlIds: Set<string> }>();
     for (const mapping of riskMappings) {
@@ -344,14 +362,10 @@ export class DashboardService {
         updatedAt: evaluation.createdAt.toISOString(),
       }));
 
-    const recentDocs = allowedControlCodes.length
-      ? await this.prisma.document.findMany({
-          where: { matchControlId: { in: allowedControlCodes } },
-          include: { conversation: { select: { title: true } } },
-          orderBy: { createdAt: 'desc' },
-          take: 6,
-        })
-      : [];
+    const recentDocs = documents
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .slice(0, 6);
 
     const recentEvalActivity = latestEvaluations.slice(0, 6).map((evaluation) => ({
       label: `${evaluation.controlId} reviewed`,
