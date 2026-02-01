@@ -17,6 +17,8 @@ export type RagHit = {
 
 @Injectable()
 export class ChatService {
+  private readonly defaultTitle = 'New compliance chat';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly uploadService: UploadService,
@@ -30,31 +32,41 @@ export class ChatService {
     userId?: string;
   }) {
     const { conversationId, title, role, content, userId } = params;
+    const cleanedContent = String(content || '').trim();
+    const derivedTitle = role === 'user' && cleanedContent ? this.deriveTitle(cleanedContent) : '';
 
     let conv;
 
     if (conversationId) {
       const existing = await this.prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, title: true },
       });
 
       if (!existing) {
         conv = await this.prisma.conversation.create({
-          data: { id: conversationId, title: title || 'New compliance chat', userId },
+          data: {
+            id: conversationId,
+            title: derivedTitle || title || this.defaultTitle,
+            userId,
+          },
         });
       } else {
+        const shouldUpdateTitle =
+          derivedTitle && (!existing.title || existing.title === this.defaultTitle);
+        const nextTitle = shouldUpdateTitle ? derivedTitle : undefined;
         conv = await this.prisma.conversation.update({
           where: { id: conversationId },
           data: {
             updatedAt: new Date(),
             ...(existing.userId ? {} : { userId }),
+            ...(nextTitle ? { title: nextTitle } : {}),
           },
         });
       }
     } else {
       conv = await this.prisma.conversation.create({
-        data: { title: title || 'New compliance chat', userId },
+        data: { title: derivedTitle || title || this.defaultTitle, userId },
       });
     }
 
@@ -67,6 +79,23 @@ export class ChatService {
     });
 
     return { conv, msg };
+  }
+
+  private deriveTitle(content: string) {
+    const cleaned = content
+      .replace(/\s+/g, ' ')
+      .replace(/[؟?!.,؛:]+$/g, '')
+      .trim();
+    if (!cleaned) return this.defaultTitle;
+
+    const lower = cleaned.toLowerCase();
+    if (lower.startsWith('uploaded') || cleaned.startsWith('تم رفع')) {
+      return cleaned.startsWith('تم رفع') ? 'مراجعة ملف' : 'Document review';
+    }
+
+    const max = 32;
+    if (cleaned.length <= max) return cleaned;
+    return `${cleaned.slice(0, max).trim()}…`;
   }
 
   async listMessages(conversationId: string) {
@@ -129,6 +158,29 @@ export class ChatService {
         // ignore missing file
       }
     }
+
+    return { ok: true };
+  }
+
+  async hideConversationForUser(conversationId: string, userId: string) {
+    if (!conversationId || !userId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    await this.prisma.conversationVisibility.upsert({
+      where: {
+        conversationId_userId: {
+          conversationId,
+          userId,
+        },
+      },
+      update: { hidden: true },
+      create: {
+        conversationId,
+        userId,
+        hidden: true,
+      },
+    });
 
     return { ok: true };
   }

@@ -23,13 +23,19 @@ export class ChatController {
     @CurrentUser() user: AuthUser,
   ) {
     await this.assertConversationAccess(conversationId, user);
+    if (user.role === 'MANAGER') {
+      return this.chatService.hideConversationForUser(conversationId, user.id);
+    }
     return this.chatService.deleteConversation(conversationId);
   }
 
   @Get('conversations')
   async listConversations(@CurrentUser() user: AuthUser) {
     const isPrivileged = user.role !== 'USER';
-    const where = isPrivileged ? { userId: { not: null } } : { userId: user.id };
+    const where: any = isPrivileged ? { userId: { not: null } } : { userId: user.id };
+    if (user.role === 'MANAGER') {
+      where.hiddenBy = { none: { userId: user.id, hidden: true } };
+    }
 
     const rows = await this.prisma.conversation.findMany({
       where,
@@ -154,16 +160,25 @@ export class ChatController {
       userId: user.id,
     });
 
-    // 2) Load conversation to get customerVectorStoreId
-    const convRow = await this.prisma.conversation.findUnique({ where: { id: conv.id } });
-    const customerVectorStoreId = (convRow as any)?.customerVectorStoreId || null;
+    const [evidenceChunks, docCount] = await Promise.all([
+      this.chatService.retrieveTopChunks({
+        conversationId: conv.id,
+        kind: 'CUSTOMER',
+        query: prompt,
+        topK: 6,
+      }),
+      this.prisma.document.count({
+        where: { conversationId: conv.id, kind: 'CUSTOMER' },
+      }),
+    ]);
 
-    // 3) Agent answers (Responses API + file_search)
+    // 3) Agent answers (Responses API, customer evidence from DB only)
     const activeFramework = await this.controlKb.getActiveFrameworkLabel();
     const agentOut = await this.agent.answerCompliance({
       framework: activeFramework,
       question: prompt,
-      customerVectorStoreId,
+      evidenceChunks,
+      hasCustomerDocs: docCount > 0,
       language: body?.language,
     });
 
@@ -214,9 +229,6 @@ export class ChatController {
       update: { updatedAt: new Date() },
     });
 
-    const convRow = await this.prisma.conversation.findUnique({ where: { id: conversationId } });
-    const customerVectorStoreId = (convRow as any)?.customerVectorStoreId || null;
-
     const kbControl = await this.controlKb.getControlContextByCode({
       controlCode: String(controlId),
       includeDisabled: user?.role === 'ADMIN',
@@ -230,11 +242,31 @@ export class ChatController {
       testComponents: Array.isArray(control?.testComponents) ? control.testComponents : [],
     };
 
+    const [evidenceChunks, docCount] = await Promise.all([
+      this.chatService.retrieveTopChunks({
+        conversationId,
+        kind: 'CUSTOMER',
+        query: [
+          normalizedControl.id,
+          normalizedControl.title,
+          ...(normalizedControl.evidence || []),
+          ...(normalizedControl.testComponents || []),
+        ]
+          .filter(Boolean)
+          .join(' '),
+        topK: 8,
+      }),
+      this.prisma.document.count({
+        where: { conversationId, kind: 'CUSTOMER' },
+      }),
+    ]);
+
     const activeFramework = await this.controlKb.getActiveFrameworkLabel();
     const evaluation = await this.agent.evaluateControlEvidence({
       framework: activeFramework,
       control: normalizedControl,
-      customerVectorStoreId,
+      evidenceChunks,
+      hasCustomerDocs: docCount > 0,
       language: body?.language,
     });
 

@@ -167,6 +167,11 @@
   color: #b45309;
 }
 
+.status-pill.ready {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
 .status-pill.submitted {
   background: #ecfdf3;
   color: #15803d;
@@ -230,9 +235,90 @@
 }
 
 .action-group {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke-strong);
+  background: #fff;
+  color: var(--ink-strong);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.menu-btn:hover,
+.menu-btn:focus-visible {
+  border-color: var(--accent-200);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08);
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-strong);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--surface-3);
+}
+
+.menu-item.highlight {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.menu-item.highlight:hover,
+.menu-item.highlight:focus-visible {
+  background: #ecfdf3;
+  border-color: #86efac;
+}
+
+.menu-item.danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 .skeleton-table .row {

@@ -17,6 +17,7 @@ model Conversation {
   documents Document[]
   customerVectorStoreId  String?
   evaluations EvidenceEvaluation[]
+  hiddenBy  ConversationVisibility[]
   user      User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
@@ -78,6 +79,23 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   conversations Conversation[]
+  hiddenConversations ConversationVisibility[]
+}
+
+model ConversationVisibility {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  hidden         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
 }
 
 model ControlTopic {

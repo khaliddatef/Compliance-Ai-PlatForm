@@ -290,6 +290,13 @@ export class ApiService {
     return this.http.delete<{ ok: boolean }>(`/api/uploads/${id}`);
   }
 
+  updateUploadStatus(id: string, status: 'REVIEWED' | 'SUBMITTED') {
+    return this.http.patch<{ ok: boolean; document: UploadDocumentRecord }>(
+      `/api/uploads/${id}/status`,
+      { status },
+    );
+  }
+
   downloadUpload(id: string) {
     return this.http.get(`/api/uploads/${id}/download`, { responseType: 'blob' });
   }
@@ -484,6 +491,14 @@ export class ApiService {
     return this.http.post<AuthLoginResponse>('/api/auth/login', { email, password });
   }
 
+  me() {
+    return this.http.get<{ user: AuthUserResponse }>('/api/auth/me');
+  }
+
+  logout() {
+    return this.http.post<{ ok: boolean }>('/api/auth/logout', {});
+  }
+
   // ✅ DELETE conversation in backend
   deleteConversation(conversationId: string) {
     return this.http.delete<{ ok: boolean }>(`/api/chat/${conversationId}`);
@@ -507,7 +522,7 @@ export class ApiService {
     conversationId?: string,
     language?: 'ar' | 'en',
   ) {
-    const convId = conversationId || 'demo-1';
+    const convId = conversationId || crypto.randomUUID();
 
     return this.chat(convId, message, language).pipe(
       map((res) => {

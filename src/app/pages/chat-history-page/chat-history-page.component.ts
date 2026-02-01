@@ -2,8 +2,6 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChatService } from '../../services/chat.service';
-import { Conversation } from '../../models/conversation.model';
 import { ApiService, ChatConversationSummary } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
@@ -21,7 +19,6 @@ export class ChatHistoryPageComponent implements OnInit {
   remoteError = '';
 
   constructor(
-    private readonly chat: ChatService,
     private readonly router: Router,
     private readonly api: ApiService,
     private readonly auth: AuthService,
@@ -29,26 +26,12 @@ export class ChatHistoryPageComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    if (this.isPrivileged) {
-      this.loadRemoteConversations();
-    }
+    this.loadRemoteConversations();
   }
 
   get isPrivileged() {
     const role = (this.auth.user()?.role || 'USER').toUpperCase();
     return role === 'ADMIN' || role === 'MANAGER';
-  }
-
-  get localConversations(): Conversation[] {
-    const list = [...this.chat.conversations()].sort((a, b) => b.updatedAt - a.updatedAt);
-    const term = this.searchTerm.trim().toLowerCase();
-    if (!term) return list;
-
-    return list.filter((conversation) => {
-      const lastMessage = conversation.messages[conversation.messages.length - 1]?.content || '';
-      const haystack = `${conversation.title} ${lastMessage}`.toLowerCase();
-      return haystack.includes(term);
-    });
   }
 
   get filteredRemoteConversations(): ChatConversationSummary[] {
@@ -67,22 +50,49 @@ export class ChatHistoryPageComponent implements OnInit {
     });
   }
 
-  openConversation(conversationId: string) {
-    this.chat.selectConversation(conversationId);
-    this.router.navigate(['/home'], { queryParams: { conversationId } });
-  }
-
   openRemoteConversation(conversationId: string) {
-    this.router.navigate(['/history', conversationId]);
+    if (this.isPrivileged) {
+      this.router.navigate(['/history', conversationId]);
+    } else {
+      this.router.navigate(['/home'], { queryParams: { conversationId } });
+    }
   }
 
-  deleteConversation(conversationId: string, event: MouseEvent) {
+  getRemoteTitle(conversation: ChatConversationSummary) {
+    const rawTitle = String(conversation?.title || '').trim();
+    const preferred = rawTitle && rawTitle !== 'New compliance chat' ? rawTitle : '';
+    const fallback = String(conversation?.lastMessage || '').trim();
+    const source = preferred || fallback;
+    return this.formatTitle(source) || 'Untitled chat';
+  }
+
+  deleteRemoteConversation(conversationId: string, event: MouseEvent) {
     event.stopPropagation();
-    this.chat.removeConversation(conversationId);
+    if (!confirm('Delete this conversation?')) return;
+    this.api.deleteConversation(conversationId).subscribe({
+      next: () => {
+        this.remoteConversations = this.remoteConversations.filter((item) => item.id !== conversationId);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.remoteError = 'Unable to delete conversation.';
+        this.cdr.markForCheck();
+      },
+    });
   }
 
-  trackById(_index: number, conversation: Conversation) {
-    return conversation.id;
+  private formatTitle(value: string) {
+    const cleaned = String(value || '')
+      .replace(/\s+/g, ' ')
+      .replace(/[؟?!.,؛:]+$/g, '')
+      .trim();
+    if (!cleaned) return '';
+    const lower = cleaned.toLowerCase();
+    if (lower.startsWith('uploaded') || cleaned.startsWith('تم رفع')) {
+      return cleaned.startsWith('تم رفع') ? 'مراجعة ملف' : 'Document review';
+    }
+    const max = 40;
+    return cleaned.length > max ? `${cleaned.slice(0, max).trim()}…` : cleaned;
   }
 
   trackByRemoteId(_index: number, conversation: ChatConversationSummary) {

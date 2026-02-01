@@ -50,6 +50,12 @@ export type ControlCandidate = {
   isoMappings?: string[] | null;
 };
 
+export type EvidenceChunk = {
+  docName: string;
+  text: string;
+  chunkIndex?: number;
+};
+
 type CustomerProbe = {
   // هل فيه دليل Customer فعلاً مرتبط بالسؤال؟
   hasRelevantCustomerEvidence: boolean;
@@ -68,6 +74,42 @@ export class AgentService {
 
   private detectLanguage(text: string): 'ar' | 'en' {
     return /[\u0600-\u06FF]/.test(text || '') ? 'ar' : 'en';
+  }
+
+  private formatEvidenceChunks(chunks: EvidenceChunk[]) {
+    if (!chunks?.length) return '';
+    const maxChunkChars = 900;
+    const maxTotalChars = 7000;
+    let total = 0;
+    const lines: string[] = [];
+
+    for (const chunk of chunks) {
+      const docName = String(chunk.docName || 'document');
+      const index = Number.isFinite(chunk.chunkIndex) ? ` (chunk ${chunk.chunkIndex})` : '';
+      const text = String(chunk.text || '').trim().slice(0, maxChunkChars);
+      if (!text) continue;
+      const block = `Doc: ${docName}${index}\n${text}`;
+      lines.push(block);
+      total += block.length;
+      if (total >= maxTotalChars) break;
+    }
+
+    return lines.join('\n\n');
+  }
+
+  private filterCitationsByDocs(
+    citations: Array<{ doc: string; page: number | null; kind: 'CUSTOMER' }>,
+    allowedDocs: Set<string>,
+  ) {
+    if (!Array.isArray(citations)) return [];
+    const normalized = new Set(Array.from(allowedDocs.values()).map((name) => name.trim()));
+    return citations
+      .filter((c) => normalized.has(String(c?.doc || '').trim()))
+      .map((c) => ({
+        doc: String(c.doc || '').trim(),
+        page: c.page ?? null,
+        kind: 'CUSTOMER' as const,
+      }));
   }
 
   private assertConfig() {
@@ -283,29 +325,30 @@ Rules:
   async answerCompliance(params: {
     framework?: string | null;
     question: string;
-    customerVectorStoreId?: string | null;
+    evidenceChunks?: EvidenceChunk[];
+    hasCustomerDocs?: boolean;
     language?: 'ar' | 'en';
   }): Promise<AgentComplianceResponse> {
     this.assertConfig();
 
-    const { framework, question, customerVectorStoreId, language: forcedLanguage } = params;
+    const {
+      framework,
+      question,
+      evidenceChunks = [],
+      hasCustomerDocs = false,
+      language: forcedLanguage,
+    } = params;
     const language = forcedLanguage ?? this.detectLanguage(question);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
 
-    // ✅ لو مفيش customer store: ندي guidance عام + UNKNOWN
-    if (!customerVectorStoreId) {
+    // ✅ لو مفيش أدلة عميل (ولا ملفات أصلاً): ندي guidance عام + UNKNOWN
+    if (!hasCustomerDocs) {
       return this.answerGeneral({ framework, question, language });
     }
 
-    // ✅ Probe customer store only (يحسم موضوع الملف)
-    const probe = await this.probeCustomerEvidence({
-      question,
-      customerVectorStoreId,
-    });
-
-    // ✅ لو مفيش evidence مرتبط: اقفل الباب قبل ما يخلط framework/customer
-    if (!probe.hasRelevantCustomerEvidence) {
+    // ✅ لو مفيش evidence مطابق: اقفل الباب قبل ما نخلط
+    if (!evidenceChunks.length) {
       const externalLinks = await webSearchPromise;
       const extra =
         wantsWeb && externalLinks.length
@@ -328,11 +371,6 @@ Rules:
         return {
           reply:
             reply +
-          (probe.customerDocsSeen.length
-            ? language === 'ar'
-              ? `\n\nالملفات الموجودة: ${probe.customerDocsSeen.slice(0, 5).join(', ')}`
-              : `\n\nCustomer docs detected: ${probe.customerDocsSeen.slice(0, 5).join(', ')}`
-            : '') +
           extra,
           citations: [],
           externalLinks: externalLinks.length ? externalLinks : undefined,
@@ -385,9 +423,11 @@ Scope & behavior:
 - Current framework context: ${this.frameworkLabel(framework, language)}. Do not mention the framework unless the user asks or it is needed to answer accurately. If the user asks about a different framework, ask which one to use.
 
 Evidence & guidance:
-- Use ONLY CUSTOMER evidence from file search results.
+- Use ONLY the provided CUSTOMER evidence snippets.
+- If evidence is missing or unclear, say so and set status to "UNKNOWN".
 - This chat provides guidance only. Do NOT make compliance decisions here.
 - Always set complianceSummary.status to "UNKNOWN".
+- For citations, use document names exactly as shown in the evidence snippets.
 
 Transparency:
 - If you reference framework requirements, say it is guidance and not a compliance decision.
@@ -444,18 +484,17 @@ Structure:
     const timeout = setTimeout(() => controller.abort(), 45_000);
 
     try {
+      const evidenceText = this.formatEvidenceChunks(evidenceChunks);
+      const allowedDocs = new Set(
+        evidenceChunks.map((chunk) => String(chunk.docName || '').trim()).filter(Boolean),
+      );
       const body = {
         model: this.model,
         instructions,
-        input: `Framework=${this.frameworkLabel(framework, language)}\nUser question: ${question}\n\nAssess compliance using ONLY customer evidence.`,
-        tools: [
-          {
-            type: 'file_search',
-            vector_store_ids: [customerVectorStoreId],
-            max_num_results: 8,
-          },
-        ],
-        include: ['file_search_call.results'],
+        input:
+          `Framework=${this.frameworkLabel(framework, language)}\n` +
+          `User question: ${question}\n\n` +
+          `Customer evidence snippets:\n${evidenceText}`,
         text: {
           format: {
             type: 'json_schema',
@@ -512,15 +551,10 @@ Structure:
         parsed.externalLinks = externalLinks.length ? externalLinks : undefined;
       }
 
-      parsed.citations = Array.isArray(parsed.citations)
-        ? parsed.citations
-            .filter((c) => String((c as any)?.kind || '').toUpperCase() === 'CUSTOMER')
-            .map((c) => ({
-              doc: c.doc,
-              page: c.page ?? null,
-              kind: 'CUSTOMER',
-            }))
-        : [];
+      parsed.citations = this.filterCitationsByDocs(
+        Array.isArray(parsed.citations) ? parsed.citations : [],
+        allowedDocs,
+      );
 
       if (!parsed.complianceSummary) {
         parsed.complianceSummary = {
@@ -801,14 +835,12 @@ Structure:
     framework?: string | null;
     fileName: string;
     content?: string | null;
-    customerVectorStoreId?: string | null;
     language?: 'ar' | 'en';
     controlCandidates?: ControlCandidate[];
   }): Promise<DocumentMatchResult> {
     this.assertConfig();
 
-    const { framework, fileName, content, customerVectorStoreId, language: forcedLanguage, controlCandidates } =
-      params;
+    const { framework, fileName, content, language: forcedLanguage, controlCandidates } = params;
     const language = forcedLanguage ?? this.detectLanguage(content || fileName || '');
     const trimmedContent = (content || '').trim();
     const hasContent = Boolean(trimmedContent);
@@ -828,11 +860,11 @@ Structure:
     });
     const allowedList = Array.from(allowedIds);
 
-    if (!hasContent && !customerVectorStoreId) {
+    if (!hasContent) {
       const fallbackNote =
         language === 'ar'
-          ? 'لا يوجد نص قابل للقراءة أو مستودع أدلة مرتبط بهذا الملف.'
-          : 'No readable document text or customer evidence store available.';
+          ? 'لا يوجد نص قابل للقراءة مرتبط بهذا الملف.'
+          : 'No readable document text is available for this file.';
       const fallbackRecs =
         language === 'ar'
           ? ['ارفع ملف PDF/DOCX واضح أو أضف سياقًا أكثر.']
@@ -855,12 +887,13 @@ Language:
 - Do not mix languages in the same response (except file names or control IDs).
 
 Rules:
-- Use ONLY the provided document content OR file_search results.
+- Use ONLY the provided document content.
 - If you cannot identify a control confidently, set matchControlId=null and matchStatus="UNKNOWN".
 - If evidence appears sufficient, set matchStatus="COMPLIANT".
 - If evidence is partial, set matchStatus="PARTIAL".
 - If evidence is unrelated or clearly insufficient, set matchStatus="NOT_COMPLIANT".
 - If candidates are provided, you MUST pick matchControlId from the allowed list only.
+- If multiple candidates fit, choose the FIRST candidate in the provided list.
 - Use the internal control ID when available. ISO codes are references only.
 - Keep matchNote short (1-2 sentences), supportive, and non-judgmental.
 - Avoid mentioning the framework name unless needed for clarity.
@@ -893,19 +926,21 @@ Return STRICT JSON only.
     const timeout = setTimeout(() => controller.abort(), 45_000);
 
     try {
-    const baseInput = [
-      `Framework: ${this.frameworkLabel(framework, language)}`,
-      `Target file name: ${fileName}`,
-      'Analyze the target document only.',
-      allowedList.length ? `Allowed control IDs: ${allowedList.join(', ')}` : '',
-      candidateLines.length ? `Candidate controls:\n${candidateLines.join('\n')}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+      const baseInput = [
+        `Framework: ${this.frameworkLabel(framework, language)}`,
+        `Target file name: ${fileName}`,
+        'Analyze the target document only.',
+        allowedList.length ? `Allowed control IDs: ${allowedList.join(', ')}` : '',
+        candidateLines.length ? `Candidate controls:\n${candidateLines.join('\n')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
 
       const body: any = {
         model: this.model,
         instructions,
+        temperature: 0,
+        top_p: 1,
         text: {
           format: {
             type: 'json_schema',
@@ -916,20 +951,8 @@ Return STRICT JSON only.
         },
       };
 
-      if (hasContent) {
-        const excerpt = trimmedContent.slice(0, 6000);
-        body.input = `${baseInput}\n\nDocument content (excerpt):\n${excerpt}`;
-      } else {
-        body.input = `${baseInput}\n\nUse file_search results and ONLY consider matches for the target file name.`;
-        body.tools = [
-          {
-            type: 'file_search',
-            vector_store_ids: [customerVectorStoreId],
-            max_num_results: 8,
-          },
-        ];
-        body.include = ['file_search_call.results'];
-      }
+      const excerpt = trimmedContent.slice(0, 6000);
+      body.input = `${baseInput}\n\nDocument content (excerpt):\n${excerpt}`;
 
       const resp = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -1029,21 +1052,28 @@ Return STRICT JSON only.
   async evaluateControlEvidence(params: {
     framework?: string | null;
     control: ControlContext;
-    customerVectorStoreId?: string | null;
+    evidenceChunks?: EvidenceChunk[];
+    hasCustomerDocs?: boolean;
     language?: 'ar' | 'en';
   }): Promise<AgentControlEvaluation> {
     this.assertConfig();
 
-    const { framework, control, customerVectorStoreId, language } = params;
+    const {
+      framework,
+      control,
+      evidenceChunks = [],
+      hasCustomerDocs = false,
+      language,
+    } = params;
 
-    if (!customerVectorStoreId) {
+    if (!hasCustomerDocs) {
       const languageLabel = language === 'ar' ? 'ar' : 'en';
       return {
         status: 'UNKNOWN',
         summary:
           languageLabel === 'ar'
-            ? 'لا يوجد مستودع أدلة عميل مرتبط بهذه المحادثة بعد. من فضلك ارفع الأدلة أولًا.'
-            : 'No customer evidence store is linked to this conversation yet. Please upload evidence documents first.',
+            ? 'لا توجد أدلة عميل مرتبطة بهذه المحادثة بعد. من فضلك ارفع الأدلة أولًا.'
+            : 'No customer evidence is linked to this conversation yet. Please upload evidence documents first.',
         satisfied: [],
         missing: control.testComponents ?? [],
         recommendations:
@@ -1052,6 +1082,27 @@ Return STRICT JSON only.
             : [
                 'Upload evidence documents that match the requested control',
                 'Try providing policies, procedures, screenshots, or audit logs',
+              ],
+        citations: [],
+      };
+    }
+
+    if (!evidenceChunks.length) {
+      const languageLabel = language === 'ar' ? 'ar' : 'en';
+      return {
+        status: 'UNKNOWN',
+        summary:
+          languageLabel === 'ar'
+            ? 'لم يتم العثور على أدلة مرتبطة بهذا الكنترول ضمن الملفات المرفوعة.'
+            : 'No evidence linked to this control was found in the uploaded documents.',
+        satisfied: [],
+        missing: control.testComponents ?? [],
+        recommendations:
+          languageLabel === 'ar'
+            ? ['ارفع أدلة أكثر تحديدًا للكنترول المطلوب', 'أضف سجلات أو لقطات شاشة توضح التطبيق العملي']
+            : [
+                'Upload more specific evidence for this control',
+                'Add logs or screenshots that show implementation in practice',
               ],
         citations: [],
       };
@@ -1067,7 +1118,7 @@ Language:
 - Respond in ${languageLabel}.
 
 Rules:
-- Use ONLY CUSTOMER evidence from file search results.
+- Use ONLY the provided CUSTOMER evidence snippets.
 - The provided control criteria are signals, not rigid rules. Use judgment and explain gaps clearly.
 - If evidence is missing or irrelevant, status MUST be "UNKNOWN".
 - Avoid judgmental/pass-fail language. Be honest and action-oriented.
@@ -1121,18 +1172,15 @@ Rules:
         `Test components: ${(control.testComponents || []).join('; ')}`,
       ].join('\n');
 
+      const evidenceText = this.formatEvidenceChunks(evidenceChunks);
+      const allowedDocs = new Set(
+        evidenceChunks.map((chunk) => String(chunk.docName || '').trim()).filter(Boolean),
+      );
+
       const body = {
         model: this.model,
         instructions,
-        input: `${context}\n\nEvaluate CUSTOMER evidence for this control.`,
-        tools: [
-          {
-            type: 'file_search',
-            vector_store_ids: [customerVectorStoreId],
-            max_num_results: 10,
-          },
-        ],
-        include: ['file_search_call.results'],
+        input: `${context}\n\nCustomer evidence snippets:\n${evidenceText}`,
         text: {
           format: {
             type: 'json_schema',
@@ -1180,9 +1228,10 @@ Rules:
       parsed.satisfied = Array.isArray(parsed.satisfied) ? parsed.satisfied : [];
       parsed.missing = Array.isArray(parsed.missing) ? parsed.missing : [];
       parsed.recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
-      parsed.citations = Array.isArray(parsed.citations)
-        ? parsed.citations.map((c) => ({ doc: c.doc, page: c.page ?? null, kind: 'CUSTOMER' }))
-        : [];
+      parsed.citations = this.filterCitationsByDocs(
+        Array.isArray(parsed.citations) ? parsed.citations : [],
+        allowedDocs,
+      );
 
       return parsed;
     } catch (e: any) {
@@ -1200,9 +1249,9 @@ Rules:
         missing: control.testComponents ?? [],
         recommendations:
           languageLabel === 'ar'
-            ? ['تأكد من OPENAI_API_KEY وإعدادات فهرسة الأدلة', 'ارفع الأدلة بصيغ PDF/DOCX/صور وأعد المحاولة']
+            ? ['تأكد من OPENAI_API_KEY وإعدادات استخراج النص', 'ارفع الأدلة بصيغ PDF/DOCX/صور وأعد المحاولة']
             : [
-                'Verify OPENAI_API_KEY and evidence indexing setup',
+                'Verify OPENAI_API_KEY and text extraction setup',
                 'Upload evidence in PDF/DOCX/image formats and retry',
               ],
         citations: [],

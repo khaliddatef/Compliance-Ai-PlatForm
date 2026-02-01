@@ -72,11 +72,21 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         const exists = this.chatService.conversations().some((c) => c.id === conversationId);
         if (exists) {
           this.chatService.selectConversation(conversationId);
-        } else {
-          this.chatService.startNewConversation();
+          this.ensureControlFlow();
+          this.maybePromptAfterCatalogLoad();
+          return;
         }
-        this.ensureControlFlow();
-        this.maybePromptAfterCatalogLoad();
+        this.chatService.loadConversationFromBackend(conversationId).subscribe({
+          next: () => {
+            this.ensureControlFlow();
+            this.maybePromptAfterCatalogLoad();
+          },
+          error: () => {
+            this.chatService.startNewConversation();
+            this.ensureControlFlow();
+            this.maybePromptAfterCatalogLoad();
+          },
+        });
         return;
       }
 

@@ -15,9 +15,6 @@ export type ComposerSendPayload = {
   styleUrl: './composer.component.css'
 })
 export class ComposerComponent implements OnChanges {
-  //   reset(){
-  //   localStorage.clear();
-  // }
   @Input() uploading = false;
   @Input() uploadProgress = 0;
   @Input() resetKey = 0;

@@ -1,8 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService, UploadDocumentRecord } from '../../services/api.service';
+import { AuthService } from '../../services/auth.service';
 
 type UploadRow = {
   id: string;
@@ -10,12 +11,14 @@ type UploadRow = {
   framework: string;
   frameworkReferences: string[];
   status: string;
+  statusCode: 'UPLOADED' | 'REVIEWED' | 'READY' | 'SUBMITTED';
   size: string;
   sizeBytes: number;
   uploadedAt: number;
   chatTitle?: string;
   uploaderLabel?: string;
   statusClass: string;
+  matchStatus?: string | null;
 };
 
 @Component({
@@ -35,11 +38,13 @@ export class UploadsPageComponent implements OnInit {
   sortMode = 'recent';
   activeFramework = '';
   activeFrameworkVersion = '';
+  openMenuId: string | null = null;
 
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
     private readonly router: Router,
+    private readonly auth: AuthService,
   ) {}
 
   ngOnInit() {
@@ -82,6 +87,59 @@ export class UploadsPageComponent implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  toggleMenu(id: string, event?: MouseEvent) {
+    event?.stopPropagation();
+    this.openMenuId = this.openMenuId === id ? null : id;
+  }
+
+  closeMenu() {
+    this.openMenuId = null;
+  }
+
+  @HostListener('document:click')
+  onDocumentClick() {
+    this.closeMenu();
+  }
+
+  markReviewed(file: UploadRow) {
+    this.api.updateUploadStatus(file.id, 'REVIEWED').subscribe({
+      next: (res) => {
+        if (res?.document) this.replaceFile(res.document);
+        this.closeMenu();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to update this file right now.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  markSubmitted(file: UploadRow) {
+    if (file.statusCode === 'SUBMITTED') return;
+    const match = String(file.matchStatus || '').toUpperCase();
+    if (match && match !== 'COMPLIANT') {
+      const proceed = confirm('This file is not marked COMPLIANT by the agent. Submit anyway?');
+      if (!proceed) return;
+    }
+    this.api.updateUploadStatus(file.id, 'SUBMITTED').subscribe({
+      next: (res) => {
+        if (res?.document) this.replaceFile(res.document);
+        this.closeMenu();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to update this file right now.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  get canManageStatus() {
+    const role = (this.auth.user()?.role || 'USER').toUpperCase();
+    return role === 'ADMIN' || role === 'MANAGER';
   }
 
   get frameworkOptions() {
@@ -169,7 +227,7 @@ export class UploadsPageComponent implements OnInit {
     const framework = activeFramework || 'Unknown';
     const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
-    const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt);
+    const statusMeta = this.mapFileStatus(doc.submittedAt, doc.reviewedAt, doc.matchStatus);
 
     return {
       id: doc.id,
@@ -177,12 +235,14 @@ export class UploadsPageComponent implements OnInit {
       framework,
       frameworkReferences,
       status: statusMeta.label,
+      statusCode: statusMeta.code,
       size,
       sizeBytes,
       uploadedAt,
       chatTitle: doc?.conversation?.title,
       uploaderLabel,
       statusClass: statusMeta.className,
+      matchStatus: doc?.matchStatus ?? null,
     };
   }
 
@@ -202,14 +262,27 @@ export class UploadsPageComponent implements OnInit {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   }
 
-  private mapFileStatus(submittedAt?: string | null, reviewedAt?: string | null) {
+  private mapFileStatus(
+    submittedAt?: string | null,
+    reviewedAt?: string | null,
+    matchStatus?: string | null,
+  ) {
     if (submittedAt) {
-      return { label: 'Submitted', className: 'submitted' };
+      return { label: 'Submitted', className: 'submitted', code: 'SUBMITTED' as const };
     }
     if (reviewedAt) {
-      return { label: 'Reviewed', className: 'reviewed' };
+      return { label: 'Reviewed', className: 'reviewed', code: 'REVIEWED' as const };
     }
-    return { label: 'Uploaded', className: 'uploaded' };
+    const normalized = String(matchStatus || '').toUpperCase();
+    if (normalized === 'COMPLIANT') {
+      return { label: 'Ready to submit', className: 'ready', code: 'READY' as const };
+    }
+    return { label: 'Uploaded', className: 'uploaded', code: 'UPLOADED' as const };
+  }
+
+  private replaceFile(doc: UploadDocumentRecord) {
+    const next = this.mapDoc(doc, this.activeFramework, this.activeFrameworkVersion);
+    this.files = this.files.map((file) => (file.id === next.id ? next : file));
   }
 
   private formatUploader(doc: UploadDocumentRecord) {

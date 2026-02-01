@@ -2,15 +2,16 @@ import { inject } from '@angular/core';
 import { CanActivateFn } from '@angular/router';
 import { Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
+import { map } from 'rxjs/operators';
 
 export const requireAdminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  const role = auth.user()?.role || 'USER';
-  if (role === 'ADMIN') {
-    return true;
-  }
-
-  return router.createUrlTree(['/home']);
+  return auth.ensureSession().pipe(
+    map(() => {
+      const role = auth.user()?.role || 'USER';
+      return role === 'ADMIN' ? true : router.createUrlTree(['/home']);
+    }),
+  );
 };

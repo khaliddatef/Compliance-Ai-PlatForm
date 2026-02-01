@@ -7,6 +7,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -97,6 +98,26 @@ export class UploadController {
     const deleted = await this.uploadService.deleteDocument(id);
     if (!deleted) throw new NotFoundException('Document not found');
     return { ok: true };
+  }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: { status?: 'REVIEWED' | 'SUBMITTED' },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (user.role === 'USER') {
+      throw new ForbiddenException('Not allowed to update file status');
+    }
+
+    const status = String(body?.status || '').toUpperCase();
+    if (status !== 'REVIEWED' && status !== 'SUBMITTED') {
+      throw new ForbiddenException('Invalid status');
+    }
+
+    const updated = await this.uploadService.updateDocumentStatus(id, status as 'REVIEWED' | 'SUBMITTED');
+    if (!updated) throw new NotFoundException('Document not found');
+    return { ok: true, document: updated };
   }
 
   @Post(':id/reevaluate')

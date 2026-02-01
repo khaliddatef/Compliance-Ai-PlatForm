@@ -24,6 +24,8 @@ type EvidenceEvalRow = {
 @Injectable()
 export class UploadService {
   private readonly apiKey = process.env.OPENAI_API_KEY || '';
+  private readonly disableOpenAiStorage =
+    String(process.env.DISABLE_OPENAI_STORAGE || '').toLowerCase() === 'true';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,6 +39,10 @@ export class UploadService {
 
   private hasOpenAiConfig() {
     return !!this.apiKey;
+  }
+
+  private shouldUseOpenAiStorage() {
+    return this.hasOpenAiConfig() && !this.disableOpenAiStorage;
   }
 
   private async ensureUploadsDir(): Promise<string> {
@@ -289,8 +295,10 @@ export class UploadService {
     const conv = await this.prisma.conversation.findUnique({ where: { id: conversationId } });
     let customerVectorStoreId: string | null = (conv as any)?.customerVectorStoreId || null;
 
-    // For CUSTOMER uploads: ensure we have a vector store
-    if (kind === 'CUSTOMER' && !customerVectorStoreId) {
+    const allowOpenAiStorage = this.shouldUseOpenAiStorage();
+
+    // For CUSTOMER uploads: ensure we have a vector store (only when enabled)
+    if (kind === 'CUSTOMER' && allowOpenAiStorage && !customerVectorStoreId) {
       console.log('[OPENAI] creating customer vector store for conversation', conversationId);
       customerVectorStoreId = await this.createVectorStore(`customer-${conversationId}`);
 
@@ -332,7 +340,7 @@ export class UploadService {
       }
     };
 
-    if (kind === 'CUSTOMER' && customerVectorStoreId) {
+    if (kind === 'CUSTOMER' && allowOpenAiStorage && customerVectorStoreId) {
       console.log('[OPENAI] uploading customer files count=', documents.length, 'conv=', conversationId);
       for (const doc of documents) {
         await attachToVectorStore(doc, customerVectorStoreId, 'customer');
@@ -364,21 +372,26 @@ export class UploadService {
     if (kind === 'CUSTOMER') {
       for (const doc of documents) {
         try {
-          const excerpt = String(await this.getDocumentExcerpt(doc.id) || '').trim();
-          if (!excerpt && customerVectorStoreId && doc.openaiFileId) {
-            const waitResult = await this.waitForVectorStoreFileReady(customerVectorStoreId, doc.openaiFileId);
-            if (!waitResult.ok) {
-              await this.prisma.document.update({
-                where: { id: doc.id },
-                data: {
-                  matchStatus: 'UNKNOWN',
-                  matchNote: 'Vector store indexing is still in progress. Please re-evaluate shortly.',
-                  matchRecommendations: ['Wait a moment and re-evaluate the file.'],
-                  reviewedAt: new Date(),
-                } as any,
-              });
-              continue;
-            }
+          const excerpt = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+          if (!excerpt) {
+            const noTextNote =
+              language === 'ar'
+                ? 'لم يتم استخراج نص قابل للقراءة من هذا الملف.'
+                : 'No readable text was extracted from this file.';
+            const noTextRecs =
+              language === 'ar'
+                ? ['ارفع نسخة أوضح بصيغة PDF/DOCX أو أضف سياقًا أكثر.']
+                : ['Upload a clearer PDF/DOCX or provide more context.'];
+            await this.prisma.document.update({
+              where: { id: doc.id },
+              data: {
+                matchStatus: 'UNKNOWN',
+                matchNote: noTextNote,
+                matchRecommendations: noTextRecs,
+                reviewedAt: new Date(),
+              } as any,
+            });
+            continue;
           }
 
           const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
@@ -387,7 +400,6 @@ export class UploadService {
             framework: activeFramework,
             fileName: doc.originalName,
             content: excerpt,
-            customerVectorStoreId,
             language,
             controlCandidates: candidates,
           });
@@ -506,29 +518,31 @@ export class UploadService {
     });
     if (!doc) return null;
 
-    const excerpt = String(await this.getDocumentExcerpt(doc.id) || '').trim();
-    if (!excerpt && doc.conversation?.customerVectorStoreId && doc.openaiFileId) {
-      const waitResult = await this.waitForVectorStoreFileReady(
-        doc.conversation.customerVectorStoreId,
-        doc.openaiFileId,
-      );
-      if (!waitResult.ok) {
-        const pending = await this.prisma.document.update({
-          where: { id: doc.id },
-          data: {
-            matchStatus: 'UNKNOWN',
-            matchNote: 'Vector store indexing is still in progress. Please re-evaluate shortly.',
-            matchRecommendations: ['Wait a moment and re-evaluate the file.'],
-            reviewedAt: new Date(),
-          } as any,
-          include: {
-            conversation: { select: { title: true } },
-            _count: { select: { chunks: true } },
-          },
-        });
-        const withRefs = await this.attachFrameworkReferences([pending]);
-        return withRefs[0] || pending;
-      }
+    const excerpt = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+    if (!excerpt) {
+      const noTextNote =
+        language === 'ar'
+          ? 'لم يتم استخراج نص قابل للقراءة من هذا الملف.'
+          : 'No readable text was extracted from this file.';
+      const noTextRecs =
+        language === 'ar'
+          ? ['ارفع نسخة أوضح بصيغة PDF/DOCX أو أضف سياقًا أكثر.']
+          : ['Upload a clearer PDF/DOCX or provide more context.'];
+      const pending = await this.prisma.document.update({
+        where: { id: doc.id },
+        data: {
+          matchStatus: 'UNKNOWN',
+          matchNote: noTextNote,
+          matchRecommendations: noTextRecs,
+          reviewedAt: new Date(),
+        } as any,
+        include: {
+          conversation: { select: { title: true } },
+          _count: { select: { chunks: true } },
+        },
+      });
+      const withRefs = await this.attachFrameworkReferences([pending]);
+      return withRefs[0] || pending;
     }
 
     const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
@@ -538,7 +552,6 @@ export class UploadService {
       framework: activeFramework,
       fileName: doc.originalName,
       content: excerpt,
-      customerVectorStoreId: doc.conversation?.customerVectorStoreId || undefined,
       language,
       controlCandidates: candidates,
     });
@@ -592,6 +605,40 @@ export class UploadService {
     }
 
     return doc;
+  }
+
+  async updateDocumentStatus(id: string, status: 'REVIEWED' | 'SUBMITTED') {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
+        _count: { select: { chunks: true } },
+      },
+    });
+    if (!doc) return null;
+
+    const now = new Date();
+    const data: any = { reviewedAt: doc.reviewedAt };
+    if (status === 'REVIEWED') {
+      data.reviewedAt = now;
+      data.submittedAt = null;
+    }
+    if (status === 'SUBMITTED') {
+      data.submittedAt = now;
+      if (!doc.reviewedAt) data.reviewedAt = now;
+    }
+
+    const updated = await this.prisma.document.update({
+      where: { id },
+      data,
+      include: {
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
+        _count: { select: { chunks: true } },
+      },
+    });
+
+    const withRefs = await this.attachFrameworkReferences([updated]);
+    return withRefs[0] || updated;
   }
 
   async cleanupOpenAiResources(params: {
@@ -997,7 +1044,7 @@ export class UploadService {
         description: true,
         isoMappings: true,
         topic: { select: { title: true } },
-        frameworkMappings: { select: { framework: true } },
+        frameworkMappings: { select: { framework: true, frameworkCode: true } },
       },
       take: 50,
     });
@@ -1023,13 +1070,40 @@ export class UploadService {
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score || a.control.title.localeCompare(b.control.title));
 
-    return scored.slice(0, 8).map(({ control }) => ({
-      controlCode: control.controlCode,
-      title: control.title,
-      isoMappings: Array.isArray(control.isoMappings)
-        ? (control.isoMappings as unknown[]).map((value) => String(value))
-        : [],
-    }));
+    return scored.slice(0, 8).map(({ control }) => {
+      const activeMappings = (control.frameworkMappings || [])
+        .filter((mapping) => (activeFrameworks ? activeFrameworks.has(mapping.framework) : true))
+        .map((mapping) => String(mapping.frameworkCode || '').trim())
+        .filter(Boolean);
+      let isoMappings = activeMappings.length
+        ? activeMappings
+        : Array.isArray(control.isoMappings)
+          ? (control.isoMappings as unknown[]).map((value) => String(value))
+          : [];
+
+      if (isoMappings.length) {
+        const activeName = activeFrameworks ? Array.from(activeFrameworks)[0] : '';
+        const normalized = String(activeName || '').toLowerCase();
+        const preferNumeric = normalized.includes('2022');
+        const preferAnnex = normalized.includes('2013');
+        const filtered = isoMappings.filter((value) => {
+          const trimmed = String(value || '').trim();
+          if (!trimmed) return false;
+          if (preferNumeric) return /^[0-9]/.test(trimmed);
+          if (preferAnnex) return /^a\./i.test(trimmed);
+          return true;
+        });
+        if (filtered.length) {
+          isoMappings = filtered;
+        }
+      }
+
+      return {
+        controlCode: control.controlCode,
+        title: control.title,
+        isoMappings,
+      };
+    });
   }
 
   async getActiveFrameworkInfo() {
@@ -1050,12 +1124,12 @@ export class UploadService {
   }
 
   private async getActiveFrameworkSet() {
-    const frameworks = await this.prisma.framework.findMany({
-      select: { name: true, status: true },
-    });
-    if (!frameworks.length) return null;
-    const enabled = frameworks.filter((item) => item.status === 'enabled').map((item) => item.name);
-    return new Set(enabled);
+    // Use a single active framework (most recently updated enabled framework)
+    // to avoid mixing ISO versions (e.g., 2013 vs 2022) during matching.
+    const active = await this.getActiveFrameworkInfo();
+    const name = String(active?.name || '').trim();
+    if (!name) return null;
+    return new Set([name]);
   }
 
   private isControlAllowed(

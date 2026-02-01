@@ -1,20 +1,10 @@
-import { Injectable, effect, signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { interval, takeWhile, tap } from 'rxjs';
 import { UploadedDoc, UploadStatus } from '../models/uploaded-doc.model';
 
 @Injectable({ providedIn: 'root' })
 export class UploadService {
-  private readonly storageKey = 'compliance-ai-uploaded-docs';
-  private readonly hasBrowserStorage = typeof localStorage !== 'undefined';
-
-  readonly documents = signal<UploadedDoc[]>(this.loadInitial());
-
-  constructor() {
-    effect(() => {
-      if (!this.hasBrowserStorage) return;
-      localStorage.setItem(this.storageKey, JSON.stringify(this.documents()));
-    });
-  }
+  readonly documents = signal<UploadedDoc[]>([]);
 
   uploadFiles(files: File[]) {
     files.forEach((file) => {
@@ -62,30 +52,6 @@ export class UploadService {
     );
 
     pace.subscribe();
-  }
-
-  private loadInitial(): UploadedDoc[] {
-    if (this.hasBrowserStorage) {
-      const cached = localStorage.getItem(this.storageKey);
-      if (cached) {
-        try {
-          return JSON.parse(cached) as UploadedDoc[];
-        } catch (error) {
-          console.error('Failed to parse uploaded docs', error);
-        }
-      }
-    }
-
-    return [
-      {
-        id: crypto.randomUUID(),
-        name: 'AccessPolicy.pdf',
-        type: 'application/pdf',
-        status: 'uploaded',
-        progress: 100,
-        uploadedAt: Date.now() - 1000 * 60 * 30,
-      },
-    ];
   }
 
   private randomIncrement() {

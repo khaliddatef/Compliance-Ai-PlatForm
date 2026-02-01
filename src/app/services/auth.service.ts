@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
-import { map, tap } from 'rxjs/operators';
-import { throwError } from 'rxjs';
+import { catchError, map, of, tap, throwError } from 'rxjs';
 import { ApiService } from './api.service';
+import { ChatService } from './chat.service';
 
 export type AuthUser = {
   id?: string;
@@ -10,26 +10,50 @@ export type AuthUser = {
   role?: 'ADMIN' | 'MANAGER' | 'USER';
 };
 
-const USER_STORAGE_KEY = 'tekronyx.user';
-const TOKEN_STORAGE_KEY = 'tekronyx.token';
-
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly userSignal = signal<AuthUser | null>(this.loadUser());
-  private readonly tokenSignal = signal<string | null>(this.loadToken());
+  private readonly userSignal = signal<AuthUser | null>(null);
+  private sessionChecked = false;
 
-  constructor(private readonly api: ApiService) {}
+  constructor(
+    private readonly api: ApiService,
+    private readonly chatService: ChatService,
+  ) {}
 
   user() {
     return this.userSignal();
   }
 
-  token() {
-    return this.tokenSignal();
+  isLoggedIn() {
+    return !!this.userSignal();
   }
 
-  isLoggedIn() {
-    return !!this.userSignal() && !!this.tokenSignal();
+  ensureSession() {
+    if (this.userSignal()) return of(true);
+    if (this.sessionChecked) return of(false);
+
+    return this.api.me().pipe(
+      tap((res) => {
+        const user = res?.user;
+        if (user?.email) {
+          this.userSignal.set({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+          });
+        } else {
+          this.userSignal.set(null);
+        }
+        this.sessionChecked = true;
+      }),
+      map(() => !!this.userSignal()),
+      catchError(() => {
+        this.userSignal.set(null);
+        this.sessionChecked = true;
+        return of(false);
+      }),
+    );
   }
 
   login(email: string, password: string) {
@@ -41,20 +65,17 @@ export class AuthService {
     return this.api.login(cleanEmail, password).pipe(
       tap((res) => {
         const user = res?.user;
-        const token = res?.token;
-        if (!user?.email || !token) {
+        if (!user?.email) {
           throw new Error('Invalid login response.');
         }
-        const nextUser: AuthUser = {
+        this.userSignal.set({
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
-        };
-        this.userSignal.set(nextUser);
-        this.saveUser(nextUser);
-        this.tokenSignal.set(token);
-        this.saveToken(token);
+        });
+        this.sessionChecked = true;
+        this.chatService.resetForUser();
       }),
       map(() => true),
     );
@@ -62,51 +83,11 @@ export class AuthService {
 
   logout() {
     this.userSignal.set(null);
-    this.clearUser();
-    this.tokenSignal.set(null);
-    this.clearToken();
-  }
-
-  private loadUser(): AuthUser | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = window.localStorage.getItem(USER_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as AuthUser;
-      if (!parsed?.email) return null;
-      return { ...parsed, role: parsed.role || 'USER' };
-    } catch {
-      return null;
-    }
-  }
-
-  private saveUser(user: AuthUser) {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-  }
-
-  private clearUser() {
-    if (typeof window === 'undefined') return;
-    window.localStorage.removeItem(USER_STORAGE_KEY);
-  }
-
-  private loadToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = window.localStorage.getItem(TOKEN_STORAGE_KEY);
-      return raw ? String(raw) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private saveToken(token: string) {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  }
-
-  private clearToken() {
-    if (typeof window === 'undefined') return;
-    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    this.sessionChecked = true;
+    this.chatService.resetForUser();
+    this.api.logout().subscribe({
+      next: () => {},
+      error: () => {},
+    });
   }
 }

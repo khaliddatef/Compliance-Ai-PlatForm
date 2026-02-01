@@ -95,9 +95,23 @@
           </ng-template>
         </div>
         <span data-label="Size">{{ file.size }}</span>
-        <div class="action-group" data-label="Action">
-          <button class="download-btn" type="button" (click)="downloadFile(file)">Download</button>
-          <button class="delete-btn" type="button" (click)="deleteFile(file)">Delete</button>
+        <div class="action-group" data-label="Action" (click)="$event.stopPropagation()">
+          <button class="menu-btn" type="button" (click)="toggleMenu(file.id, $event)">Actions</button>
+          <div class="menu" *ngIf="openMenuId === file.id">
+            <button class="menu-item" type="button" (click)="downloadFile(file); closeMenu()">Download</button>
+            <button *ngIf="canManageStatus" class="menu-item" type="button" (click)="markReviewed(file)">
+              Mark reviewed
+            </button>
+            <button
+              *ngIf="canManageStatus && file.statusCode !== 'SUBMITTED'"
+              class="menu-item highlight"
+              type="button"
+              (click)="markSubmitted(file)"
+            >
+              Submit
+            </button>
+            <button class="menu-item danger" type="button" (click)="deleteFile(file); closeMenu()">Delete</button>
+          </div>
         </div>
       </div>
     </div>
