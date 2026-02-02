@@ -38,6 +38,18 @@ type SubmissionReadiness = {
   reviewed: number;
 };
 
+type ComplianceBreakdown = {
+  compliant: number;
+  partial: number;
+  notCompliant: number;
+  unknown: number;
+  total: number;
+  compliantPct: number;
+  partialPct: number;
+  notCompliantPct: number;
+  unknownPct: number;
+};
+
 type RiskCoverage = {
   id: string;
   title: string;
@@ -45,6 +57,17 @@ type RiskCoverage = {
   controlCount: number;
   missingCount: number;
   controlCodes: string[];
+};
+
+type RiskHeatmap = {
+  impactLabels: string[];
+  likelihoodLabels: string[];
+  matrix: number[][];
+};
+
+type FrameworkProgress = {
+  framework: string;
+  series: number[];
 };
 
 @Injectable()
@@ -80,6 +103,40 @@ export class DashboardService {
       return isGovernance ? ('high' as const) : ('medium' as const);
     }
     return 'low' as const;
+  }
+
+  private resolveImpactLevel(status: string) {
+    const normalized = (status || '').toUpperCase();
+    if (normalized === 'NOT_COMPLIANT') return 5;
+    if (normalized === 'PARTIAL') return 3;
+    if (normalized === 'COMPLIANT') return 1;
+    return 2;
+  }
+
+  private resolveLikelihoodLevel(lastSeen?: Date | null) {
+    if (!lastSeen) return 3;
+    const days = Math.max(0, Math.floor((Date.now() - lastSeen.getTime()) / 86400000));
+    if (days <= 7) return 1;
+    if (days <= 30) return 2;
+    if (days <= 90) return 3;
+    if (days <= 180) return 4;
+    return 5;
+  }
+
+  private buildHeatmapMatrix() {
+    return Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => 0));
+  }
+
+  private buildMonthSeries(count = 6) {
+    const now = new Date();
+    const months: Array<{ key: string; label: string; end: Date }> = [];
+    for (let i = count - 1; i >= 0; i -= 1) {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 0, 23, 59, 59));
+      const label = date.toLocaleString('en-US', { month: 'short' });
+      const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+      months.push({ key, label, end: date });
+    }
+    return months;
   }
 
   async getDashboard() {
@@ -130,10 +187,12 @@ export class DashboardService {
     };
 
     const statusByControlCode = new Map<string, string>();
+    const lastSeenByControl = new Map<string, Date>();
     for (const evaluation of latestEvaluations) {
       const controlCode = String(evaluation.controlId);
       const status = String(evaluation.status || '').toUpperCase();
       statusByControlCode.set(controlCode, status);
+      lastSeenByControl.set(controlCode, evaluation.createdAt);
     }
 
     for (const control of allowedControls) {
@@ -284,6 +343,33 @@ export class DashboardService {
       missingLogs,
     };
 
+    const complianceBreakdown: ComplianceBreakdown = {
+      compliant: statusCounts.COMPLIANT,
+      partial: statusCounts.PARTIAL,
+      notCompliant: statusCounts.NOT_COMPLIANT,
+      unknown: statusCounts.UNKNOWN,
+      total: totalControls,
+      compliantPct: totalControls ? Math.round((statusCounts.COMPLIANT / totalControls) * 100) : 0,
+      partialPct: totalControls ? Math.round((statusCounts.PARTIAL / totalControls) * 100) : 0,
+      notCompliantPct: totalControls ? Math.round((statusCounts.NOT_COMPLIANT / totalControls) * 100) : 0,
+      unknownPct: totalControls ? Math.round((statusCounts.UNKNOWN / totalControls) * 100) : 0,
+    };
+
+    const impactLabels = ['Low (1)', 'Medium (2)', 'High (3)', 'Very High (4)', 'Critical (5)'];
+    const likelihoodLabels = ['Improbable (1)', 'Remote (2)', 'Occasional (3)', 'Probable (4)', 'Frequent (5)'];
+    const heatmapMatrix = this.buildHeatmapMatrix();
+    for (const control of allowedControls) {
+      const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
+      const impact = this.resolveImpactLevel(status);
+      const likelihood = this.resolveLikelihoodLevel(lastSeenByControl.get(control.controlCode) || null);
+      heatmapMatrix[impact - 1][likelihood - 1] += 1;
+    }
+    const riskHeatmap: RiskHeatmap = {
+      impactLabels,
+      likelihoodLabels,
+      matrix: heatmapMatrix,
+    };
+
     const controlIdToStatus = new Map<string, string>();
     for (const control of allowedControls) {
       controlIdToStatus.set(control.id, statusByControlCode.get(control.controlCode) || 'UNKNOWN');
@@ -383,6 +469,60 @@ export class DashboardService {
       .sort((a, b) => (a.time < b.time ? 1 : -1))
       .slice(0, 8);
 
+    const overdueThreshold = Date.now() - 14 * 24 * 60 * 60 * 1000;
+    const overdueEvidence = documents.filter(
+      (doc) => !doc.reviewedAt && doc.createdAt.getTime() < overdueThreshold,
+    ).length;
+
+    const frameworks = await this.prisma.framework.findMany({
+      where: { status: 'enabled' },
+      select: { name: true },
+    });
+    const frameworkNames = frameworks.map((fw) => fw.name).filter(Boolean);
+
+    const controlsByFramework = new Map<string, string[]>();
+    for (const control of allowedControls) {
+      for (const mapping of control.frameworkMappings || []) {
+        const fw = String(mapping.framework || '').trim();
+        if (!fw) continue;
+        const list = controlsByFramework.get(fw) || [];
+        list.push(control.controlCode);
+        controlsByFramework.set(fw, list);
+      }
+    }
+
+    const evaluationsByControl = new Map<string, Array<{ createdAt: Date; status: string }>>();
+    for (const evaluation of evaluations) {
+      const code = String(evaluation.controlId || '').trim();
+      if (!code) continue;
+      const list = evaluationsByControl.get(code) || [];
+      list.push({ createdAt: evaluation.createdAt, status: String(evaluation.status || 'UNKNOWN').toUpperCase() });
+      evaluationsByControl.set(code, list);
+    }
+    for (const list of evaluationsByControl.values()) {
+      list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+
+    const months = this.buildMonthSeries(6);
+    const frameworkProgress: FrameworkProgress[] = frameworkNames.map((framework) => {
+      const controlCodes = controlsByFramework.get(framework) || [];
+      const series = months.map((month) => {
+        if (!controlCodes.length) return 0;
+        let sum = 0;
+        for (const code of controlCodes) {
+          const evals = evaluationsByControl.get(code) || [];
+          const match = evals.find((item) => item.createdAt.getTime() <= month.end.getTime());
+          const status = match?.status || 'UNKNOWN';
+          if (status === 'COMPLIANT') sum += 1;
+          else if (status === 'PARTIAL') sum += partialWeight;
+        }
+        return Math.round((sum / controlCodes.length) * 100);
+      });
+      return { framework, series };
+    });
+
+    const openRisks = riskControls.length;
+
     return {
       ok: true,
       metrics: {
@@ -394,11 +534,17 @@ export class DashboardService {
         unknown: statusCounts.UNKNOWN,
         evidenceItems: totalDocuments,
         awaitingReview,
+        openRisks,
+        overdueEvidence,
         lastReviewAt: lastReviewAt ? lastReviewAt.toISOString() : null,
         evidenceHealth,
         auditReadiness,
         submissionReadiness,
       },
+      complianceBreakdown,
+      riskHeatmap,
+      frameworkProgress,
+      months: months.map((month) => month.label),
       riskCoverage,
       riskControls,
       activity,

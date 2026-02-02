@@ -132,6 +132,8 @@ export type DashboardMetrics = {
   unknown: number;
   evidenceItems: number;
   awaitingReview: number;
+  openRisks?: number;
+  overdueEvidence?: number;
   lastReviewAt: string | null;
   evidenceHealth: {
     high: number;
@@ -154,6 +156,29 @@ export type DashboardMetrics = {
   };
 };
 
+export type ComplianceBreakdown = {
+  compliant: number;
+  partial: number;
+  notCompliant: number;
+  unknown: number;
+  total: number;
+  compliantPct: number;
+  partialPct: number;
+  notCompliantPct: number;
+  unknownPct: number;
+};
+
+export type RiskHeatmap = {
+  impactLabels: string[];
+  likelihoodLabels: string[];
+  matrix: number[][];
+};
+
+export type FrameworkProgress = {
+  framework: string;
+  series: number[];
+};
+
 export type DashboardRiskControl = {
   controlId: string;
   controlDbId?: string | null;
@@ -172,6 +197,10 @@ export type DashboardActivityItem = {
 export type DashboardResponse = {
   ok: boolean;
   metrics: DashboardMetrics;
+  complianceBreakdown?: ComplianceBreakdown;
+  riskHeatmap?: RiskHeatmap;
+  frameworkProgress?: FrameworkProgress[];
+  months?: string[];
   riskCoverage: {
     id: string;
     title: string;

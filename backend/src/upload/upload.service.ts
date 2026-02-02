@@ -296,6 +296,14 @@ export class UploadService {
     let customerVectorStoreId: string | null = (conv as any)?.customerVectorStoreId || null;
 
     const allowOpenAiStorage = this.shouldUseOpenAiStorage();
+    console.log(
+      '[OPENAI] storage enabled=',
+      allowOpenAiStorage,
+      'DISABLE_OPENAI_STORAGE=',
+      process.env.DISABLE_OPENAI_STORAGE,
+      'ENABLE_OPENAI_STORAGE=',
+      process.env.ENABLE_OPENAI_STORAGE,
+    );
 
     // For CUSTOMER uploads: ensure we have a vector store (only when enabled)
     if (kind === 'CUSTOMER' && allowOpenAiStorage && !customerVectorStoreId) {
@@ -373,6 +381,7 @@ export class UploadService {
       for (const doc of documents) {
         try {
           const excerpt = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+          console.log('[DOC MATCH] excerpt chars=', excerpt.length, 'doc=', doc.id, 'name=', doc.originalName);
           if (!excerpt) {
             const noTextNote =
               language === 'ar'

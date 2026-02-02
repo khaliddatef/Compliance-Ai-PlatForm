@@ -18,6 +18,126 @@
   <div class="grid-two" *ngIf="!loading && !error">
     <section class="panel">
       <div class="panel-header">
+        <h3>Risk Heatmap</h3>
+        <span class="chip">Impact vs Likelihood</span>
+      </div>
+      <div class="heatmap" *ngIf="riskHeatmap.length; else emptyHeatmap">
+        <div class="heatmap-grid">
+          <div class="heatmap-y">
+            <span *ngFor="let label of impactLabels">{{ label }}</span>
+          </div>
+          <div class="heatmap-matrix">
+            <div class="heatmap-row" *ngFor="let row of riskHeatmap; let r = index">
+              <div
+                class="heatmap-cell"
+                *ngFor="let value of row; let c = index"
+                [style.background]="getHeatmapColor(r, c)"
+              >
+                {{ value | number: '2.0-0' }}
+              </div>
+            </div>
+            <div class="heatmap-x">
+              <span *ngFor="let label of likelihoodLabels">{{ label }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ng-template #emptyHeatmap>
+        <p class="empty">Heatmap data will appear once evaluations are available.</p>
+      </ng-template>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Compliance Status Breakdown</h3>
+        <span class="chip">Live distribution</span>
+      </div>
+      <div class="breakdown">
+        <div class="donut" [style.background]="donutStyle">
+          <div class="donut-center">
+            <div class="donut-total">{{ complianceBreakdown.total }}</div>
+            <div class="donut-label">Controls</div>
+          </div>
+        </div>
+        <div class="breakdown-list">
+          <div class="breakdown-item">
+            <span class="dot compliant"></span>
+            <div>
+              <div class="label">Compliant</div>
+              <div class="value">{{ complianceBreakdown.compliant }} ({{ complianceBreakdown.compliantPct }}%)</div>
+            </div>
+          </div>
+          <div class="breakdown-item">
+            <span class="dot partial"></span>
+            <div>
+              <div class="label">Partially compliant</div>
+              <div class="value">{{ complianceBreakdown.partial }} ({{ complianceBreakdown.partialPct }}%)</div>
+            </div>
+          </div>
+          <div class="breakdown-item">
+            <span class="dot missing"></span>
+            <div>
+              <div class="label">Not compliant</div>
+              <div class="value">{{ complianceBreakdown.notCompliant }} ({{ complianceBreakdown.notCompliantPct }}%)</div>
+            </div>
+          </div>
+          <div class="breakdown-item">
+            <span class="dot unknown"></span>
+            <div>
+              <div class="label">Unknown</div>
+              <div class="value">{{ complianceBreakdown.unknown }} ({{ complianceBreakdown.unknownPct }}%)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" *ngIf="!loading && !error">
+    <div class="panel-header">
+      <h3>Framework Progress</h3>
+      <span class="chip">Last 6 months</span>
+    </div>
+    <div class="progress-chart" *ngIf="frameworkProgress.length; else emptyProgress">
+      <div class="chart-grid">
+        <div class="chart-y">
+          <span>100%</span>
+          <span>75%</span>
+          <span>50%</span>
+          <span>25%</span>
+          <span>0%</span>
+        </div>
+        <div class="chart-canvas">
+          <svg viewBox="0 0 540 200" preserveAspectRatio="none">
+            <line x1="0" y1="0" x2="540" y2="0"></line>
+            <line x1="0" y1="50" x2="540" y2="50"></line>
+            <line x1="0" y1="100" x2="540" y2="100"></line>
+            <line x1="0" y1="150" x2="540" y2="150"></line>
+            <line x1="0" y1="200" x2="540" y2="200"></line>
+            <ng-container *ngFor="let series of frameworkProgress">
+              <polyline [attr.points]="buildLinePoints(series.series)" [attr.stroke]="series.color"></polyline>
+            </ng-container>
+          </svg>
+          <div class="chart-x">
+            <span *ngFor="let month of frameworkMonths">{{ month }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-legend">
+        <div class="legend-item" *ngFor="let series of frameworkProgress">
+          <span class="legend-dot" [style.background]="series.color"></span>
+          <span>{{ series.framework }}</span>
+        </div>
+      </div>
+    </div>
+    <ng-template #emptyProgress>
+      <p class="empty">Framework progress will appear once evaluations are available.</p>
+    </ng-template>
+  </section>
+
+  <div class="grid-two" *ngIf="!loading && !error">
+    <section class="panel">
+      <div class="panel-header">
         <h3>Top Risks Not Covered</h3>
         <span class="chip">Risk-driven view</span>
       </div>

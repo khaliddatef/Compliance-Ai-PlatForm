@@ -13,6 +13,23 @@ import { ApiService, DashboardResponse } from '../../services/api.service';
 })
 export class DashboardPageComponent implements OnInit {
   stats: { label: string; value: string; note: string }[] = [];
+  complianceBreakdown = {
+    compliant: 0,
+    partial: 0,
+    notCompliant: 0,
+    unknown: 0,
+    total: 0,
+    compliantPct: 0,
+    partialPct: 0,
+    notCompliantPct: 0,
+    unknownPct: 0,
+  };
+  donutStyle = '';
+  riskHeatmap: number[][] = [];
+  impactLabels: string[] = [];
+  likelihoodLabels: string[] = [];
+  frameworkProgress: { framework: string; series: number[]; color: string }[] = [];
+  frameworkMonths: string[] = [];
   riskRows: {
     control: string;
     owner: string;
@@ -59,6 +76,8 @@ export class DashboardPageComponent implements OnInit {
         const evaluated = metrics?.evaluatedControls ?? 0;
         const compliant = metrics?.compliant ?? 0;
         const partial = metrics?.partial ?? 0;
+        const openRisks = metrics?.openRisks ?? 0;
+        const overdueEvidence = metrics?.overdueEvidence ?? 0;
 
         this.evidenceHealth = metrics?.evidenceHealth || this.evidenceHealth;
         this.auditReadiness = metrics?.auditReadiness || this.auditReadiness;
@@ -85,7 +104,29 @@ export class DashboardPageComponent implements OnInit {
             value: `${this.submissionReadiness.percent}%`,
             note: `${this.submissionReadiness.submitted}/${this.submissionReadiness.reviewed} submitted`,
           },
+          {
+            label: 'Overdue Evidence',
+            value: `${overdueEvidence}`,
+            note: 'Awaiting review >14 days',
+          },
+          {
+            label: 'Open Risks',
+            value: `${openRisks}`,
+            note: 'Partial or missing controls',
+          },
         ];
+
+        const breakdown = res?.complianceBreakdown;
+        this.complianceBreakdown = breakdown || this.complianceBreakdown;
+        this.donutStyle = this.buildDonutStyle(this.complianceBreakdown);
+
+        const heatmap = res?.riskHeatmap;
+        this.riskHeatmap = heatmap?.matrix || [];
+        this.impactLabels = heatmap?.impactLabels || [];
+        this.likelihoodLabels = heatmap?.likelihoodLabels || [];
+
+        this.frameworkMonths = res?.months || this.frameworkMonths;
+        this.frameworkProgress = this.mapFrameworkProgress(res?.frameworkProgress || []);
 
         this.riskRows = (res?.riskControls || []).map((row) => ({
           control: row.controlId,
@@ -139,6 +180,59 @@ export class DashboardPageComponent implements OnInit {
   openControl(row: { controlDbId?: string | null }) {
     if (!row?.controlDbId) return;
     this.router.navigate(['/control-kb', row.controlDbId]);
+  }
+
+  getHeatmapColor(impactIndex: number, likelihoodIndex: number) {
+    const score = impactIndex + likelihoodIndex;
+    if (score <= 2) return '#16a34a';
+    if (score <= 4) return '#86efac';
+    if (score <= 5) return '#facc15';
+    if (score <= 6) return '#fb923c';
+    return '#ef4444';
+  }
+
+  buildLinePoints(series: number[]) {
+    const width = 540;
+    const height = 200;
+    if (!series?.length) return '';
+    const step = series.length > 1 ? width / (series.length - 1) : width;
+    return series
+      .map((value, index) => {
+        const x = Math.round(step * index);
+        const y = Math.round(height - (Math.min(Math.max(value, 0), 100) / 100) * height);
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }
+
+  private mapFrameworkProgress(rows: { framework: string; series: number[] }[]) {
+    const palette = ['#7c3aed', '#f59e0b', '#ef4444', '#0ea5e9', '#22c55e', '#a855f7'];
+    return (rows || []).map((row, index) => ({
+      framework: row.framework,
+      series: row.series || [],
+      color: palette[index % palette.length],
+    }));
+  }
+
+  private buildDonutStyle(breakdown: {
+    compliant: number;
+    partial: number;
+    notCompliant: number;
+    unknown: number;
+    total: number;
+  }) {
+    const total = breakdown.total || 1;
+    const compliantPct = Math.round((breakdown.compliant / total) * 100);
+    const partialPct = Math.round((breakdown.partial / total) * 100);
+    const notCompliantPct = Math.round((breakdown.notCompliant / total) * 100);
+    const unknownPct = Math.max(0, 100 - compliantPct - partialPct - notCompliantPct);
+    const stops = [
+      `#16a34a 0 ${compliantPct}%`,
+      `#f59e0b ${compliantPct}% ${compliantPct + partialPct}%`,
+      `#ef4444 ${compliantPct + partialPct}% ${compliantPct + partialPct + notCompliantPct}%`,
+      `#94a3b8 ${compliantPct + partialPct + notCompliantPct}% 100%`,
+    ];
+    return `conic-gradient(${stops.join(', ')})`;
   }
 
   private formatShortDate(value: string | null) {

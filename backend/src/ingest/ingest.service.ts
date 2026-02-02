@@ -33,6 +33,21 @@ export class IngestService {
     return String(parsed?.text || '').trim();
   }
 
+  private async extractTextFromPdfLenient(buffer: Buffer) {
+    const renderPage = async (pageData: any) => {
+      const textContent = await pageData.getTextContent({
+        normalizeWhitespace: true,
+        disableCombineTextItems: false,
+      });
+      const strings = (textContent?.items || [])
+        .map((item: any) => String(item?.str || '').trim())
+        .filter(Boolean);
+      return strings.join(' ');
+    };
+    const parsed = await pdfParse(buffer, { pagerender: renderPage });
+    return String(parsed?.text || '').trim();
+  }
+
   private async extractTextFromDocx(buffer: Buffer) {
     const result = await mammoth.extractRawText({ buffer });
     return String(result?.value || '').trim();
@@ -102,18 +117,46 @@ export class IngestService {
       return { ok: false as const, message: 'Document not found' };
     }
 
+    const resolvedPath = path.isAbsolute(doc.storagePath)
+      ? doc.storagePath
+      : path.resolve(process.cwd(), doc.storagePath);
+
     // ✅ Logs مهمة جدًا للديمو + للتأكد إن kind صح
     console.log(
       `[INGEST] doc=${doc.id} name=${doc.originalName} kind=${doc.kind} conv=${doc.conversationId}`,
     );
+    console.log(
+      `[INGEST] mime=${doc.mimeType} ext=${path.extname(doc.storagePath || doc.originalName || '')} ` +
+      `storagePath=${doc.storagePath} resolvedPath=${resolvedPath}`,
+    );
 
-    const buffer = await fs.readFile(doc.storagePath);
+    let buffer: Buffer;
+    try {
+      buffer = await fs.readFile(resolvedPath);
+    } catch (e: any) {
+      const fallbackPath = path.resolve(process.cwd(), 'backend', doc.storagePath);
+      try {
+        buffer = await fs.readFile(fallbackPath);
+        console.warn(`[INGEST] resolvedPath missing; loaded from fallback ${fallbackPath}`);
+      } catch (fallbackError: any) {
+        console.error('[INGEST] failed to read file', resolvedPath, fallbackError?.message || fallbackError);
+        return { ok: false as const, message: 'Failed to read file from disk' };
+      }
+    }
+
+    console.log(`[INGEST] buffer bytes=${buffer.length}`);
     const fileType = this.detectFileType(doc);
     let text = '';
+    let rawLength = 0;
+    let cleanedLength = 0;
 
     try {
       if (fileType.isPdf) {
         text = await this.extractTextFromPdf(buffer);
+        if (!text) {
+          console.warn('[INGEST] PDF extraction empty; trying lenient parser.');
+          text = await this.extractTextFromPdfLenient(buffer);
+        }
       } else if (fileType.isDocx) {
         text = await this.extractTextFromDocx(buffer);
       } else if (fileType.isXlsx) {
@@ -125,7 +168,19 @@ export class IngestService {
       return { ok: false as const, message: error?.message || 'Failed to extract text' };
     }
 
+    rawLength = (text || '').length;
     const chunks = this.chunkText(text);
+    cleanedLength = chunks.join('\n').length;
+
+    const excerpt = (text || '').slice(0, 200);
+    console.log(
+      `[INGEST] textLength raw=${rawLength} cleaned=${cleanedLength} chunks=${chunks.length}`,
+    );
+    if (excerpt) {
+      console.log(`[INGEST] text excerpt: ${excerpt.replace(/\s+/g, ' ').trim()}`);
+    } else {
+      console.warn('[INGEST] text excerpt empty');
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.documentChunk.deleteMany({ where: { documentId } });
