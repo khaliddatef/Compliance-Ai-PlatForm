@@ -24,6 +24,23 @@ type EvidenceHealth = {
   total: number;
 };
 
+type EvidenceHealthDetail = {
+  expiringSoon: number;
+  expired: number;
+  missing: number;
+  reusedAcrossFrameworks: number;
+  rejected: number;
+  outdated: number;
+};
+
+type EvidenceHealthVisual = {
+  valid: number;
+  expiringSoon: number;
+  expired: number;
+  missing: number;
+  total: number;
+};
+
 type AuditReadiness = {
   percent: number;
   acceptedControls: number;
@@ -65,6 +82,51 @@ type RiskHeatmap = {
   matrix: number[][];
 };
 
+type RiskDistribution = {
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+  exposure: 'high' | 'medium' | 'low';
+};
+
+type AttentionItem = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'high' | 'medium' | 'low';
+  route: string;
+  query?: Record<string, string>;
+};
+
+type TrendSeries = {
+  label: string;
+  points: number[];
+};
+
+type FrameworkComparison = {
+  framework: string;
+  completionPercent: number;
+  failedControls: number;
+};
+
+type RecommendedAction = {
+  id: string;
+  title: string;
+  reason: string;
+  route: string;
+  query?: Record<string, string>;
+  severity: 'high' | 'medium' | 'low';
+};
+
+type ComplianceGapItem = {
+  id: 'missing-evidence' | 'control-not-implemented' | 'control-not-tested' | 'owner-not-assigned' | 'outdated-policy';
+  label: string;
+  count: number;
+  route: string;
+  query?: Record<string, string>;
+};
+
 type FrameworkProgress = {
   framework: string;
   series: number[];
@@ -77,6 +139,88 @@ type UploadSummary = {
     controlId: string;
     count: number;
   }>;
+};
+
+type AttentionTodayItem = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'high' | 'medium' | 'low';
+  kind: 'control' | 'risk' | 'evidence' | 'audit';
+  dueInDays?: number | null;
+  route: string;
+  query?: Record<string, string>;
+};
+
+type DashboardFilterOptions = {
+  frameworks: string[];
+  businessUnits: string[];
+  riskCategories: string[];
+  timeRanges: number[];
+};
+
+type DashboardKpi = {
+  id: string;
+  label: string;
+  value: string;
+  note?: string;
+  severity?: 'high' | 'medium' | 'low';
+  trend?: { direction: 'up' | 'down' | 'flat'; delta?: number };
+  drilldown?: { route: string; query?: Record<string, string>; label?: string };
+};
+
+type TrendSeriesV2 = {
+  id: 'riskScore' | 'compliance' | 'mttr';
+  label: string;
+  points: number[];
+  dates: string[];
+  rangeDays: number;
+  unit: 'percent' | 'days';
+};
+
+type FrameworkComparisonV2 = {
+  framework: string;
+  totalControls: number;
+  compliant: number;
+  partial: number;
+  notCompliant: number;
+  unknown: number;
+  completionPercent: number;
+  failedControls: number;
+};
+
+type RecommendedActionV2 = {
+  id: string;
+  title: string;
+  reason: string;
+  route: string;
+  query?: Record<string, string>;
+  severity: 'high' | 'medium' | 'low';
+  cta?: string;
+};
+
+type UpcomingAudit = {
+  id: string;
+  name: string;
+  framework?: string | null;
+  date: string;
+  daysUntil: number;
+  route: string;
+  query?: Record<string, string>;
+};
+
+type AuditSummary = {
+  upcoming14: number;
+  upcoming30: number;
+  upcoming90: number;
+  upcoming: UpcomingAudit[];
+};
+
+type ExecutiveSummary = {
+  headline: string;
+  highlights: string[];
+  risks: string[];
+  lastUpdated: string;
 };
 
 @Injectable()
@@ -146,7 +290,101 @@ export class DashboardService {
     return months;
   }
 
-  async getDashboard() {
+  private buildDaySeries(rangeDays: number) {
+    const days = Math.min(Math.max(rangeDays, 7), 365);
+    const now = new Date();
+    const list: Array<{ label: string; end: Date }> = [];
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const end = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() - i,
+        23,
+        59,
+        59,
+      ));
+      list.push({ label: end.toISOString().slice(0, 10), end });
+    }
+    return list;
+  }
+
+  private buildTrendsV2(params: {
+    rangeDays: number;
+    controlCodes: string[];
+    eventByControl: Map<string, Array<{ createdAt: Date; status: string }>>;
+    partialWeight: number;
+  }): TrendSeriesV2[] {
+    const { rangeDays, controlCodes, eventByControl, partialWeight } = params;
+    const days = this.buildDaySeries(rangeDays);
+    const dates = days.map((item) => item.label);
+    const compliance = days.map((item) =>
+      this.computeCompliancePercentAt(controlCodes, eventByControl, item.end, partialWeight),
+    );
+    const riskScore = compliance.map((value) => Math.max(0, 100 - value));
+    const mttr = days.map((item) => this.computeMttrAt(controlCodes, eventByControl, item.end));
+
+    return [
+      { id: 'riskScore', label: 'Risk Score', points: riskScore, dates, rangeDays, unit: 'percent' },
+      { id: 'compliance', label: 'Compliance', points: compliance, dates, rangeDays, unit: 'percent' },
+      { id: 'mttr', label: 'MTTR', points: mttr, dates, rangeDays, unit: 'days' },
+    ];
+  }
+
+  private computeCompliancePercentAt(
+    controlCodes: string[],
+    eventsByControl: Map<string, Array<{ createdAt: Date; status: string }>>,
+    monthEnd: Date,
+    partialWeight: number,
+  ) {
+    if (!controlCodes.length) return 0;
+    let sum = 0;
+    for (const code of controlCodes) {
+      const events = eventsByControl.get(code) || [];
+      const match = events.find((item) => item.createdAt.getTime() <= monthEnd.getTime());
+      const status = match?.status || 'UNKNOWN';
+      if (status === 'COMPLIANT') sum += 1;
+      else if (status === 'PARTIAL') sum += partialWeight;
+    }
+    return Math.round((sum / controlCodes.length) * 100);
+  }
+
+  private computeMttrAt(
+    controlCodes: string[],
+    eventsByControl: Map<string, Array<{ createdAt: Date; status: string }>>,
+    monthEnd: Date,
+  ) {
+    let totalDays = 0;
+    let count = 0;
+    for (const code of controlCodes) {
+      const events = (eventsByControl.get(code) || [])
+        .filter((item) => item.createdAt.getTime() <= monthEnd.getTime())
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      if (!events.length) continue;
+      for (let i = 0; i < events.length; i += 1) {
+        if (events[i].status !== 'NOT_COMPLIANT') continue;
+        const start = events[i].createdAt;
+        const resolved = events.slice(i + 1).find((entry) => entry.status === 'COMPLIANT');
+        if (!resolved) continue;
+        const days = Math.max(0, Math.round((resolved.createdAt.getTime() - start.getTime()) / 86400000));
+        totalDays += days;
+        count += 1;
+        break;
+      }
+    }
+    return count ? Math.round(totalDays / count) : 0;
+  }
+
+  async getDashboard(filters?: {
+    framework?: string | null;
+    businessUnit?: string | null;
+    riskCategory?: string | null;
+    rangeDays?: number;
+  }) {
+    const rangeDaysRaw = Number(filters?.rangeDays || 90);
+    const rangeDays = Number.isFinite(rangeDaysRaw)
+      ? Math.min(Math.max(rangeDaysRaw, 30), 365)
+      : 90;
+
     const activeFramework = await this.prisma.framework.findFirst({
       where: { status: 'enabled' },
       orderBy: { updatedAt: 'desc' },
@@ -154,18 +392,35 @@ export class DashboardService {
     });
 
     const activeFrameworkName = String(activeFramework?.name || '').trim();
+    const requestedFramework = String(filters?.framework || '').trim();
+    const frameworkScope = requestedFramework || activeFrameworkName;
+
+    const frameworkOptions = await this.prisma.framework.findMany({
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const filterOptions: DashboardFilterOptions = {
+      frameworks: Array.from(new Set(frameworkOptions.map((fw) => fw.name).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+      businessUnits: [],
+      riskCategories: [],
+      timeRanges: [30, 90, 180, 365],
+    };
 
     const controls = await this.prisma.controlDefinition.findMany({
       where: {
         status: 'enabled',
-        ...(activeFrameworkName
-          ? { frameworkMappings: { some: { framework: activeFrameworkName } } }
+        ...(frameworkScope
+          ? { frameworkMappings: { some: { framework: frameworkScope } } }
           : {}),
       },
       select: {
         id: true,
         controlCode: true,
         title: true,
+        ownerRole: true,
         topic: { select: { title: true } },
         frameworkMappings: { select: { framework: true } },
       },
@@ -259,7 +514,7 @@ export class DashboardService {
     const lastReviewAt = evaluations[0]?.createdAt ?? null;
 
     const docsByControl = new Map<string, typeof documents>();
-    const latestDocByControl = new Map<string, { status: string; createdAt: Date }>();
+    const latestDocByControl = new Map<string, { status: string; createdAt: Date; docType: string | null; originalName: string }>();
     const acceptedControls = new Set<string>();
     let reviewedDocs = 0;
     let submittedDocs = 0;
@@ -272,8 +527,14 @@ export class DashboardService {
       const normalizedStatus = String(doc.matchStatus || '').toUpperCase();
       if (normalizedStatus) {
         const existing = latestDocByControl.get(controlCode);
-        if (!existing || doc.createdAt > existing.createdAt) {
-          latestDocByControl.set(controlCode, { status: normalizedStatus, createdAt: doc.createdAt });
+        const docTimestamp = doc.reviewedAt || doc.submittedAt || doc.createdAt;
+        if (!existing || docTimestamp > existing.createdAt) {
+          latestDocByControl.set(controlCode, {
+            status: normalizedStatus,
+            createdAt: docTimestamp,
+            docType: doc.docType || null,
+            originalName: doc.originalName || '',
+          });
         }
       }
       if (doc.reviewedAt) reviewedDocs += 1;
@@ -341,6 +602,38 @@ export class DashboardService {
       total: totalControls,
     };
 
+    let evidenceMissing = 0;
+    for (const control of allowedControls) {
+      if (!docsByControl.has(control.controlCode)) evidenceMissing += 1;
+    }
+
+    const now = Date.now();
+    let evidenceExpired = 0;
+    let evidenceExpiringSoon = 0;
+    let evidenceOutdated = 0;
+    let evidenceRejected = 0;
+    for (const doc of documents) {
+      const ts = (doc.reviewedAt || doc.submittedAt || doc.createdAt).getTime();
+      const ageDays = Math.floor((now - ts) / 86400000);
+      if (ageDays > 365) evidenceExpired += 1;
+      else if (ageDays >= 335) evidenceExpiringSoon += 1;
+      else if (ageDays >= 180) evidenceOutdated += 1;
+      if (String(doc.matchStatus || '').toUpperCase() === 'NOT_COMPLIANT') {
+        evidenceRejected += 1;
+      }
+    }
+
+    let evidenceReusedAcrossFrameworks = 0;
+    for (const control of allowedControls) {
+      if (!docsByControl.has(control.controlCode)) continue;
+      const frameworks = (control.frameworkMappings || [])
+        .map((mapping) => String(mapping.framework || '').trim())
+        .filter(Boolean);
+      if (new Set(frameworks).size > 1) {
+        evidenceReusedAcrossFrameworks += 1;
+      }
+    }
+
     for (const control of allowedControls) {
       const docs = docsByControl.get(control.controlCode) || [];
       const isGovernance = this.isGovernanceControl(control.controlCode, control.topic?.title || '');
@@ -363,6 +656,48 @@ export class DashboardService {
         )
       : 0;
 
+    const evidenceHealthDetail: EvidenceHealthDetail = {
+      expiringSoon: evidenceExpiringSoon,
+      expired: evidenceExpired,
+      missing: evidenceMissing,
+      reusedAcrossFrameworks: evidenceReusedAcrossFrameworks,
+      rejected: evidenceRejected,
+      outdated: evidenceOutdated,
+    };
+
+    const evidenceHealthDetailV2 = {
+      expiringIn30: evidenceExpiringSoon,
+      expired: evidenceExpired,
+      missing: evidenceMissing,
+      reusedAcrossFrameworks: evidenceReusedAcrossFrameworks,
+      rejected: evidenceRejected,
+      outdated: evidenceOutdated,
+    };
+
+    const evidenceHealthVisual: EvidenceHealthVisual = {
+      valid: 0,
+      expiringSoon: 0,
+      expired: 0,
+      missing: 0,
+      total: totalControls,
+    };
+
+    for (const control of allowedControls) {
+      const latest = latestDocByControl.get(control.controlCode);
+      if (!latest) {
+        evidenceHealthVisual.missing += 1;
+        continue;
+      }
+      const ageDays = Math.floor((now - latest.createdAt.getTime()) / 86400000);
+      if (ageDays > 365) {
+        evidenceHealthVisual.expired += 1;
+      } else if (ageDays >= 335) {
+        evidenceHealthVisual.expiringSoon += 1;
+      } else {
+        evidenceHealthVisual.valid += 1;
+      }
+    }
+
     const submissionReadiness: SubmissionReadiness = {
       reviewed: reviewedDocs,
       submitted: submittedDocs,
@@ -380,6 +715,18 @@ export class DashboardService {
           include: { evidenceRequest: { select: { artifact: true, description: true } } },
         });
         evidenceMappings.push(...rows);
+      }
+    }
+
+    const policyRequiredByControlCode = new Map<string, boolean>();
+    for (const mapping of evidenceMappings) {
+      const controlCode = controlIdToCode.get(mapping.controlId);
+      if (!controlCode) continue;
+      const text = `${mapping.evidenceRequest?.artifact || ''} ${mapping.evidenceRequest?.description || ''}`
+        .toLowerCase();
+      if (!text) continue;
+      if (text.includes('policy')) {
+        policyRequiredByControlCode.set(controlCode, true);
       }
     }
 
@@ -418,6 +765,56 @@ export class DashboardService {
       unknownPct: totalControls ? Math.round((statusCounts.UNKNOWN / totalControls) * 100) : 0,
     };
 
+    const gapLabels: Record<ComplianceGapItem['id'], string> = {
+      'missing-evidence': 'Missing Evidence',
+      'control-not-implemented': 'Control Not Implemented',
+      'control-not-tested': 'Control Not Tested',
+      'owner-not-assigned': 'Owner Not Assigned',
+      'outdated-policy': 'Outdated Policy',
+    };
+
+    const complianceGapCounts = new Map<ComplianceGapItem['id'], number>();
+    const resolveGapForControl = (control: (typeof allowedControls)[number]) => {
+      const status = (statusByControlCode.get(control.controlCode) || 'UNKNOWN').toUpperCase();
+      if (status !== 'NOT_COMPLIANT' && status !== 'PARTIAL') return null;
+
+      const docs = docsByControl.get(control.controlCode) || [];
+      const ownerRole = String(control.ownerRole || '').trim();
+      const latestDoc = latestDocByControl.get(control.controlCode);
+      const hasEvaluation = latestByControl.has(control.controlCode);
+      const policyRequired = policyRequiredByControlCode.get(control.controlCode) || false;
+      const policyDocName = `${latestDoc?.docType || ''} ${latestDoc?.originalName || ''}`.toLowerCase();
+      const isPolicyDoc = policyDocName.includes('policy');
+      const ageDays = latestDoc
+        ? Math.floor((now - latestDoc.createdAt.getTime()) / 86400000)
+        : null;
+
+      if (!docs.length) return 'missing-evidence' as const;
+      if (!ownerRole) return 'owner-not-assigned' as const;
+      if ((policyRequired || isPolicyDoc) && ageDays !== null && ageDays >= 180) {
+        return 'outdated-policy' as const;
+      }
+      if (!hasEvaluation) return 'control-not-tested' as const;
+      return 'control-not-implemented' as const;
+    };
+
+    for (const control of allowedControls) {
+      const gap = resolveGapForControl(control);
+      if (!gap) continue;
+      complianceGapCounts.set(gap, (complianceGapCounts.get(gap) || 0) + 1);
+    }
+
+    const complianceGaps: ComplianceGapItem[] = Array.from(complianceGapCounts.entries())
+      .map(([id, count]) => ({
+        id,
+        label: gapLabels[id],
+        count,
+        route: '/control-kb',
+        query: { status: 'enabled', gap: id },
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
     const impactLabels = ['Low', 'Medium', 'High'];
     const likelihoodLabels = ['Low', 'Medium', 'High'];
     const heatmapMatrix = this.buildHeatmapMatrix();
@@ -432,6 +829,29 @@ export class DashboardService {
       likelihoodLabels,
       matrix: heatmapMatrix,
     };
+
+    const riskDistribution: RiskDistribution = {
+      high: 0,
+      medium: 0,
+      low: 0,
+      total: 0,
+      exposure: 'low',
+    };
+
+    for (let r = 0; r < heatmapMatrix.length; r += 1) {
+      for (let c = 0; c < heatmapMatrix[r].length; c += 1) {
+        const value = heatmapMatrix[r][c];
+        if (!value) continue;
+        riskDistribution.total += value;
+        const score = (r + 1) + (c + 1);
+        if (score >= 5) riskDistribution.high += value;
+        else if (score >= 4) riskDistribution.medium += value;
+        else riskDistribution.low += value;
+      }
+    }
+
+    if (riskDistribution.high > 0) riskDistribution.exposure = 'high';
+    else if (riskDistribution.medium > 0) riskDistribution.exposure = 'medium';
 
     const controlIdToStatus = new Map<string, string>();
     for (const control of allowedControls) {
@@ -537,8 +957,8 @@ export class DashboardService {
       (doc) => !doc.reviewedAt && doc.createdAt.getTime() < overdueThreshold,
     ).length;
 
-    const frameworkNames = activeFrameworkName
-      ? [activeFrameworkName]
+    const frameworkNames = frameworkScope
+      ? [frameworkScope]
       : (await this.prisma.framework.findMany({
           where: { status: 'enabled' },
           select: { name: true },
@@ -600,18 +1020,86 @@ export class DashboardService {
     const frameworkProgress: FrameworkProgress[] = frameworkNames.map((framework) => {
       const controlCodes = controlsByFramework.get(framework) || [];
       const series = months.map((month) => {
-        if (!controlCodes.length) return 0;
-        let sum = 0;
-        for (const code of controlCodes) {
-          const events = eventByControl.get(code) || [];
-          const match = events.find((item) => item.createdAt.getTime() <= month.end.getTime());
-          const status = match?.status || 'UNKNOWN';
-          if (status === 'COMPLIANT') sum += 1;
-          else if (status === 'PARTIAL') sum += partialWeight;
-        }
-        return Math.round((sum / controlCodes.length) * 100);
+        return this.computeCompliancePercentAt(
+          controlCodes,
+          eventByControl,
+          month.end,
+          partialWeight,
+        );
       });
       return { framework, series };
+    });
+
+    const controlCodesForTrends = allowedControlCodes;
+    const complianceTrend = months.map((month) =>
+      this.computeCompliancePercentAt(controlCodesForTrends, eventByControl, month.end, partialWeight),
+    );
+    const riskScoreTrend = complianceTrend.map((value) => Math.max(0, 100 - value));
+    const mttrTrend = months.map((month) =>
+      this.computeMttrAt(controlCodesForTrends, eventByControl, month.end),
+    );
+    const trendsV2 = this.buildTrendsV2({
+      rangeDays,
+      controlCodes: controlCodesForTrends,
+      eventByControl,
+      partialWeight,
+    });
+
+    const comparisonTargets = ['ISO 27001', 'SOC 2', 'NIST'];
+    const frameworkComparison: FrameworkComparison[] = comparisonTargets.map((target) => {
+      const candidates = allowedControls.filter((control) =>
+        (control.frameworkMappings || []).some((mapping) =>
+          String(mapping.framework || '').toLowerCase().includes(target.toLowerCase()),
+        ),
+      );
+      const controlCodes = candidates.map((control) => control.controlCode);
+      const completion = this.computeCompliancePercentAt(
+        controlCodes,
+        eventByControl,
+        months[months.length - 1].end,
+        partialWeight,
+      );
+      const failedControls = controlCodes.filter(
+        (code) => (statusByControlCode.get(code) || 'UNKNOWN') === 'NOT_COMPLIANT',
+      ).length;
+      return {
+        framework: target,
+        completionPercent: completion,
+        failedControls,
+      };
+    });
+
+    const frameworkComparisonV2: FrameworkComparisonV2[] = comparisonTargets.map((target) => {
+      const candidates = allowedControls.filter((control) =>
+        (control.frameworkMappings || []).some((mapping) =>
+          String(mapping.framework || '').toLowerCase().includes(target.toLowerCase()),
+        ),
+      );
+      const controlCodes = candidates.map((control) => control.controlCode);
+      const total = controlCodes.length;
+      let compliant = 0;
+      let partial = 0;
+      let notCompliant = 0;
+      for (const code of controlCodes) {
+        const status = (statusByControlCode.get(code) || 'UNKNOWN').toUpperCase();
+        if (status === 'COMPLIANT') compliant += 1;
+        else if (status === 'PARTIAL') partial += 1;
+        else if (status === 'NOT_COMPLIANT') notCompliant += 1;
+      }
+      const unknown = Math.max(0, total - compliant - partial - notCompliant);
+      const completionPercent = total
+        ? Math.round(((compliant + partial * partialWeight) / total) * 100)
+        : 0;
+      return {
+        framework: target,
+        totalControls: total,
+        compliant,
+        partial,
+        notCompliant,
+        unknown,
+        completionPercent,
+        failedControls: notCompliant,
+      };
     });
 
     const uploadSummary: UploadSummary = {
@@ -620,10 +1108,295 @@ export class DashboardService {
       documentsPerControl: documentsPerControl.slice(0, 8),
     };
 
+    const failedControlCodes = allowedControls
+      .filter((control) => (statusByControlCode.get(control.controlCode) || 'UNKNOWN') === 'NOT_COMPLIANT')
+      .map((control) => control.controlCode);
+    const failedControls = failedControlCodes.length;
+
+    const overdueControlCodes = allowedControls
+      .filter((control) => {
+        const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
+        if (status === 'COMPLIANT') return false;
+        const lastSeen = lastSeenByControl.get(control.controlCode);
+        if (!lastSeen) return true;
+        return (Date.now() - lastSeen.getTime()) / 86400000 > 30;
+      })
+      .map((control) => control.controlCode);
+
+    const controlsNeedingAttention = new Set([...failedControlCodes, ...overdueControlCodes]);
+    const overdueControls = overdueControlCodes.length;
+    const risksWithoutMitigation = riskCoverage.filter((risk) => risk.coveragePercent === 0).length;
+    const evidenceIssues = evidenceMissing + evidenceExpired;
+
+    const auditSummary: AuditSummary = {
+      upcoming14: 0,
+      upcoming30: 0,
+      upcoming90: 0,
+      upcoming: [],
+    };
+    const upcomingAudits = auditSummary.upcoming30;
+
+    const attentionToday: AttentionTodayItem[] = [
+      {
+        id: 'failed-controls',
+        label: 'Failed Controls',
+        count: failedControls,
+        severity: failedControls ? 'high' : 'low',
+        kind: 'control',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'missing-evidence',
+        label: 'Missing Evidence',
+        count: evidenceMissing,
+        severity: evidenceMissing ? 'high' : 'low',
+        kind: 'evidence',
+        route: '/uploads',
+      },
+      {
+        id: 'risks-without-owner',
+        label: 'Risks Without Owner',
+        count: risksWithoutMitigation,
+        severity: risksWithoutMitigation ? 'medium' : 'low',
+        kind: 'risk',
+        route: '/dashboard',
+      },
+      {
+        id: 'upcoming-audits',
+        label: 'Upcoming Audits',
+        count: auditSummary.upcoming30,
+        severity: auditSummary.upcoming30 ? 'medium' : 'low',
+        kind: 'audit',
+        route: '/dashboard',
+        query: { range: '30' },
+      },
+    ];
+
+    const attentionItems: AttentionItem[] = [
+      {
+        id: 'failed-controls',
+        label: 'Controls failed',
+        count: failedControls,
+        severity: 'high',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'overdue-controls',
+        label: 'Overdue controls',
+        count: overdueControls,
+        severity: 'medium',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'risks-without-mitigation',
+        label: 'Risks without mitigation',
+        count: risksWithoutMitigation,
+        severity: 'medium',
+        route: '/dashboard',
+      },
+      {
+        id: 'evidence-issues',
+        label: 'Evidence missing/expired',
+        count: evidenceIssues,
+        severity: 'high',
+        route: '/uploads',
+      },
+      {
+        id: 'upcoming-audits',
+        label: 'Audits in next 30 days',
+        count: upcomingAudits,
+        severity: 'low',
+        route: '/dashboard',
+      },
+    ];
+
+    const recommendedActions: RecommendedAction[] = [];
+    if (failedControls) {
+      recommendedActions.push({
+        id: 'add-evidence',
+        title: 'Add evidence for failed controls',
+        reason: `${failedControls} controls are marked NOT_COMPLIANT`,
+        route: '/uploads',
+        severity: 'high',
+      });
+    }
+    if (evidenceMissing) {
+      recommendedActions.push({
+        id: 'upload-missing-evidence',
+        title: 'Upload missing evidence',
+        reason: `${evidenceMissing} controls have no evidence yet`,
+        route: '/uploads',
+        severity: 'medium',
+      });
+    }
+    if (risksWithoutMitigation) {
+      recommendedActions.push({
+        id: 'mitigate-risks',
+        title: 'Mitigate uncovered risks',
+        reason: `${risksWithoutMitigation} risks have 0% coverage`,
+        route: '/dashboard',
+        severity: 'medium',
+      });
+    }
+
+    const recommendedActionsV2: RecommendedActionV2[] = [];
+    if (failedControlCodes.length) {
+      recommendedActionsV2.push({
+        id: 'add-evidence-control',
+        title: `Add evidence for ${failedControlCodes[0]}`,
+        reason: `${failedControls} controls are marked NOT_COMPLIANT`,
+        route: '/control-kb',
+        query: { status: 'enabled' },
+        severity: 'high',
+        cta: 'Review control',
+      });
+    }
+    if (overdueControls) {
+      recommendedActionsV2.push({
+        id: 'review-overdue-controls',
+        title: 'Review overdue controls',
+        reason: `${overdueControls} controls have not been updated in 30+ days`,
+        route: '/control-kb',
+        query: { status: 'enabled' },
+        severity: 'medium',
+        cta: 'Open controls',
+      });
+    }
+    if (evidenceIssues) {
+      recommendedActionsV2.push({
+        id: 'refresh-evidence',
+        title: 'Refresh evidence for expiring items',
+        reason: `${evidenceIssues} evidence items are missing or expired`,
+        route: '/uploads',
+        severity: 'high',
+        cta: 'Review evidence',
+      });
+    }
+    if (risksWithoutMitigation) {
+      recommendedActionsV2.push({
+        id: 'mitigate-risks',
+        title: 'Assign mitigation owners for top risks',
+        reason: `${risksWithoutMitigation} risks show 0% coverage`,
+        route: '/dashboard',
+        severity: 'medium',
+        cta: 'View risks',
+      });
+    }
+
     const openRisks = riskControls.length;
+
+    const kpis: DashboardKpi[] = [
+      {
+        id: 'coverage',
+        label: 'Overall Coverage',
+        value: `${coveragePercent}%`,
+        note: `${statusCounts.COMPLIANT + statusCounts.PARTIAL}/${evaluatedControls} controls reviewed`,
+        severity: coveragePercent < 60 ? 'high' : coveragePercent < 80 ? 'medium' : 'low',
+        drilldown: { route: '/control-kb', query: { status: 'enabled' } },
+      },
+      {
+        id: 'evidence-health',
+        label: 'Evidence Health Score',
+        value: `${evidenceHealth.score}%`,
+        note: `High ${evidenceHealth.high} · Medium ${evidenceHealth.medium} · Low ${evidenceHealth.low}`,
+        severity: evidenceHealth.score < 60 ? 'high' : evidenceHealth.score < 80 ? 'medium' : 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'audit-readiness',
+        label: 'Audit Readiness',
+        value: `${auditReadiness.percent}%`,
+        note: `Missing policies ${auditReadiness.missingPolicies} · Missing logs ${auditReadiness.missingLogs}`,
+        severity: auditReadiness.percent < 60 ? 'high' : auditReadiness.percent < 80 ? 'medium' : 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'submission-readiness',
+        label: 'Submission Readiness',
+        value: `${submissionReadiness.percent}%`,
+        note: `${submissionReadiness.submitted}/${submissionReadiness.reviewed} submitted`,
+        severity: submissionReadiness.percent < 60 ? 'high' : submissionReadiness.percent < 80 ? 'medium' : 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'overdue-evidence',
+        label: 'Overdue Evidence',
+        value: `${overdueEvidence}`,
+        note: 'Awaiting review >14 days',
+        severity: overdueEvidence ? 'high' : 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'open-risks',
+        label: 'Open Risks',
+        value: `${openRisks}`,
+        note: 'Partial or missing controls',
+        severity: openRisks ? 'medium' : 'low',
+        drilldown: { route: '/dashboard' },
+      },
+      {
+        id: 'documents-uploaded',
+        label: 'Documents Uploaded',
+        value: `${uploadSummary.totalUploadedDocuments}`,
+        note: 'Total evidence files',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'matched-controls',
+        label: 'Matched Controls',
+        value: `${uploadSummary.distinctMatchedControls}`,
+        note: 'Distinct controls with uploads',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+    ];
+
+    const executiveSummary: ExecutiveSummary = {
+      headline: `${coveragePercent}% coverage across ${totalControls} controls`,
+      highlights: [
+        `${statusCounts.COMPLIANT} compliant · ${statusCounts.PARTIAL} partial · ${statusCounts.NOT_COMPLIANT} failed`,
+        `Evidence health ${evidenceHealth.score}%`,
+        `Audit readiness ${auditReadiness.percent}%`,
+      ],
+      risks: [
+        failedControls ? `${failedControls} failed controls require attention` : 'No failed controls detected',
+        evidenceMissing ? `${evidenceMissing} controls are missing evidence` : 'No missing evidence detected',
+        risksWithoutMitigation ? `${risksWithoutMitigation} risks have 0% coverage` : 'No uncovered risks detected',
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
 
     return {
       ok: true,
+      appliedFilters: {
+        framework: frameworkScope || null,
+        businessUnit: filters?.businessUnit || null,
+        riskCategory: filters?.riskCategory || null,
+        rangeDays,
+      },
+      filterOptions,
+      attentionToday,
+      attentionItems,
+      evidenceHealthDetail,
+      evidenceHealthDetailV2,
+      trends: {
+        riskScore: riskScoreTrend,
+        compliance: complianceTrend,
+        mttr: mttrTrend,
+      },
+      trendsV2,
+      frameworkComparison,
+      frameworkComparisonV2,
+      recommendedActions,
+      recommendedActionsV2,
+      auditSummary,
+      kpis,
+      executiveSummary,
+      complianceGaps,
       metrics: {
         coveragePercent,
         evaluatedControls,
@@ -643,6 +1416,8 @@ export class DashboardService {
       uploadSummary,
       complianceBreakdown,
       riskHeatmap,
+      riskDistribution,
+      evidenceHealthVisual,
       frameworkProgress,
       months: months.map((month) => month.label),
       riskCoverage,

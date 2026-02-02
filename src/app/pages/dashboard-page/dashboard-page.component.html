@@ -1,39 +1,72 @@
 <section class="page">
   <div class="dashboard-header" *ngIf="!loading && !error">
-    <div>
-      <h2>Dashboard</h2>
-      <p>Read-only snapshot of compliance health and evidence readiness.</p>
-    </div>
-    <a class="cta" routerLink="/home">Continue in chat</a>
-  </div>
-
-  <div class="stats-grid" *ngIf="!loading && !error; else loadingState">
-    <article class="stat-card" *ngFor="let stat of stats">
-      <p class="label">{{ stat.label }}</p>
-      <div class="value">{{ stat.value }}</div>
-      <p class="note">{{ stat.note }}</p>
-    </article>
-  </div>
-
-  <div class="grid-two" *ngIf="!loading && !error">
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Risk Heatmap</h3>
-        <span class="chip">Impact vs Likelihood</span>
+    <div class="header-copy">
+      <h2>Executive Compliance Dashboard</h2>
+      <p>Action-driven snapshot of compliance health, evidence, and risk posture.</p>
+      <div class="exec-summary" *ngIf="executiveMode && executiveSummary">
+        <div class="exec-headline">{{ executiveSummary.headline }}</div>
+        <div class="exec-highlights">
+          <span *ngFor="let item of executiveSummary.highlights">{{ item }}</span>
+        </div>
+        <div class="exec-risks">
+          <span *ngFor="let item of executiveSummary.risks">{{ item }}</span>
+        </div>
       </div>
-      <div class="heatmap" *ngIf="riskHeatmap.length; else emptyHeatmap">
+    </div>
+    <div class="header-actions">
+      <button class="ghost" type="button" (click)="toggleExecutive()">Executive View</button>
+      <button class="ghost" type="button" (click)="exportExecutivePdf()" [disabled]="!executiveMode">Export PDF</button>
+      <a class="cta" routerLink="/home">Continue in chat</a>
+    </div>
+  </div>
+
+  <section class="panel snapshot" *ngIf="!loading && !error">
+    <div class="panel-header">
+      <h3>Executive Snapshot</h3>
+    </div>
+    <div class="kpi-grid">
+      <button class="kpi-card" type="button" *ngFor="let kpi of kpis" (click)="openKpi(kpi)">
+        <div class="kpi-header">
+          <span class="kpi-label" [title]="getKpiTooltip(kpi)">{{ kpi.label }}</span>
+          <span class="severity-badge" [class]="getSeverityClass(kpi.severity || 'low')">{{ kpi.severity || 'low' }}</span>
+        </div>
+        <div class="kpi-value">{{ kpi.value }}</div>
+      </button>
+    </div>
+  </section>
+
+  <div class="grid-two" *ngIf="!loading && !error && !executiveMode">
+    <section class="panel clickable" (click)="openStat('risk')" role="button" tabindex="0">
+      <div class="panel-header">
+        <h3>Risk Distribution</h3>
+      </div>
+      <div class="donut" [style.background]="riskDonutStyle">
+        <div class="donut-center">
+          <div class="donut-total">{{ riskDistribution.exposure | uppercase }}</div>
+          <div class="donut-label">Exposure</div>
+        </div>
+      </div>
+      <div class="legend-list">
+        <div class="legend-item"><span class="dot high"></span>High {{ riskDistribution.high }}</div>
+        <div class="legend-item"><span class="dot medium"></span>Medium {{ riskDistribution.medium }}</div>
+        <div class="legend-item"><span class="dot low"></span>Low {{ riskDistribution.low }}</div>
+      </div>
+      <div class="heatmap">
+        <div class="panel-header">
+          <h4>Risk Heatmap</h4>
+        </div>
         <div class="heatmap-grid">
           <div class="heatmap-y">
             <span *ngFor="let label of impactLabels">{{ label }}</span>
           </div>
           <div class="heatmap-matrix">
-            <div class="heatmap-row" *ngFor="let row of riskHeatmap; let r = index">
+            <div class="heatmap-row" *ngFor="let row of riskHeatmap; let rowIndex = index">
               <div
                 class="heatmap-cell"
-                *ngFor="let value of row; let c = index"
-                [style.background]="getHeatmapColor(r, c)"
+                *ngFor="let cell of row; let colIndex = index"
+                [style.background]="getHeatmapColor(rowIndex, colIndex)"
               >
-                {{ value | number: '2.0-0' }}
+                {{ cell }}
               </div>
             </div>
             <div class="heatmap-x">
@@ -42,197 +75,147 @@
           </div>
         </div>
       </div>
-      <ng-template #emptyHeatmap>
-        <p class="empty">Heatmap data will appear once evaluations are available.</p>
-      </ng-template>
     </section>
 
-    <section class="panel">
+    <section class="panel clickable" (click)="openStat('compliance')" role="button" tabindex="0">
       <div class="panel-header">
-        <h3>Compliance Status Breakdown</h3>
-        <span class="chip">Live distribution</span>
+        <h3>Compliance Status</h3>
       </div>
-      <div class="breakdown">
-        <div class="donut" [style.background]="donutStyle">
-          <div class="donut-center">
-            <div class="donut-total">{{ complianceBreakdown.total }}</div>
-            <div class="donut-label">Controls</div>
-          </div>
-        </div>
-        <div class="breakdown-list">
-          <div class="breakdown-item">
-            <span class="dot compliant"></span>
-            <div>
-              <div class="label">Compliant</div>
-              <div class="value">{{ complianceBreakdown.compliant }} ({{ complianceBreakdown.compliantPct }}%)</div>
-            </div>
-          </div>
-          <div class="breakdown-item">
-            <span class="dot partial"></span>
-            <div>
-              <div class="label">Partially compliant</div>
-              <div class="value">{{ complianceBreakdown.partial }} ({{ complianceBreakdown.partialPct }}%)</div>
-            </div>
-          </div>
-          <div class="breakdown-item">
-            <span class="dot missing"></span>
-            <div>
-              <div class="label">Not compliant</div>
-              <div class="value">{{ complianceBreakdown.notCompliant }} ({{ complianceBreakdown.notCompliantPct }}%)</div>
-            </div>
-          </div>
-          <div class="breakdown-item">
-            <span class="dot unknown"></span>
-            <div>
-              <div class="label">Unknown</div>
-              <div class="value">{{ complianceBreakdown.unknown }} ({{ complianceBreakdown.unknownPct }}%)</div>
-            </div>
-          </div>
+      <div class="donut" [style.background]="donutStyle">
+        <div class="donut-center">
+          <div class="donut-total">{{ complianceBreakdown.total }}</div>
+          <div class="donut-label">Controls</div>
         </div>
       </div>
+      <div class="legend-list">
+        <div class="legend-item"><span class="dot compliant"></span>Compliant {{ complianceBreakdown.compliant }}</div>
+        <div class="legend-item"><span class="dot partial"></span>Partial {{ complianceBreakdown.partial }}</div>
+        <div class="legend-item"><span class="dot missing"></span>Non-compliant {{ complianceBreakdown.notCompliant }}</div>
+        <div class="legend-item"><span class="dot unknown"></span>Unknown {{ complianceBreakdown.unknown }}</div>
+      </div>
+      <div class="gap-chart" *ngIf="complianceGaps.length; else emptyGaps">
+        <div class="gap-header">
+          <div>
+            <h4>Top Compliance Gaps</h4>
+            <p>Main reasons controls are not compliant</p>
+          </div>
+        </div>
+        <button
+          class="gap-row"
+          type="button"
+          *ngFor="let gap of complianceGaps"
+          (click)="openGap(gap, $event)"
+        >
+          <span class="gap-label">{{ gap.label }}</span>
+          <span class="gap-bar">
+            <span class="gap-fill" [style.width.%]="getGapWidth(gap)" [style.background]="getGapColor(gap)"></span>
+          </span>
+          <span class="gap-count">{{ gap.count }}</span>
+        </button>
+      </div>
+      <ng-template #emptyGaps>
+        <p class="empty">No major compliance gaps detected.</p>
+      </ng-template>
     </section>
   </div>
 
-  <section class="panel" *ngIf="!loading && !error">
+  <section class="panel attention" *ngIf="!loading && !error && !executiveMode">
     <div class="panel-header">
-      <h3>Framework Progress</h3>
-      <span class="chip">Last 6 months</span>
+      <h3>What Needs Attention</h3>
     </div>
-    <div class="progress-chart" *ngIf="frameworkProgress.length; else emptyProgress">
-      <div class="chart-grid">
-        <div class="chart-y">
-          <span>100%</span>
-          <span>75%</span>
-          <span>50%</span>
-          <span>25%</span>
-          <span>0%</span>
-        </div>
-        <div class="chart-canvas">
+    <div class="attention-grid" *ngIf="attentionToday.length; else emptyAttention">
+      <button class="attention-card" type="button" *ngFor="let item of attentionToday" (click)="openAttention(item)">
+        <span class="attention-label">{{ item.label }}</span>
+        <span class="attention-count">{{ item.count }}</span>
+      </button>
+    </div>
+    <ng-template #emptyAttention>
+      <p class="empty">All good today.</p>
+    </ng-template>
+  </section>
+
+  <section class="panel trends" *ngIf="!loading && !error">
+    <div class="panel-header">
+      <h3>Trends</h3>
+      <div class="trend-toggle">
+        <button class="ghost" type="button" [class.active]="rangeDays === 30" (click)="setTrendRange(30)">30d</button>
+        <button class="ghost" type="button" [class.active]="rangeDays === 90" (click)="setTrendRange(90)">90d</button>
+      </div>
+    </div>
+    <div class="trend-grid" *ngIf="trendsV2.length; else emptyTrends">
+      <section class="panel trend-panel clickable" *ngFor="let series of trendsV2" (click)="openTrend(series)" role="button" tabindex="0">
+        <div class="trend-title">{{ series.label }}</div>
+        <div class="trend-chart" [title]="getTrendTooltip(series)">
           <svg viewBox="0 0 540 200" preserveAspectRatio="none">
             <line x1="0" y1="0" x2="540" y2="0"></line>
             <line x1="0" y1="50" x2="540" y2="50"></line>
             <line x1="0" y1="100" x2="540" y2="100"></line>
             <line x1="0" y1="150" x2="540" y2="150"></line>
             <line x1="0" y1="200" x2="540" y2="200"></line>
-            <ng-container *ngFor="let series of frameworkProgress">
-              <polyline [attr.points]="buildLinePoints(series.series)" [attr.stroke]="series.color"></polyline>
-            </ng-container>
+            <polyline [attr.points]="buildLinePoints(series.points, series.unit === 'days' ? getTrendMax(series) : 100)">
+              <title>{{ series.label }} latest {{ formatTrendValue(series, getTrendLatest(series)) }}</title>
+            </polyline>
           </svg>
           <div class="chart-x">
-            <span *ngFor="let month of frameworkMonths">{{ month }}</span>
+            <span *ngFor="let label of series.dates.slice(-6)">{{ label }}</span>
           </div>
         </div>
-      </div>
-      <div class="chart-legend">
-        <div class="legend-item" *ngFor="let series of frameworkProgress">
-          <span class="legend-dot" [style.background]="series.color"></span>
-          <span>{{ series.framework }}</span>
-        </div>
-      </div>
+      </section>
     </div>
-    <ng-template #emptyProgress>
-      <p class="empty">Framework progress will appear once evaluations are available.</p>
+    <ng-template #emptyTrends>
+      <p class="empty">Trend data will appear once evaluations are available.</p>
     </ng-template>
   </section>
 
-  <section class="panel" *ngIf="!loading && !error">
-    <div class="panel-header">
-      <h3>Top Uploaded Controls</h3>
-      <span class="chip">By document count</span>
-    </div>
-    <div class="table" *ngIf="uploadSummary.documentsPerControl.length; else emptyUploads">
-      <div class="row header">
-        <span>Control</span>
-        <span>Documents</span>
-        <span>Note</span>
+  <section class="panel" *ngIf="!loading && !error && !executiveMode">
+    <button class="panel-toggle" type="button" (click)="toggleEvidence()">
+      <h3>Evidence Health</h3>
+      <span class="chevron" [class.open]="evidenceOpen">▾</span>
+    </button>
+    <div class="panel-body" *ngIf="evidenceOpen">
+      <div class="stacked-bar">
+        <div class="segment valid" [style.width.%]="getEvidenceSegmentPct('valid')"></div>
+        <div class="segment expiring" [style.width.%]="getEvidenceSegmentPct('expiring')"></div>
+        <div class="segment expired" [style.width.%]="getEvidenceSegmentPct('expired')"></div>
+        <div class="segment missing" [style.width.%]="getEvidenceSegmentPct('missing')"></div>
       </div>
-      <div class="row" *ngFor="let item of uploadSummary.documentsPerControl">
-        <span>{{ item.controlId }}</span>
-        <span>{{ item.count }}</span>
-        <span>{{ item.count > 1 ? 'Multiple docs mapped' : 'Single doc mapped' }}</span>
+      <div class="legend-list">
+        <div class="legend-item"><span class="dot compliant"></span>Valid {{ evidenceHealthVisual.valid }}</div>
+        <div class="legend-item"><span class="dot partial"></span>Expiring {{ evidenceHealthVisual.expiringSoon }}</div>
+        <div class="legend-item"><span class="dot missing"></span>Expired {{ evidenceHealthVisual.expired }}</div>
+        <div class="legend-item"><span class="dot unknown"></span>Missing {{ evidenceHealthVisual.missing }}</div>
       </div>
     </div>
-    <ng-template #emptyUploads>
-      <p class="empty">No uploads mapped to controls yet.</p>
-    </ng-template>
   </section>
 
-  <div class="grid-two" *ngIf="!loading && !error">
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Top Risks Not Covered</h3>
-        <span class="chip">Risk-driven view</span>
-      </div>
-      <div class="risk-list" *ngIf="riskCoverageRows.length; else emptyRiskCoverage">
-        <div class="risk-row" *ngFor="let row of riskCoverageRows">
-          <div class="risk-main">
-            <div class="risk-title">{{ row.title }}</div>
-            <div class="risk-meta">{{ row.coverage }} covered</div>
+  <section class="panel" *ngIf="!loading && !error && !executiveMode">
+    <button class="panel-toggle" type="button" (click)="toggleFrameworkComparison()">
+      <h3>Framework Comparison</h3>
+      <span class="chevron" [class.open]="frameworkOpen">▾</span>
+    </button>
+    <div class="panel-body" *ngIf="frameworkOpen">
+      <div class="comparison-list" *ngIf="frameworkComparisonV2.length; else emptyComparison">
+        <div class="comparison-row" *ngFor="let row of frameworkComparisonV2" (click)="openFrameworkComparison(row)">
+          <div class="comparison-meta">
+            <div class="comparison-title">{{ row.framework }}</div>
+            <div class="comparison-sub">{{ row.completionPercent }}% complete - {{ row.failedControls }} failed</div>
           </div>
-          <button class="risk-controls-btn" type="button" (click)="toggleRiskPopover(row.id)">
-            {{ row.controlCount }} controls
-          </button>
-          <div class="risk-popover" *ngIf="riskPopoverId === row.id">
-            <div class="risk-popover-title">Mapped controls</div>
-            <div class="risk-popover-list">
-              <span *ngFor="let code of row.controlCodes">{{ code }}</span>
-            </div>
+          <div class="comparison-bar">
+            <span class="bar compliant" [style.width.%]="row.totalControls ? (row.compliant / row.totalControls) * 100 : 0"></span>
+            <span class="bar partial" [style.width.%]="row.totalControls ? (row.partial / row.totalControls) * 100 : 0"></span>
+            <span class="bar notcompliant" [style.width.%]="row.totalControls ? (row.notCompliant / row.totalControls) * 100 : 0"></span>
+            <span class="bar unknown" [style.width.%]="row.totalControls ? (row.unknown / row.totalControls) * 100 : 0"></span>
           </div>
         </div>
       </div>
-      <ng-template #emptyRiskCoverage>
-        <p class="empty">Risk coverage will appear once mappings are available.</p>
+      <ng-template #emptyComparison>
+        <p class="empty">Framework comparison will appear once evaluations are available.</p>
       </ng-template>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h3>Controls Needing Attention</h3>
-        <span class="chip">Needs attention</span>
-      </div>
-      <div class="table" *ngIf="riskRows.length; else emptyRisks">
-        <div class="row header">
-          <span>Control</span>
-          <span>Owner</span>
-          <span>Status</span>
-          <span>Due</span>
-          <span>Action</span>
-        </div>
-        <div class="row" *ngFor="let row of riskRows">
-          <span>{{ row.control }}</span>
-          <span>{{ row.owner }}</span>
-          <span class="status-pill" [class.status-pill--warn]="row.status !== 'Partial'">{{ row.status }}</span>
-          <span>{{ row.due }}</span>
-          <button class="open-control" type="button" (click)="openControl(row)">Open</button>
-        </div>
-      </div>
-      <ng-template #emptyRisks>
-        <p class="empty">No control risks yet.</p>
-      </ng-template>
-    </section>
-  </div>
-
-  <section class="panel" *ngIf="!loading && !error">
-    <div class="panel-header">
-      <h3>Recent Activity</h3>
-      <span class="chip muted">Last 48h</span>
     </div>
-    <div class="activity-list" *ngIf="activityRows.length; else emptyActivity">
-      <div class="activity" *ngFor="let item of activityRows">
-        <div class="activity-main">
-          <div class="activity-title">{{ item.item }}</div>
-          <div class="activity-meta">{{ item.by }}</div>
-        </div>
-        <div class="activity-time">{{ item.time }}</div>
-      </div>
-    </div>
-    <ng-template #emptyActivity>
-      <p class="empty">No recent activity.</p>
-    </ng-template>
   </section>
 
-  <ng-template #loadingState>
-    <p class="empty" *ngIf="loading">Loading dashboard…</p>
+  <div *ngIf="loading || error">
+    <p class="empty" *ngIf="loading">Loading dashboard...</p>
     <p class="empty error" *ngIf="error">{{ error }}</p>
-  </ng-template>
+  </div>
 </section>

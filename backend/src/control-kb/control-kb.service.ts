@@ -15,6 +15,26 @@ const toIsoVariants = (value: string) => {
   return Array.from(new Set([value, normalized, withPrefix])).filter(Boolean);
 };
 
+type ComplianceGapKey =
+  | 'missing-evidence'
+  | 'control-not-implemented'
+  | 'control-not-tested'
+  | 'owner-not-assigned'
+  | 'outdated-policy';
+
+const GAP_ALIAS_MAP: Record<string, ComplianceGapKey> = {
+  'missing evidence': 'missing-evidence',
+  'missing-evidence': 'missing-evidence',
+  'control not implemented': 'control-not-implemented',
+  'control-not-implemented': 'control-not-implemented',
+  'control not tested': 'control-not-tested',
+  'control-not-tested': 'control-not-tested',
+  'owner not assigned': 'owner-not-assigned',
+  'owner-not-assigned': 'owner-not-assigned',
+  'outdated policy': 'outdated-policy',
+  'outdated-policy': 'outdated-policy',
+};
+
 @Injectable()
 export class ControlKbService {
   constructor(private readonly prisma: PrismaService) {}
@@ -113,6 +133,7 @@ export class ControlKbService {
     isoMapping?: string | null;
     framework?: string | null;
     frameworkRef?: string | null;
+    gap?: string | null;
     page?: number;
     pageSize?: number;
     includeDisabled?: boolean;
@@ -167,9 +188,11 @@ export class ControlKbService {
     const isoMapping = params.isoMapping?.trim();
     const evidenceType = params.evidenceType?.trim();
     const frameworkRef = params.frameworkRef?.trim();
+    const gap = this.normalizeGap(params.gap);
     const needsEvidenceFilter = Boolean(evidenceType);
     const needsIsoFilter = Boolean(isoMapping);
     const needsFrameworkRefFilter = Boolean(frameworkRef);
+    const needsGapFilter = Boolean(gap);
     const frameworkWhere = activeFrameworks
       ? { framework: { in: Array.from(activeFrameworks) } }
       : framework
@@ -210,7 +233,7 @@ export class ControlKbService {
       ...(needsEvidenceFilter ? { testComponents: { select: { evidenceTypes: true } } } : {}),
     });
 
-    if (needsEvidenceFilter || needsIsoFilter || needsFrameworkRefFilter) {
+    if (needsEvidenceFilter || needsIsoFilter || needsFrameworkRefFilter || needsGapFilter) {
       const items = await this.prisma.controlDefinition.findMany({
         where,
         orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
@@ -244,6 +267,10 @@ export class ControlKbService {
           const references = this.buildFrameworkReferences(control.frameworkMappings || []);
           return references.some((ref) => ref.toLowerCase().includes(needle));
         });
+      }
+
+      if (needsGapFilter && gap) {
+        filtered = await this.filterControlsByGap(filtered as Array<{ id: string; controlCode: string; ownerRole: string | null }>, gap);
       }
 
       const total = filtered.length;
@@ -280,6 +307,125 @@ export class ControlKbService {
       page,
       pageSize,
     };
+  }
+
+  private normalizeGap(value?: string | null): ComplianceGapKey | null {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return null;
+    return GAP_ALIAS_MAP[normalized] || null;
+  }
+
+  private resolveDocStatus(docs: Array<{ matchStatus: string | null }>) {
+    const statuses = docs
+      .map((doc) => String(doc.matchStatus || '').toUpperCase())
+      .filter(Boolean);
+    if (statuses.includes('COMPLIANT')) return 'COMPLIANT';
+    if (statuses.includes('PARTIAL')) return 'PARTIAL';
+    if (statuses.includes('NOT_COMPLIANT')) return 'NOT_COMPLIANT';
+    return 'UNKNOWN';
+  }
+
+  private async filterControlsByGap(
+    controls: Array<{ id: string; controlCode: string; ownerRole: string | null }>,
+    gap: ComplianceGapKey,
+  ) {
+    if (!controls.length) return controls;
+    const controlCodes = controls.map((control) => control.controlCode);
+    const controlIds = controls.map((control) => control.id);
+
+    const evaluations = await this.prisma.evidenceEvaluation.findMany({
+      where: { controlId: { in: controlCodes } },
+      orderBy: { createdAt: 'desc' },
+      select: { controlId: true, status: true, createdAt: true },
+    });
+
+    const latestEvalByControl = new Map<string, { status: string }>();
+    for (const evaluation of evaluations) {
+      if (!latestEvalByControl.has(evaluation.controlId)) {
+        latestEvalByControl.set(evaluation.controlId, { status: String(evaluation.status || '').toUpperCase() });
+      }
+    }
+
+    const documents = await this.prisma.document.findMany({
+      where: { matchControlId: { in: controlCodes } },
+      select: {
+        matchControlId: true,
+        matchStatus: true,
+        reviewedAt: true,
+        submittedAt: true,
+        createdAt: true,
+        docType: true,
+        originalName: true,
+      },
+    });
+
+    const docsByControl = new Map<string, typeof documents>();
+    const latestDocByControl = new Map<string, { createdAt: Date; docType: string | null; originalName: string }>();
+    for (const doc of documents) {
+      const controlCode = String(doc.matchControlId || '');
+      if (!controlCode) continue;
+      const list = docsByControl.get(controlCode) || [];
+      list.push(doc);
+      docsByControl.set(controlCode, list);
+      const timestamp = doc.reviewedAt || doc.submittedAt || doc.createdAt;
+      const existing = latestDocByControl.get(controlCode);
+      if (!existing || timestamp > existing.createdAt) {
+        latestDocByControl.set(controlCode, {
+          createdAt: timestamp,
+          docType: doc.docType || null,
+          originalName: doc.originalName || '',
+        });
+      }
+    }
+
+    const evidenceMappings = await this.prisma.controlEvidenceMapping.findMany({
+      where: { controlId: { in: controlIds } },
+      include: { evidenceRequest: { select: { artifact: true, description: true } } },
+    });
+
+    const controlIdToCode = new Map(controls.map((control) => [control.id, control.controlCode]));
+    const policyRequiredByControlCode = new Map<string, boolean>();
+    for (const mapping of evidenceMappings) {
+      const controlCode = controlIdToCode.get(mapping.controlId);
+      if (!controlCode) continue;
+      const text = `${mapping.evidenceRequest?.artifact || ''} ${mapping.evidenceRequest?.description || ''}`
+        .toLowerCase();
+      if (text.includes('policy')) {
+        policyRequiredByControlCode.set(controlCode, true);
+      }
+    }
+
+    const now = Date.now();
+
+    return controls.filter((control) => {
+      const code = control.controlCode;
+      const evaluation = latestEvalByControl.get(code);
+      const docs = docsByControl.get(code) || [];
+      const status = evaluation?.status || this.resolveDocStatus(docs);
+      if (status !== 'NOT_COMPLIANT' && status !== 'PARTIAL') return false;
+
+      const ownerRole = String(control.ownerRole || '').trim();
+      const latestDoc = latestDocByControl.get(code);
+      const policyRequired = policyRequiredByControlCode.get(code) || false;
+      const policyDocName = `${latestDoc?.docType || ''} ${latestDoc?.originalName || ''}`.toLowerCase();
+      const isPolicyDoc = policyDocName.includes('policy');
+      const ageDays = latestDoc
+        ? Math.floor((now - latestDoc.createdAt.getTime()) / 86400000)
+        : null;
+
+      let gapKey: ComplianceGapKey;
+      if (!docs.length) gapKey = 'missing-evidence';
+      else if (!ownerRole) gapKey = 'owner-not-assigned';
+      else if ((policyRequired || isPolicyDoc) && ageDays !== null && ageDays >= 180) {
+        gapKey = 'outdated-policy';
+      } else if (!evaluation) {
+        gapKey = 'control-not-tested';
+      } else {
+        gapKey = 'control-not-implemented';
+      }
+
+      return gapKey === gap;
+    });
   }
 
   async listFrameworks(includeDisabled = true) {

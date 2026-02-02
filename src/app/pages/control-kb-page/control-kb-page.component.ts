@@ -60,6 +60,7 @@ export class ControlKbPageComponent implements OnInit {
   ownerRoleFilter = '';
   evidenceFilter = '';
   frameworkRefFilter = '';
+  gapFilter = '';
   page = 1;
   pageSize = 10;
   pageSizeOptions = [10, 50, 100, 500];
@@ -76,6 +77,7 @@ export class ControlKbPageComponent implements OnInit {
   pendingTopicId = '';
   pendingFramework = '';
   pendingFrameworkRef = '';
+  pendingGap = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -126,6 +128,7 @@ export class ControlKbPageComponent implements OnInit {
       this.pendingTopicId = String(params.get('topicId') || '').trim();
       this.pendingFramework = String(params.get('framework') || '').trim();
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
+      this.pendingGap = String(params.get('gap') || '').trim();
       this.refreshTopics();
     });
   }
@@ -162,6 +165,7 @@ export class ControlKbPageComponent implements OnInit {
     if (this.evidenceFilter.trim()) chips.push({ label: 'Evidence', value: this.evidenceFilter.trim() });
     if (this.ownerRoleFilter.trim()) chips.push({ label: 'Owner', value: this.ownerRoleFilter.trim() });
     if (this.frameworkRefFilter.trim()) chips.push({ label: 'Framework ref', value: this.frameworkRefFilter.trim() });
+    if (this.gapFilter.trim()) chips.push({ label: 'Gap', value: this.formatGapLabel(this.gapFilter.trim()) });
     return chips;
   }
 
@@ -196,6 +200,8 @@ export class ControlKbPageComponent implements OnInit {
       this.frameworkRefFilter = this.pendingFrameworkRef;
     }
 
+    this.gapFilter = this.pendingGap;
+
     if (this.pendingTopicId) {
       const found = this.topics.find((topic) => topic.id === this.pendingTopicId);
       this.topicFilter = found ? found.id : 'all';
@@ -204,6 +210,7 @@ export class ControlKbPageComponent implements OnInit {
     this.pendingFramework = '';
     this.pendingTopicId = '';
     this.pendingFrameworkRef = '';
+    this.pendingGap = '';
   }
 
   selectTopic(topic: ControlTopic) {
@@ -233,6 +240,7 @@ export class ControlKbPageComponent implements OnInit {
         evidenceType: this.evidenceFilter.trim() || undefined,
         framework: this.frameworkFilter !== 'all' ? this.frameworkFilter : undefined,
         frameworkRef: this.frameworkRefFilter.trim() || undefined,
+        gap: this.gapFilter.trim() || undefined,
         page: this.page,
         pageSize: this.pageSize,
       })
@@ -673,6 +681,12 @@ export class ControlKbPageComponent implements OnInit {
       .filter(Boolean);
   }
 
+  formatGapLabel(value: string) {
+    return value
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+
   searchControls() {
     this.page = 1;
     this.loadControls();
@@ -790,6 +804,7 @@ export class ControlKbPageComponent implements OnInit {
     this.ownerRoleFilter = '';
     this.evidenceFilter = '';
     this.frameworkRefFilter = '';
+    this.gapFilter = '';
     this.frameworkPopoverControlId = null;
     this.topicPopoverControlId = null;
     this.page = 1;

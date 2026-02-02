@@ -10,10 +10,21 @@ export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
   @Get()
-  async getDashboard(@CurrentUser() user?: AuthUser) {
+  async getDashboard(
+    @CurrentUser() user?: AuthUser,
+    @Query('framework') framework?: string,
+    @Query('businessUnit') businessUnit?: string,
+    @Query('riskCategory') riskCategory?: string,
+    @Query('rangeDays') rangeDays?: string,
+  ) {
     if (user?.role === 'USER') {
       throw new ForbiddenException('Dashboard access is restricted');
     }
-    return this.dashboard.getDashboard();
+    return this.dashboard.getDashboard({
+      framework: framework?.trim() || null,
+      businessUnit: businessUnit?.trim() || null,
+      riskCategory: riskCategory?.trim() || null,
+      rangeDays: rangeDays ? Number(rangeDays) : undefined,
+    });
   }
 }

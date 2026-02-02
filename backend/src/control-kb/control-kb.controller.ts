@@ -139,6 +139,7 @@ export class ControlKbController {
     @Query('isoMapping') isoMapping?: string,
     @Query('framework') framework?: string,
     @Query('frameworkRef') frameworkRef?: string,
+    @Query('gap') gap?: string,
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '10',
   ) {
@@ -152,6 +153,7 @@ export class ControlKbController {
       isoMapping: isoMapping || null,
       framework: framework || null,
       frameworkRef: frameworkRef || null,
+      gap: gap || null,
       page: Number.parseInt(String(page), 10) || 1,
       pageSize: Number.parseInt(String(pageSize), 10) || 10,
       includeDisabled: user?.role === 'ADMIN',

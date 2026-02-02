@@ -174,6 +174,14 @@ export type RiskHeatmap = {
   matrix: number[][];
 };
 
+export type RiskDistribution = {
+  high: number;
+  medium: number;
+  low: number;
+  total: number;
+  exposure: 'high' | 'medium' | 'low';
+};
+
 export type FrameworkProgress = {
   framework: string;
   series: number[];
@@ -186,6 +194,159 @@ export type UploadSummary = {
     controlId: string;
     count: number;
   }>;
+};
+
+export type DashboardAttentionItem = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'high' | 'medium' | 'low';
+  route: string;
+  query?: Record<string, string>;
+};
+
+export type EvidenceHealthDetail = {
+  expiringSoon: number;
+  expired: number;
+  missing: number;
+  reusedAcrossFrameworks: number;
+  rejected: number;
+  outdated: number;
+};
+
+export type EvidenceHealthDetailV2 = {
+  expiringIn30: number;
+  expired: number;
+  missing: number;
+  reusedAcrossFrameworks: number;
+  rejected: number;
+  outdated: number;
+};
+
+export type EvidenceHealthVisual = {
+  valid: number;
+  expiringSoon: number;
+  expired: number;
+  missing: number;
+  total: number;
+};
+
+export type AttentionTodayItem = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'high' | 'medium' | 'low';
+  kind: 'control' | 'risk' | 'evidence' | 'audit';
+  dueInDays?: number | null;
+  route: string;
+  query?: Record<string, string>;
+};
+
+export type DashboardKpi = {
+  id: string;
+  label: string;
+  value: string;
+  note?: string;
+  severity?: 'high' | 'medium' | 'low';
+  trend?: { direction: 'up' | 'down' | 'flat'; delta?: number };
+  drilldown?: { route: string; query?: Record<string, string>; label?: string };
+};
+
+export type TrendSeriesV2 = {
+  id: 'riskScore' | 'compliance' | 'mttr';
+  label: string;
+  points: number[];
+  dates: string[];
+  rangeDays: number;
+  unit: 'percent' | 'days';
+};
+
+export type FrameworkComparisonV2 = {
+  framework: string;
+  totalControls: number;
+  compliant: number;
+  partial: number;
+  notCompliant: number;
+  unknown: number;
+  completionPercent: number;
+  failedControls: number;
+};
+
+export type RecommendedActionV2 = {
+  id: string;
+  title: string;
+  reason: string;
+  route: string;
+  query?: Record<string, string>;
+  severity: 'high' | 'medium' | 'low';
+  cta?: string;
+};
+
+export type ComplianceGapItem = {
+  id: 'missing-evidence' | 'control-not-implemented' | 'control-not-tested' | 'owner-not-assigned' | 'outdated-policy';
+  label: string;
+  count: number;
+  route: string;
+  query?: Record<string, string>;
+};
+
+export type UpcomingAudit = {
+  id: string;
+  name: string;
+  framework?: string | null;
+  date: string;
+  daysUntil: number;
+  route: string;
+  query?: Record<string, string>;
+};
+
+export type AuditSummary = {
+  upcoming14: number;
+  upcoming30: number;
+  upcoming90: number;
+  upcoming: UpcomingAudit[];
+};
+
+export type ExecutiveSummary = {
+  headline: string;
+  highlights: string[];
+  risks: string[];
+  lastUpdated: string;
+};
+
+export type DashboardFilterOptions = {
+  frameworks: string[];
+  businessUnits: string[];
+  riskCategories: string[];
+  timeRanges: number[];
+};
+
+export type DashboardTrends = {
+  riskScore: number[];
+  compliance: number[];
+  mttr: number[];
+};
+
+export type FrameworkComparison = {
+  framework: string;
+  completionPercent: number;
+  failedControls: number;
+};
+
+export type RecommendedAction = {
+  id: string;
+  title: string;
+  reason: string;
+  route: string;
+  query?: Record<string, string>;
+  severity: 'high' | 'medium' | 'low';
+};
+
+export type DashboardFilters = {
+  framework?: string | null;
+  businessUnit?: string | null;
+  riskCategory?: string | null;
+  rangeDays?: number | null;
 };
 
 export type DashboardRiskControl = {
@@ -206,8 +367,26 @@ export type DashboardActivityItem = {
 export type DashboardResponse = {
   ok: boolean;
   metrics: DashboardMetrics;
+  appliedFilters?: DashboardFilters;
+  filterOptions?: DashboardFilterOptions;
+  attentionToday?: AttentionTodayItem[];
+  kpis?: DashboardKpi[];
+  attentionItems?: DashboardAttentionItem[];
+  evidenceHealthDetail?: EvidenceHealthDetail;
+  evidenceHealthDetailV2?: EvidenceHealthDetailV2;
+  trends?: DashboardTrends;
+  trendsV2?: TrendSeriesV2[];
+  frameworkComparison?: FrameworkComparison[];
+  frameworkComparisonV2?: FrameworkComparisonV2[];
+  recommendedActions?: RecommendedAction[];
+  recommendedActionsV2?: RecommendedActionV2[];
+  auditSummary?: AuditSummary;
+  executiveSummary?: ExecutiveSummary;
+  complianceGaps?: ComplianceGapItem[];
   complianceBreakdown?: ComplianceBreakdown;
   riskHeatmap?: RiskHeatmap;
+  riskDistribution?: RiskDistribution;
+  evidenceHealthVisual?: EvidenceHealthVisual;
   frameworkProgress?: FrameworkProgress[];
   months?: string[];
   uploadSummary?: UploadSummary;
@@ -350,8 +529,18 @@ export class ApiService {
     );
   }
 
-  getDashboard() {
-    return this.http.get<DashboardResponse>('/api/dashboard');
+  getDashboard(filters?: {
+    framework?: string;
+    businessUnit?: string;
+    riskCategory?: string;
+    rangeDays?: number;
+  }) {
+    let params = new HttpParams();
+    if (filters?.framework) params = params.set('framework', filters.framework);
+    if (filters?.businessUnit) params = params.set('businessUnit', filters.businessUnit);
+    if (filters?.riskCategory) params = params.set('riskCategory', filters.riskCategory);
+    if (typeof filters?.rangeDays === 'number') params = params.set('rangeDays', filters.rangeDays);
+    return this.http.get<DashboardResponse>('/api/dashboard', { params });
   }
 
   submitEvidence(documentIds: string[], controlId: string, status: 'COMPLIANT' | 'PARTIAL', note?: string) {
@@ -419,6 +608,7 @@ export class ApiService {
     isoMapping?: string;
     framework?: string;
     frameworkRef?: string;
+    gap?: string;
     page?: number;
     pageSize?: number;
   }) {
@@ -431,6 +621,7 @@ export class ApiService {
     if (paramsInput.isoMapping) params = params.set('isoMapping', paramsInput.isoMapping);
     if (paramsInput.framework) params = params.set('framework', paramsInput.framework);
     if (paramsInput.frameworkRef) params = params.set('frameworkRef', paramsInput.frameworkRef);
+    if (paramsInput.gap) params = params.set('gap', paramsInput.gap);
     if (paramsInput.page) params = params.set('page', paramsInput.page);
     if (paramsInput.pageSize) params = params.set('pageSize', paramsInput.pageSize);
     return this.http.get<ControlDefinitionListResponse>('/api/control-kb/controls', { params });
