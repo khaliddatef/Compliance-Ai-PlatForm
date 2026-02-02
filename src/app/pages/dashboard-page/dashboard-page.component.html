@@ -135,6 +135,28 @@
     </ng-template>
   </section>
 
+  <section class="panel" *ngIf="!loading && !error">
+    <div class="panel-header">
+      <h3>Top Uploaded Controls</h3>
+      <span class="chip">By document count</span>
+    </div>
+    <div class="table" *ngIf="uploadSummary.documentsPerControl.length; else emptyUploads">
+      <div class="row header">
+        <span>Control</span>
+        <span>Documents</span>
+        <span>Note</span>
+      </div>
+      <div class="row" *ngFor="let item of uploadSummary.documentsPerControl">
+        <span>{{ item.controlId }}</span>
+        <span>{{ item.count }}</span>
+        <span>{{ item.count > 1 ? 'Multiple docs mapped' : 'Single doc mapped' }}</span>
+      </div>
+    </div>
+    <ng-template #emptyUploads>
+      <p class="empty">No uploads mapped to controls yet.</p>
+    </ng-template>
+  </section>
+
   <div class="grid-two" *ngIf="!loading && !error">
     <section class="panel">
       <div class="panel-header">

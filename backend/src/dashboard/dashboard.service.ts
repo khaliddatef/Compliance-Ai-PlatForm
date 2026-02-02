@@ -70,6 +70,15 @@ type FrameworkProgress = {
   series: number[];
 };
 
+type UploadSummary = {
+  totalUploadedDocuments: number;
+  distinctMatchedControls: number;
+  documentsPerControl: Array<{
+    controlId: string;
+    count: number;
+  }>;
+};
+
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
@@ -107,24 +116,22 @@ export class DashboardService {
 
   private resolveImpactLevel(status: string) {
     const normalized = (status || '').toUpperCase();
-    if (normalized === 'NOT_COMPLIANT') return 5;
-    if (normalized === 'PARTIAL') return 3;
+    if (normalized === 'NOT_COMPLIANT') return 3;
+    if (normalized === 'PARTIAL') return 2;
     if (normalized === 'COMPLIANT') return 1;
     return 2;
   }
 
   private resolveLikelihoodLevel(lastSeen?: Date | null) {
-    if (!lastSeen) return 3;
+    if (!lastSeen) return 2;
     const days = Math.max(0, Math.floor((Date.now() - lastSeen.getTime()) / 86400000));
-    if (days <= 7) return 1;
-    if (days <= 30) return 2;
-    if (days <= 90) return 3;
-    if (days <= 180) return 4;
-    return 5;
+    if (days <= 14) return 1;
+    if (days <= 90) return 2;
+    return 3;
   }
 
   private buildHeatmapMatrix() {
-    return Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => 0));
+    return Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => 0));
   }
 
   private buildMonthSeries(count = 6) {
@@ -140,8 +147,21 @@ export class DashboardService {
   }
 
   async getDashboard() {
-    const controls = await this.prisma.controlDefinition.findMany({
+    const activeFramework = await this.prisma.framework.findFirst({
       where: { status: 'enabled' },
+      orderBy: { updatedAt: 'desc' },
+      select: { name: true },
+    });
+
+    const activeFrameworkName = String(activeFramework?.name || '').trim();
+
+    const controls = await this.prisma.controlDefinition.findMany({
+      where: {
+        status: 'enabled',
+        ...(activeFrameworkName
+          ? { frameworkMappings: { some: { framework: activeFrameworkName } } }
+          : {}),
+      },
       select: {
         id: true,
         controlCode: true,
@@ -195,23 +215,8 @@ export class DashboardService {
       lastSeenByControl.set(controlCode, evaluation.createdAt);
     }
 
-    for (const control of allowedControls) {
-      const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
-      if (statusCounts[status as keyof typeof statusCounts] !== undefined) {
-        statusCounts[status as keyof typeof statusCounts] += 1;
-      } else {
-        statusCounts.UNKNOWN += 1;
-      }
-    }
-
     const totalControls = allowedControls.length;
-    const evaluatedControls = latestEvaluations.length;
     const partialWeight = 0.6;
-    const coveragePercent = totalControls
-      ? Math.round(
-          ((statusCounts.COMPLIANT + statusCounts.PARTIAL * partialWeight) / totalControls) * 100,
-        )
-      : 0;
 
     let totalDocuments = 0;
     let awaitingReview = 0;
@@ -254,6 +259,7 @@ export class DashboardService {
     const lastReviewAt = evaluations[0]?.createdAt ?? null;
 
     const docsByControl = new Map<string, typeof documents>();
+    const latestDocByControl = new Map<string, { status: string; createdAt: Date }>();
     const acceptedControls = new Set<string>();
     let reviewedDocs = 0;
     let submittedDocs = 0;
@@ -263,12 +269,69 @@ export class DashboardService {
       const list = docsByControl.get(controlCode) || [];
       list.push(doc);
       docsByControl.set(controlCode, list);
+      const normalizedStatus = String(doc.matchStatus || '').toUpperCase();
+      if (normalizedStatus) {
+        const existing = latestDocByControl.get(controlCode);
+        if (!existing || doc.createdAt > existing.createdAt) {
+          latestDocByControl.set(controlCode, { status: normalizedStatus, createdAt: doc.createdAt });
+        }
+      }
       if (doc.reviewedAt) reviewedDocs += 1;
       if (doc.submittedAt) submittedDocs += 1;
       if (doc.submittedAt && String(doc.matchStatus || '').toUpperCase() === 'COMPLIANT') {
         acceptedControls.add(controlCode);
       }
     }
+
+    const resolveDocStatus = (docs: typeof documents) => {
+      const statuses = docs
+        .map((doc) => String(doc.matchStatus || '').toUpperCase())
+        .filter(Boolean);
+      if (statuses.includes('COMPLIANT')) return 'COMPLIANT';
+      if (statuses.includes('PARTIAL')) return 'PARTIAL';
+      if (statuses.includes('NOT_COMPLIANT')) return 'NOT_COMPLIANT';
+      return 'UNKNOWN';
+    };
+
+    const distinctMatchedControls = docsByControl.size;
+    const documentsPerControl = Array.from(docsByControl.entries())
+      .map(([controlId, docs]) => ({
+        controlId,
+        count: docs.length,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    let evaluatedControls = latestEvaluations.length;
+    for (const control of allowedControls) {
+      if (statusByControlCode.has(control.controlCode)) continue;
+      const docs = docsByControl.get(control.controlCode) || [];
+      const docStatus = resolveDocStatus(docs);
+      if (docStatus !== 'UNKNOWN') {
+        evaluatedControls += 1;
+      }
+      statusByControlCode.set(control.controlCode, docStatus);
+      if (!lastSeenByControl.has(control.controlCode)) {
+        const latestDoc = latestDocByControl.get(control.controlCode);
+        if (latestDoc) {
+          lastSeenByControl.set(control.controlCode, latestDoc.createdAt);
+        }
+      }
+    }
+
+    for (const control of allowedControls) {
+      const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
+      if (statusCounts[status as keyof typeof statusCounts] !== undefined) {
+        statusCounts[status as keyof typeof statusCounts] += 1;
+      } else {
+        statusCounts.UNKNOWN += 1;
+      }
+    }
+
+    const coveragePercent = totalControls
+      ? Math.round(
+          ((statusCounts.COMPLIANT + statusCounts.PARTIAL * partialWeight) / totalControls) * 100,
+        )
+      : 0;
 
     const evidenceHealth: EvidenceHealth = {
       high: 0,
@@ -355,8 +418,8 @@ export class DashboardService {
       unknownPct: totalControls ? Math.round((statusCounts.UNKNOWN / totalControls) * 100) : 0,
     };
 
-    const impactLabels = ['Low (1)', 'Medium (2)', 'High (3)', 'Very High (4)', 'Critical (5)'];
-    const likelihoodLabels = ['Improbable (1)', 'Remote (2)', 'Occasional (3)', 'Probable (4)', 'Frequent (5)'];
+    const impactLabels = ['Low', 'Medium', 'High'];
+    const likelihoodLabels = ['Low', 'Medium', 'High'];
     const heatmapMatrix = this.buildHeatmapMatrix();
     for (const control of allowedControls) {
       const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
@@ -474,11 +537,14 @@ export class DashboardService {
       (doc) => !doc.reviewedAt && doc.createdAt.getTime() < overdueThreshold,
     ).length;
 
-    const frameworks = await this.prisma.framework.findMany({
-      where: { status: 'enabled' },
-      select: { name: true },
-    });
-    const frameworkNames = frameworks.map((fw) => fw.name).filter(Boolean);
+    const frameworkNames = activeFrameworkName
+      ? [activeFrameworkName]
+      : (await this.prisma.framework.findMany({
+          where: { status: 'enabled' },
+          select: { name: true },
+        }))
+          .map((fw) => fw.name)
+          .filter(Boolean);
 
     const controlsByFramework = new Map<string, string[]>();
     for (const control of allowedControls) {
@@ -503,6 +569,33 @@ export class DashboardService {
       list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
 
+    const documentsByControl = new Map<string, Array<{ createdAt: Date; status: string }>>();
+    for (const doc of documents) {
+      const code = String(doc.matchControlId || '').trim();
+      if (!code) continue;
+      const status = String(doc.matchStatus || '').toUpperCase();
+      if (!status) continue;
+      const list = documentsByControl.get(code) || [];
+      list.push({ createdAt: doc.createdAt, status });
+      documentsByControl.set(code, list);
+    }
+    for (const list of documentsByControl.values()) {
+      list.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }
+
+    const eventByControl = new Map<string, Array<{ createdAt: Date; status: string }>>();
+    for (const code of allowedControlCodes) {
+      const evalEvents = evaluationsByControl.get(code);
+      if (evalEvents && evalEvents.length) {
+        eventByControl.set(code, evalEvents);
+        continue;
+      }
+      const docEvents = documentsByControl.get(code) || [];
+      if (docEvents.length) {
+        eventByControl.set(code, docEvents);
+      }
+    }
+
     const months = this.buildMonthSeries(6);
     const frameworkProgress: FrameworkProgress[] = frameworkNames.map((framework) => {
       const controlCodes = controlsByFramework.get(framework) || [];
@@ -510,8 +603,8 @@ export class DashboardService {
         if (!controlCodes.length) return 0;
         let sum = 0;
         for (const code of controlCodes) {
-          const evals = evaluationsByControl.get(code) || [];
-          const match = evals.find((item) => item.createdAt.getTime() <= month.end.getTime());
+          const events = eventByControl.get(code) || [];
+          const match = events.find((item) => item.createdAt.getTime() <= month.end.getTime());
           const status = match?.status || 'UNKNOWN';
           if (status === 'COMPLIANT') sum += 1;
           else if (status === 'PARTIAL') sum += partialWeight;
@@ -520,6 +613,12 @@ export class DashboardService {
       });
       return { framework, series };
     });
+
+    const uploadSummary: UploadSummary = {
+      totalUploadedDocuments: totalDocuments,
+      distinctMatchedControls,
+      documentsPerControl: documentsPerControl.slice(0, 8),
+    };
 
     const openRisks = riskControls.length;
 
@@ -541,6 +640,7 @@ export class DashboardService {
         auditReadiness,
         submissionReadiness,
       },
+      uploadSummary,
       complianceBreakdown,
       riskHeatmap,
       frameworkProgress,

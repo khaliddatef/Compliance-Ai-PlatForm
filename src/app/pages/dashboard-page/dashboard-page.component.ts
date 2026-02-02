@@ -30,6 +30,11 @@ export class DashboardPageComponent implements OnInit {
   likelihoodLabels: string[] = [];
   frameworkProgress: { framework: string; series: number[]; color: string }[] = [];
   frameworkMonths: string[] = [];
+  uploadSummary = {
+    totalUploadedDocuments: 0,
+    distinctMatchedControls: 0,
+    documentsPerControl: [] as Array<{ controlId: string; count: number }>,
+  };
   riskRows: {
     control: string;
     owner: string;
@@ -114,6 +119,16 @@ export class DashboardPageComponent implements OnInit {
             value: `${openRisks}`,
             note: 'Partial or missing controls',
           },
+          {
+            label: 'Documents Uploaded',
+            value: `${res?.uploadSummary?.totalUploadedDocuments ?? 0}`,
+            note: 'Total evidence files',
+          },
+          {
+            label: 'Matched Controls',
+            value: `${res?.uploadSummary?.distinctMatchedControls ?? 0}`,
+            note: 'Distinct controls with uploads',
+          },
         ];
 
         const breakdown = res?.complianceBreakdown;
@@ -127,6 +142,7 @@ export class DashboardPageComponent implements OnInit {
 
         this.frameworkMonths = res?.months || this.frameworkMonths;
         this.frameworkProgress = this.mapFrameworkProgress(res?.frameworkProgress || []);
+        this.uploadSummary = res?.uploadSummary || this.uploadSummary;
 
         this.riskRows = (res?.riskControls || []).map((row) => ({
           control: row.controlId,
@@ -184,10 +200,9 @@ export class DashboardPageComponent implements OnInit {
 
   getHeatmapColor(impactIndex: number, likelihoodIndex: number) {
     const score = impactIndex + likelihoodIndex;
-    if (score <= 2) return '#16a34a';
-    if (score <= 4) return '#86efac';
-    if (score <= 5) return '#facc15';
-    if (score <= 6) return '#fb923c';
+    if (score <= 1) return '#16a34a';
+    if (score <= 2) return '#86efac';
+    if (score <= 3) return '#facc15';
     return '#ef4444';
   }
 

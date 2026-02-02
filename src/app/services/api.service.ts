@@ -179,6 +179,15 @@ export type FrameworkProgress = {
   series: number[];
 };
 
+export type UploadSummary = {
+  totalUploadedDocuments: number;
+  distinctMatchedControls: number;
+  documentsPerControl: Array<{
+    controlId: string;
+    count: number;
+  }>;
+};
+
 export type DashboardRiskControl = {
   controlId: string;
   controlDbId?: string | null;
@@ -201,6 +210,7 @@ export type DashboardResponse = {
   riskHeatmap?: RiskHeatmap;
   frameworkProgress?: FrameworkProgress[];
   months?: string[];
+  uploadSummary?: UploadSummary;
   riskCoverage: {
     id: string;
     title: string;
