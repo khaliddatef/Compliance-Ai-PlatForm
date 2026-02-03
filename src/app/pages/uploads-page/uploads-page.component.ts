@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService, UploadDocumentRecord } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { UploadDropzoneComponent } from '../../components/upload-dropzone/upload-dropzone.component';
 
 type UploadRow = {
   id: string;
@@ -24,7 +25,7 @@ type UploadRow = {
 @Component({
   selector: 'app-uploads-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UploadDropzoneComponent],
   templateUrl: './uploads-page.component.html',
   styleUrl: './uploads-page.component.css'
 })
@@ -32,6 +33,9 @@ export class UploadsPageComponent implements OnInit {
   files: UploadRow[] = [];
   loading = true;
   error = '';
+  uploadError = '';
+  uploadNotice = '';
+  uploading = false;
   searchTerm = '';
   frameworkFilter = 'all';
   statusFilter = 'all';
@@ -70,6 +74,37 @@ export class UploadsPageComponent implements OnInit {
       error: () => {
         this.error = 'Unable to load uploaded files right now.';
         this.loading = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  handleManagerUpload(files: File[]) {
+    if (!this.canManageStatus || this.uploading) return;
+    const cleanFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (!cleanFiles.length) return;
+
+    const userId = this.auth.user()?.id || '';
+    const conversationId = userId ? `uploads-${userId}` : crypto.randomUUID();
+    const language = this.getPreferredLanguage();
+
+    this.uploading = true;
+    this.uploadError = '';
+    this.uploadNotice = 'Uploading...';
+    this.cdr.markForCheck();
+
+    this.api.uploadCustomerFiles(conversationId, cleanFiles, language).subscribe({
+      next: (res) => {
+        const docs = Array.isArray(res?.documents) ? res.documents : [];
+        const count = docs.length || res?.count || cleanFiles.length;
+        this.uploadNotice = `Uploaded ${count} file${count === 1 ? '' : 's'} successfully.`;
+        this.uploading = false;
+        this.refresh();
+      },
+      error: () => {
+        this.uploadError = 'Unable to upload files right now.';
+        this.uploadNotice = '';
+        this.uploading = false;
         this.cdr.markForCheck();
       },
     });
@@ -313,5 +348,11 @@ export class UploadsPageComponent implements OnInit {
       default:
         return sorted.sort((a, b) => b.uploadedAt - a.uploadedAt);
     }
+  }
+
+  private getPreferredLanguage(): 'ar' | 'en' {
+    if (typeof navigator === 'undefined') return 'en';
+    const lang = String(navigator.language || '').toLowerCase();
+    return lang.startsWith('ar') ? 'ar' : 'en';
   }
 }

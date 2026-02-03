@@ -8,6 +8,14 @@
       <button class="primary-btn" type="button" (click)="refresh()">Refresh</button>
     </div>
 
+    <div class="manager-upload" *ngIf="canManageStatus">
+      <app-upload-dropzone (filesAdded)="handleManagerUpload($event)"></app-upload-dropzone>
+      <div class="manager-upload-status" *ngIf="uploadNotice || uploadError">
+        <span *ngIf="uploadNotice" [class.loading]="uploading">{{ uploadNotice }}</span>
+        <span class="error" *ngIf="uploadError">{{ uploadError }}</span>
+      </div>
+    </div>
+
     <div class="filters">
       <div class="search-row">
         <input

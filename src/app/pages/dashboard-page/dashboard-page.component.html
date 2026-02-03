@@ -14,8 +14,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <button class="ghost" type="button" (click)="toggleExecutive()">Executive View</button>
-      <button class="ghost" type="button" (click)="exportExecutivePdf()" [disabled]="!executiveMode">Export PDF</button>
+      <button class="export-btn" type="button" (click)="exportExecutivePdf()">Export PDF</button>
       <a class="cta" routerLink="/home">Continue in chat</a>
     </div>
   </div>
@@ -36,44 +35,99 @@
   </section>
 
   <div class="grid-two" *ngIf="!loading && !error && !executiveMode">
-    <section class="panel clickable" (click)="openStat('risk')" role="button" tabindex="0">
-      <div class="panel-header">
-        <h3>Risk Distribution</h3>
-      </div>
-      <div class="donut" [style.background]="riskDonutStyle">
-        <div class="donut-center">
-          <div class="donut-total">{{ riskDistribution.exposure | uppercase }}</div>
-          <div class="donut-label">Exposure</div>
+    <section class="panel risk-panel">
+      <div class="panel-header risk-header">
+        <div>
+          <h3>Risk Heatmap</h3>
+          <div class="risk-summary">
+            <span class="risk-summary-label">Overall Risk Exposure</span>
+            <span [class]="getRiskBadgeClass()">{{ riskExposureLabel }}</span>
+          </div>
         </div>
+        <button
+          class="ghost clear-filter"
+          type="button"
+          *ngIf="hasRiskFilter"
+          (click)="clearRiskFilters()"
+        >
+          Clear filter
+        </button>
       </div>
-      <div class="legend-list">
-        <div class="legend-item"><span class="dot high"></span>High {{ riskDistribution.high }}</div>
-        <div class="legend-item"><span class="dot medium"></span>Medium {{ riskDistribution.medium }}</div>
-        <div class="legend-item"><span class="dot low"></span>Low {{ riskDistribution.low }}</div>
-      </div>
-      <div class="heatmap">
-        <div class="panel-header">
-          <h4>Risk Heatmap</h4>
-        </div>
+      <div class="heatmap risk-heatmap">
         <div class="heatmap-grid">
           <div class="heatmap-y">
             <span *ngFor="let label of impactLabels">{{ label }}</span>
           </div>
           <div class="heatmap-matrix">
             <div class="heatmap-row" *ngFor="let row of riskHeatmap; let rowIndex = index">
-              <div
+              <button
                 class="heatmap-cell"
+                type="button"
                 *ngFor="let cell of row; let colIndex = index"
-                [style.background]="getHeatmapColor(rowIndex, colIndex)"
+                [class.empty]="cell === 0"
+                [class.selected]="isHeatmapCellSelected(rowIndex, colIndex)"
+                [style.background]="getHeatmapColor(rowIndex, colIndex, cell)"
+                [attr.title]="getHeatmapTooltip(rowIndex, colIndex, cell)"
+                (click)="toggleHeatmapCell(rowIndex, colIndex)"
               >
-                {{ cell }}
-              </div>
+                <span [class.muted]="cell === 0">{{ formatHeatmapValue(cell) }}</span>
+              </button>
             </div>
             <div class="heatmap-x">
               <span *ngFor="let label of likelihoodLabels">{{ label }}</span>
             </div>
           </div>
         </div>
+      </div>
+      <div class="risk-drivers-block">
+        <div class="gap-header">
+          <div>
+            <h4>Top Risk Drivers</h4>
+            <p *ngIf="riskDriversContext; else riskDriversSubtitle">{{ riskDriversContext }}</p>
+            <ng-template #riskDriversSubtitle>
+              <p>Primary factors contributing to current risk exposure</p>
+            </ng-template>
+          </div>
+        </div>
+        <div class="gap-chart" *ngIf="riskDrivers.length; else emptyRiskDrivers">
+          <button
+            class="gap-row risk-driver-row"
+            type="button"
+            *ngFor="let driver of riskDrivers; let idx = index"
+            [class.active]="selectedRiskDriverId === driver.id"
+            [attr.title]="getRiskDriverTooltip(driver)"
+            [attr.aria-pressed]="selectedRiskDriverId === driver.id"
+            (click)="toggleRiskDriver(driver.id)"
+          >
+            <span class="gap-label">{{ driver.label }}</span>
+            <span class="gap-bar">
+              <span class="gap-fill" [style.width.%]="getRiskDriverWidth(driver)" [style.background]="getRiskDriverColor(idx)"></span>
+            </span>
+            <span class="gap-count">{{ driver.count }}</span>
+          </button>
+        </div>
+        <ng-template #emptyRiskDrivers>
+          <p class="empty">No major risk drivers identified.</p>
+        </ng-template>
+      </div>
+      <div class="risk-filter" *ngIf="hasRiskFilter">
+        <div class="risk-filter-header">
+          <div>
+            <h4>Filtered risks</h4>
+            <p>{{ selectedRiskFilterLabel }}</p>
+          </div>
+        </div>
+        <div class="risk-list" *ngIf="filteredRiskControls.length; else emptyRiskFilter">
+          <div class="risk-row" *ngFor="let item of filteredRiskControls">
+            <div class="risk-main">
+              <div class="risk-title">{{ item.controlCode }} — {{ item.title }}</div>
+              <div class="risk-meta">Status: {{ formatStatusLabel(item.status) }}</div>
+            </div>
+          </div>
+        </div>
+        <ng-template #emptyRiskFilter>
+          <p class="empty">No risks match this filter.</p>
+        </ng-template>
       </div>
     </section>
 
@@ -125,7 +179,10 @@
     </div>
     <div class="attention-grid" *ngIf="attentionToday.length; else emptyAttention">
       <button class="attention-card" type="button" *ngFor="let item of attentionToday" (click)="openAttention(item)">
-        <span class="attention-label">{{ item.label }}</span>
+        <div class="attention-meta">
+          <span class="attention-label">{{ item.label }}</span>
+          <span class="attention-hint">{{ getAttentionHint(item) }}</span>
+        </div>
         <span class="attention-count">{{ item.count }}</span>
       </button>
     </div>

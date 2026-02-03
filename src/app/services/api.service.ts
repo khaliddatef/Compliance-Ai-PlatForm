@@ -123,6 +123,21 @@ export type UploadListResponse = {
   documents: UploadDocumentRecord[];
 };
 
+export type UploadSaveResponse = {
+  ok: boolean;
+  conversationId: string;
+  kind: 'CUSTOMER' | 'STANDARD';
+  count: number;
+  documents: UploadDocumentRecord[];
+  ingestResults?: Array<{
+    documentId: string;
+    ok: boolean;
+    chunks?: number;
+    message?: string;
+  }>;
+  customerVectorStoreId?: string | null;
+};
+
 export type DashboardMetrics = {
   coveragePercent: number;
   evaluatedControls: number;
@@ -174,12 +189,28 @@ export type RiskHeatmap = {
   matrix: number[][];
 };
 
+export type RiskHeatmapControl = {
+  controlCode: string;
+  controlDbId?: string | null;
+  title?: string | null;
+  status: string;
+  impact: string;
+  likelihood: string;
+  driverId?: string | null;
+};
+
 export type RiskDistribution = {
   high: number;
   medium: number;
   low: number;
   total: number;
   exposure: 'high' | 'medium' | 'low';
+};
+
+export type RiskDriver = {
+  id: string;
+  label: string;
+  count: number;
 };
 
 export type FrameworkProgress = {
@@ -384,12 +415,14 @@ export type DashboardResponse = {
   executiveSummary?: ExecutiveSummary;
   complianceGaps?: ComplianceGapItem[];
   complianceBreakdown?: ComplianceBreakdown;
+  riskDrivers?: RiskDriver[];
   riskHeatmap?: RiskHeatmap;
   riskDistribution?: RiskDistribution;
   evidenceHealthVisual?: EvidenceHealthVisual;
   frameworkProgress?: FrameworkProgress[];
   months?: string[];
   uploadSummary?: UploadSummary;
+  riskHeatmapControls?: RiskHeatmapControl[];
   riskCoverage: {
     id: string;
     title: string;
@@ -491,7 +524,7 @@ export class ApiService {
     let params = new HttpParams().set('conversationId', conversationId).set('kind', 'CUSTOMER');
     if (language) params = params.set('language', language);
 
-    return this.http.post('/api/uploads', fd, { params });
+    return this.http.post<UploadSaveResponse>('/api/uploads', fd, { params });
   }
 
   listUploads(conversationId: string) {

@@ -90,6 +90,12 @@ type RiskDistribution = {
   exposure: 'high' | 'medium' | 'low';
 };
 
+type RiskDriver = {
+  id: 'missing-evidence' | 'owner-not-assigned' | 'control-not-tested';
+  label: string;
+  count: number;
+};
+
 type AttentionItem = {
   id: string;
   label: string;
@@ -776,7 +782,7 @@ export class DashboardService {
     const complianceGapCounts = new Map<ComplianceGapItem['id'], number>();
     const resolveGapForControl = (control: (typeof allowedControls)[number]) => {
       const status = (statusByControlCode.get(control.controlCode) || 'UNKNOWN').toUpperCase();
-      if (status !== 'NOT_COMPLIANT' && status !== 'PARTIAL') return null;
+      if (status === 'COMPLIANT') return null;
 
       const docs = docsByControl.get(control.controlCode) || [];
       const ownerRole = String(control.ownerRole || '').trim();
@@ -794,7 +800,7 @@ export class DashboardService {
       if ((policyRequired || isPolicyDoc) && ageDays !== null && ageDays >= 180) {
         return 'outdated-policy' as const;
       }
-      if (!hasEvaluation) return 'control-not-tested' as const;
+      if (!hasEvaluation || status === 'UNKNOWN') return 'control-not-tested' as const;
       return 'control-not-implemented' as const;
     };
 
@@ -815,6 +821,48 @@ export class DashboardService {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
+    const riskDriverLabels: Record<
+      'missing-evidence' | 'owner-not-assigned' | 'control-not-tested',
+      string
+    > = {
+      'missing-evidence': 'Missing Evidence',
+      'owner-not-assigned': 'Unassigned Owners',
+      'control-not-tested': 'Unreviewed Controls',
+    };
+
+    const resolveRiskDriver = (control: (typeof allowedControls)[number]) => {
+      const status = (statusByControlCode.get(control.controlCode) || 'UNKNOWN').toUpperCase();
+      if (status === 'COMPLIANT') return null;
+
+      const docs = docsByControl.get(control.controlCode) || [];
+      const ownerRole = String(control.ownerRole || '').trim();
+      const hasEvaluation = latestByControl.has(control.controlCode);
+
+      if (!docs.length) return 'missing-evidence' as const;
+      if (!ownerRole) return 'owner-not-assigned' as const;
+      if (!hasEvaluation) return 'control-not-tested' as const;
+      return 'missing-evidence' as const;
+    };
+
+    const riskDriverCounts = new Map<
+      'missing-evidence' | 'owner-not-assigned' | 'control-not-tested',
+      number
+    >();
+    for (const control of allowedControls) {
+      const driver = resolveRiskDriver(control);
+      if (!driver) continue;
+      riskDriverCounts.set(driver, (riskDriverCounts.get(driver) || 0) + 1);
+    }
+
+    const riskDrivers: RiskDriver[] = Array.from(riskDriverCounts.entries())
+      .map(([id, count]) => ({
+        id,
+        label: riskDriverLabels[id],
+        count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
     const impactLabels = ['Low', 'Medium', 'High'];
     const likelihoodLabels = ['Low', 'Medium', 'High'];
     const heatmapMatrix = this.buildHeatmapMatrix();
@@ -829,6 +877,22 @@ export class DashboardService {
       likelihoodLabels,
       matrix: heatmapMatrix,
     };
+
+    const riskHeatmapControls = allowedControls.map((control) => {
+      const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
+      const impactIndex = this.resolveImpactLevel(status);
+      const likelihoodIndex = this.resolveLikelihoodLevel(lastSeenByControl.get(control.controlCode) || null);
+      const driverId = resolveRiskDriver(control);
+      return {
+        controlCode: control.controlCode,
+        controlDbId: control.id,
+        title: control.title || control.controlCode,
+        status,
+        impact: impactLabels[impactIndex - 1] || 'Low',
+        likelihood: likelihoodLabels[likelihoodIndex - 1] || 'Low',
+        driverId: driverId || null,
+      };
+    });
 
     const riskDistribution: RiskDistribution = {
       high: 0,
@@ -1415,7 +1479,9 @@ export class DashboardService {
       },
       uploadSummary,
       complianceBreakdown,
+      riskDrivers,
       riskHeatmap,
+      riskHeatmapControls,
       riskDistribution,
       evidenceHealthVisual,
       frameworkProgress,

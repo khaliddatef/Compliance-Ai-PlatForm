@@ -17,6 +17,7 @@ All fields are additive and backward-compatible with the existing payload.
 - `riskDistribution`: Roll-up of risk heatmap into high/medium/low exposure buckets.
 - `evidenceHealthVisual`: Visual-ready evidence freshness counts (valid/expiring/expired/missing).
 - `complianceGaps`: Top compliance gap reasons for non-compliant/partial controls (Missing Evidence, Control Not Implemented, Control Not Tested, Owner Not Assigned, Outdated Policy).
+- `riskDrivers`: Top 3 drivers behind current risk exposure (Missing Evidence, Unassigned Owners, Unreviewed Controls).
 
 ## Sample response (trimmed)
 
@@ -164,6 +165,11 @@ All fields are additive and backward-compatible with the existing payload.
     "total": 62,
     "exposure": "medium"
   },
+  "riskDrivers": [
+    { "id": "missing-evidence", "label": "Missing Evidence", "count": 8 },
+    { "id": "owner-not-assigned", "label": "Unassigned Owners", "count": 5 },
+    { "id": "control-not-tested", "label": "Unreviewed Controls", "count": 3 }
+  ],
   "evidenceHealthVisual": {
     "valid": 45,
     "expiringSoon": 3,

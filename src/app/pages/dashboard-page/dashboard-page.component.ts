@@ -18,6 +18,8 @@ import {
   TrendSeriesV2,
   AuditSummary,
   ExecutiveSummary,
+  RiskHeatmapControl,
+  RiskDriver,
 } from '../../services/api.service';
 
 @Component({
@@ -55,6 +57,12 @@ export class DashboardPageComponent implements OnInit {
   riskDonutStyle = '';
   impactLabels: string[] = [];
   likelihoodLabels: string[] = [];
+  riskHeatmapControls: RiskHeatmapControl[] = [];
+  riskDrivers: RiskDriver[] = [];
+  selectedHeatmapCell: { impactIndex: number; likelihoodIndex: number } | null = null;
+  selectedRiskDriverId: string | null = null;
+  riskExposureLabel: 'Low' | 'Medium' | 'High' = 'Low';
+  riskInsight = '';
   frameworkProgress: { framework: string; series: number[]; color: string }[] = [];
   frameworkMonths: string[] = [];
   uploadSummary = {
@@ -202,10 +210,18 @@ export class DashboardPageComponent implements OnInit {
         this.riskHeatmap = heatmap?.matrix || [];
         this.impactLabels = heatmap?.impactLabels || [];
         this.likelihoodLabels = heatmap?.likelihoodLabels || [];
+        this.riskHeatmapControls = Array.isArray(res?.riskHeatmapControls)
+          ? res.riskHeatmapControls
+          : [];
+        this.riskDrivers = Array.isArray(res?.riskDrivers) ? res.riskDrivers : [];
         this.riskDistribution = res?.riskDistribution
           ? res.riskDistribution
           : this.buildRiskDistribution(this.riskHeatmap);
+        this.riskExposureLabel = this.computeRiskExposureLabel(this.riskHeatmap);
+        this.riskInsight = this.computeRiskInsight(this.riskHeatmap);
         this.riskDonutStyle = this.buildRiskDonutStyle(this.riskDistribution);
+        this.selectedHeatmapCell = null;
+        this.selectedRiskDriverId = null;
 
         this.frameworkMonths = res?.months || this.frameworkMonths;
         this.frameworkProgress = this.mapFrameworkProgress(res?.frameworkProgress || []);
@@ -349,6 +365,24 @@ export class DashboardPageComponent implements OnInit {
     this.router.navigate([item.route], { queryParams: item.query || {} });
   }
 
+  getAttentionHint(item: { id?: string; label?: string }) {
+    const id = String(item?.id || '').toLowerCase();
+    const label = String(item?.label || '').toLowerCase();
+    if (id.includes('missing-evidence') || label.includes('missing evidence')) {
+      return 'Upload or map required evidence';
+    }
+    if (id.includes('owner') || label.includes('owner')) {
+      return 'Assign risk owners';
+    }
+    if (id.includes('failed-controls') || id.includes('control') || label.includes('control')) {
+      return 'Review control tests';
+    }
+    if (id.includes('audit') || label.includes('audit')) {
+      return 'Prepare audit materials';
+    }
+    return 'Review and take action';
+  }
+
   openRecommendation(item: { route: string; query?: Record<string, string> }) {
     this.router.navigate([item.route], { queryParams: item.query || {} });
   }
@@ -453,11 +487,12 @@ export class DashboardPageComponent implements OnInit {
 
   getKpiTooltip(kpi: DashboardKpi) {
     const key = (kpi?.id || kpi?.label || '').toLowerCase();
-    if (key.includes('evidence-health')) return 'Evidence Health summarizes freshness and quality of uploaded evidence.';
+    if (key.includes('evidence-health')) return 'Evidence Coverage summarizes the completeness of uploaded evidence.';
     if (key.includes('audit')) return 'Audit Readiness estimates how close you are to audit pack completeness.';
     if (key.includes('risk')) return 'Risk Score reflects overall exposure based on control status.';
     return '';
   }
+
 
   private setComplianceGaps(items: ComplianceGapItem[]) {
     this.complianceGaps = items;
@@ -494,7 +529,7 @@ export class DashboardPageComponent implements OnInit {
       },
       {
         id: 'evidence-health',
-        label: 'Evidence Health',
+        label: 'Evidence Coverage',
         value: `${params.evidenceHealthScore}%`,
         severity: evidenceSeverity,
         drilldown: { route: '/uploads' },
@@ -646,12 +681,219 @@ export class DashboardPageComponent implements OnInit {
     this.router.navigate(['/control-kb', row.controlDbId]);
   }
 
-  getHeatmapColor(impactIndex: number, likelihoodIndex: number) {
-    const score = impactIndex + likelihoodIndex;
-    if (score <= 1) return '#16a34a';
-    if (score <= 2) return '#86efac';
-    if (score <= 3) return '#facc15';
-    return '#ef4444';
+  getHeatmapColor(impactIndex: number, likelihoodIndex: number, value?: number) {
+    const score = (impactIndex + 1) + (likelihoodIndex + 1);
+    if (score >= 6) return '#e05a52';
+    if (score >= 5) return '#f07c5a';
+    if (score >= 4) return '#f4b562';
+    if (score >= 3) return '#97d86d';
+    return '#2f8f4e';
+  }
+
+  getHeatmapTooltip(impactIndex: number, likelihoodIndex: number, value: number) {
+    const impact = this.getImpactLabel(impactIndex);
+    const likelihood = this.getLikelihoodLabel(likelihoodIndex);
+    const count = Number(value || 0);
+    return `${impact} impact · ${likelihood} likelihood · ${count} risk${count === 1 ? '' : 's'}`;
+  }
+
+  getRiskBadgeClass() {
+    return `risk-badge ${this.riskExposureLabel.toLowerCase()}`;
+  }
+
+  formatStatusLabel(value: string) {
+    const text = String(value || 'UNKNOWN')
+      .replace(/_/g, ' ')
+      .toLowerCase();
+    return text.replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+
+  formatHeatmapValue(value: number) {
+    const num = Number(value || 0);
+    return num < 10 ? `0${num}` : `${num}`;
+  }
+
+  toggleHeatmapCell(impactIndex: number, likelihoodIndex: number) {
+    if (
+      this.selectedHeatmapCell &&
+      this.selectedHeatmapCell.impactIndex === impactIndex &&
+      this.selectedHeatmapCell.likelihoodIndex === likelihoodIndex
+    ) {
+      this.selectedHeatmapCell = null;
+      return;
+    }
+    this.selectedHeatmapCell = { impactIndex, likelihoodIndex };
+    this.selectedRiskDriverId = null;
+  }
+
+  clearHeatmapSelection() {
+    this.selectedHeatmapCell = null;
+    this.selectedRiskDriverId = null;
+  }
+
+  isHeatmapCellSelected(impactIndex: number, likelihoodIndex: number) {
+    return (
+      this.selectedHeatmapCell?.impactIndex === impactIndex &&
+      this.selectedHeatmapCell?.likelihoodIndex === likelihoodIndex
+    );
+  }
+
+  get selectedHeatmapLabel() {
+    if (!this.selectedHeatmapCell) return '';
+    const impact = this.getImpactLabel(this.selectedHeatmapCell.impactIndex);
+    const likelihood = this.getLikelihoodLabel(this.selectedHeatmapCell.likelihoodIndex);
+    return `${impact} impact · ${likelihood} likelihood`;
+  }
+
+  get selectedRiskDriverLabel() {
+    if (!this.selectedRiskDriverId) return '';
+    const match = this.riskDrivers.find((driver) => driver.id === this.selectedRiskDriverId);
+    return match?.label || 'Risk driver';
+  }
+
+  get hasRiskFilter() {
+    return !!this.selectedHeatmapCell || !!this.selectedRiskDriverId;
+  }
+
+  get selectedRiskFilterLabel() {
+    if (this.selectedRiskDriverId) {
+      return `Driver: ${this.selectedRiskDriverLabel}`;
+    }
+    if (this.selectedHeatmapCell) {
+      return this.selectedHeatmapLabel;
+    }
+    return '';
+  }
+
+  get filteredRiskControls() {
+    if (!this.hasRiskFilter) return [];
+    let controls = this.riskHeatmapControls;
+    if (this.selectedHeatmapCell) {
+      const impact = this.getImpactLabel(this.selectedHeatmapCell.impactIndex);
+      const likelihood = this.getLikelihoodLabel(this.selectedHeatmapCell.likelihoodIndex);
+      controls = controls.filter((item) => item.impact === impact && item.likelihood === likelihood);
+    }
+    if (this.selectedRiskDriverId) {
+      controls = controls.filter((item) => item.driverId === this.selectedRiskDriverId);
+    }
+    return controls;
+  }
+
+  toggleRiskDriver(driverId: string) {
+    if (this.selectedRiskDriverId === driverId) {
+      this.selectedRiskDriverId = null;
+      return;
+    }
+    this.selectedRiskDriverId = driverId;
+    this.selectedHeatmapCell = null;
+  }
+
+  clearRiskFilters() {
+    this.selectedHeatmapCell = null;
+    this.selectedRiskDriverId = null;
+  }
+
+  getRiskDriverWidth(driver: RiskDriver) {
+    if (!this.riskDrivers.length) return 0;
+    const max = Math.max(...this.riskDrivers.map((item) => item.count || 0), 1);
+    const pct = (driver.count / max) * 100;
+    return Math.max(8, Math.min(100, pct));
+  }
+
+  getRiskDriverColor(index: number) {
+    if (index === 0) return '#ef4444';
+    if (index === 1) return '#f59e0b';
+    return '#94a3b8';
+  }
+
+  getRiskDriverTooltip(driver: RiskDriver) {
+    const count = driver.count || 0;
+    return `${driver.label} · ${count} risk${count === 1 ? '' : 's'}`;
+  }
+
+  get riskDriversContext() {
+    if (!this.riskDrivers.length) return '';
+    if (this.riskDrivers.length === 1) {
+      const label = this.riskDrivers[0]?.label || 'this driver';
+      return `100% of current risk exposure is driven by ${label.toLowerCase()}`;
+    }
+    const total = this.riskDrivers.reduce((acc, item) => acc + (item.count || 0), 0);
+    const top = this.riskDrivers[0];
+    if (total && top && top.count / total >= 0.7) {
+      return 'Single dominant risk driver detected';
+    }
+    return '';
+  }
+
+  private computeRiskExposureLabel(matrix: number[][]): 'Low' | 'Medium' | 'High' {
+    if (!matrix?.length) return 'Low';
+    let hasMedium = false;
+    let hasHigh = false;
+    for (let r = 0; r < matrix.length; r += 1) {
+      for (let c = 0; c < (matrix[r] || []).length; c += 1) {
+        const value = matrix[r][c] || 0;
+        if (!value) continue;
+        const score = (r + 1) + (c + 1);
+        if (score >= 5) hasHigh = true;
+        else if (score >= 4) hasMedium = true;
+      }
+    }
+    if (hasHigh) return 'High';
+    if (hasMedium) return 'Medium';
+    return 'Low';
+  }
+
+  private computeRiskInsight(matrix: number[][]) {
+    const total = matrix.reduce(
+      (acc, row) => acc + (row || []).reduce((sum, value) => sum + (value || 0), 0),
+      0,
+    );
+    if (!total) {
+      return '';
+    }
+
+    let highCount = 0;
+    let mediumCount = 0;
+    let maxValue = 0;
+    let maxRow = 0;
+    let maxCol = 0;
+    for (let r = 0; r < matrix.length; r += 1) {
+      for (let c = 0; c < (matrix[r] || []).length; c += 1) {
+        const value = matrix[r][c] || 0;
+        if (!value) continue;
+        const score = (r + 1) + (c + 1);
+        if (score >= 5) highCount += value;
+        else if (score >= 4) mediumCount += value;
+        if (value > maxValue) {
+          maxValue = value;
+          maxRow = r;
+          maxCol = c;
+        }
+      }
+    }
+
+    if (highCount === 0) {
+      if (mediumCount / total >= 0.5) {
+        return 'Risk exposure is stable but requires monitoring';
+      }
+      return '';
+    }
+
+    if (mediumCount / total >= 0.5) {
+      return 'Risk exposure is stable but requires monitoring';
+    }
+
+    const impact = this.getImpactLabel(maxRow);
+    const likelihood = this.getLikelihoodLabel(maxCol);
+    return `${maxValue} risks are concentrated in ${impact} impact and ${likelihood} likelihood.`;
+  }
+
+  private getImpactLabel(index: number) {
+    return this.impactLabels[index] || 'Low';
+  }
+
+  private getLikelihoodLabel(index: number) {
+    return this.likelihoodLabels[index] || 'Low';
   }
 
   buildLinePoints(series: number[], maxValue = 100) {
@@ -751,3 +993,5 @@ export class DashboardPageComponent implements OnInit {
     return `${diffDays}d ago`;
   }
 }
+
+

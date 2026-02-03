@@ -270,7 +270,7 @@ export class ControlKbService {
       }
 
       if (needsGapFilter && gap) {
-        filtered = await this.filterControlsByGap(filtered as Array<{ id: string; controlCode: string; ownerRole: string | null }>, gap);
+        filtered = await this.filterControlsByGap(filtered, gap);
       }
 
       const total = filtered.length;
@@ -325,10 +325,10 @@ export class ControlKbService {
     return 'UNKNOWN';
   }
 
-  private async filterControlsByGap(
-    controls: Array<{ id: string; controlCode: string; ownerRole: string | null }>,
+  private async filterControlsByGap<T extends { id: string; controlCode: string; ownerRole: string | null }>(
+    controls: T[],
     gap: ComplianceGapKey,
-  ) {
+  ): Promise<T[]> {
     if (!controls.length) return controls;
     const controlCodes = controls.map((control) => control.controlCode);
     const controlIds = controls.map((control) => control.id);
