@@ -32,24 +32,38 @@ export class ChatController {
   @Get('conversations')
   async listConversations(@CurrentUser() user: AuthUser) {
     const isPrivileged = user.role !== 'USER';
-    const where: any = isPrivileged ? { userId: { not: null } } : { userId: user.id };
-    if (user.role === 'MANAGER') {
-      where.hiddenBy = { none: { userId: user.id, hidden: true } };
-    }
-
-    const rows = await this.prisma.conversation.findMany({
-      where,
-      include: {
-        user: { select: { id: true, name: true, email: true, role: true } },
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { content: true, createdAt: true },
-        },
-        _count: { select: { messages: true } },
+    const baseWhere: any = isPrivileged ? { userId: { not: null } } : { userId: user.id };
+    const include = {
+      user: { select: { id: true, name: true, email: true, role: true } },
+      messages: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { content: true, createdAt: true },
       },
-      orderBy: { updatedAt: 'desc' },
-    });
+      _count: { select: { messages: true } },
+    } as const;
+    const orderBy = { updatedAt: 'desc' } as const;
+
+    const managerWhere =
+      user.role === 'MANAGER'
+        ? { ...baseWhere, hiddenBy: { none: { userId: user.id, hidden: true } } }
+        : baseWhere;
+
+    let rows;
+    try {
+      rows = await this.prisma.conversation.findMany({
+        where: managerWhere,
+        include,
+        orderBy,
+      });
+    } catch (error) {
+      if (user.role !== 'MANAGER') throw error;
+      rows = await this.prisma.conversation.findMany({
+        where: baseWhere,
+        include,
+        orderBy,
+      });
+    }
 
     return rows.map((row) => ({
       id: row.id,
