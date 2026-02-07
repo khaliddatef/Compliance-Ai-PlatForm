@@ -65,6 +65,7 @@
                 type="button"
                 *ngFor="let cell of row; let colIndex = index"
                 [class.empty]="cell === 0"
+                [class.filled]="cell > 0"
                 [class.selected]="isHeatmapCellSelected(rowIndex, colIndex)"
                 [style.background]="getHeatmapColor(rowIndex, colIndex, cell)"
                 [attr.title]="getHeatmapTooltip(rowIndex, colIndex, cell)"
@@ -245,31 +246,6 @@
     </div>
   </section>
 
-  <section class="panel" *ngIf="!loading && !error && !executiveMode">
-    <button class="panel-toggle" type="button" (click)="toggleFrameworkComparison()">
-      <h3>Framework Comparison</h3>
-      <span class="chevron" [class.open]="frameworkOpen">▾</span>
-    </button>
-    <div class="panel-body" *ngIf="frameworkOpen">
-      <div class="comparison-list" *ngIf="frameworkComparisonV2.length; else emptyComparison">
-        <div class="comparison-row" *ngFor="let row of frameworkComparisonV2" (click)="openFrameworkComparison(row)">
-          <div class="comparison-meta">
-            <div class="comparison-title">{{ row.framework }}</div>
-            <div class="comparison-sub">{{ row.completionPercent }}% complete - {{ row.failedControls }} failed</div>
-          </div>
-          <div class="comparison-bar">
-            <span class="bar compliant" [style.width.%]="row.totalControls ? (row.compliant / row.totalControls) * 100 : 0"></span>
-            <span class="bar partial" [style.width.%]="row.totalControls ? (row.partial / row.totalControls) * 100 : 0"></span>
-            <span class="bar notcompliant" [style.width.%]="row.totalControls ? (row.notCompliant / row.totalControls) * 100 : 0"></span>
-            <span class="bar unknown" [style.width.%]="row.totalControls ? (row.unknown / row.totalControls) * 100 : 0"></span>
-          </div>
-        </div>
-      </div>
-      <ng-template #emptyComparison>
-        <p class="empty">Framework comparison will appear once evaluations are available.</p>
-      </ng-template>
-    </div>
-  </section>
 
   <div *ngIf="loading || error">
     <p class="empty" *ngIf="loading">Loading dashboard...</p>

@@ -1415,7 +1415,7 @@ export class DashboardService {
         value: `${uploadSummary.distinctMatchedControls}`,
         note: 'Distinct controls with uploads',
         severity: 'low',
-        drilldown: { route: '/uploads' },
+        drilldown: { route: '/control-kb' },
       },
     ];
 
