@@ -57,6 +57,7 @@ export class ControlKbPageComponent implements OnInit {
   frameworkQuery = '';
   topicFilter = 'all';
   statusFilter = 'all';
+  complianceFilter = 'all';
   ownerRoleFilter = '';
   evidenceFilter = '';
   frameworkRefFilter = '';
@@ -162,6 +163,10 @@ export class ControlKbPageComponent implements OnInit {
       const activationLabel = this.statusFilter === 'enabled' ? 'active' : 'inactive';
       chips.push({ label: 'Activation', value: activationLabel });
     }
+    if (this.complianceFilter !== 'all') {
+      const label = this.complianceFilter.replace(/_/g, ' ').toUpperCase();
+      chips.push({ label: 'Compliance', value: label });
+    }
     if (this.evidenceFilter.trim()) chips.push({ label: 'Evidence', value: this.evidenceFilter.trim() });
     if (this.ownerRoleFilter.trim()) chips.push({ label: 'Owner', value: this.ownerRoleFilter.trim() });
     if (this.frameworkRefFilter.trim()) chips.push({ label: 'Framework ref', value: this.frameworkRefFilter.trim() });
@@ -236,6 +241,7 @@ export class ControlKbPageComponent implements OnInit {
         topicId: this.topicFilter !== 'all' ? this.topicFilter : undefined,
         query: this.searchTerm.trim() || undefined,
         status: this.statusFilter !== 'all' ? this.statusFilter : undefined,
+        complianceStatus: this.complianceFilter !== 'all' ? this.complianceFilter : undefined,
         ownerRole: this.ownerRoleFilter.trim() || undefined,
         evidenceType: this.evidenceFilter.trim() || undefined,
         framework: this.frameworkFilter !== 'all' ? this.frameworkFilter : undefined,
@@ -801,6 +807,7 @@ export class ControlKbPageComponent implements OnInit {
     this.frameworkQuery = '';
     this.topicFilter = 'all';
     this.statusFilter = 'all';
+    this.complianceFilter = 'all';
     this.ownerRoleFilter = '';
     this.evidenceFilter = '';
     this.frameworkRefFilter = '';
@@ -854,6 +861,19 @@ export class ControlKbPageComponent implements OnInit {
     return status === 'enabled' ? 'status-enabled' : 'status-disabled';
   }
 
+  getComplianceStatusLabel(control: ControlDefinitionRecord) {
+    const status = this.getComplianceStatusValue(control);
+    return status.replace('_', ' ');
+  }
+
+  getComplianceStatusClass(control: ControlDefinitionRecord) {
+    const status = this.getComplianceStatusValue(control);
+    if (status === 'COMPLIANT') return 'status-compliant';
+    if (status === 'PARTIAL') return 'status-partial';
+    if (status === 'NOT_COMPLIANT') return 'status-notcompliant';
+    return 'status-unknown';
+  }
+
   isFrameworkEnabled(control: ControlDefinitionRecord) {
     return this.getFrameworkStatusValue(control) === 'enabled';
   }
@@ -870,6 +890,14 @@ export class ControlKbPageComponent implements OnInit {
 
   private getControlStatusValue(control: ControlDefinitionRecord) {
     return control.status === 'disabled' ? 'disabled' : 'enabled';
+  }
+
+  private getComplianceStatusValue(control: ControlDefinitionRecord) {
+    const raw = String(control.complianceStatus || '').toUpperCase().replace(/\s+/g, '_');
+    if (raw === 'COMPLIANT' || raw === 'PARTIAL' || raw === 'NOT_COMPLIANT' || raw === 'UNKNOWN') {
+      return raw as 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN';
+    }
+    return 'UNKNOWN';
   }
 
   private getFrameworkStatusValue(control: ControlDefinitionRecord) {

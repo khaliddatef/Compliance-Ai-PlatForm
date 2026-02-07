@@ -227,7 +227,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 0.35fr 2.2fr 0.7fr 1.2fr 1.1fr 0.7fr 0.7fr 0.5fr 1fr;
+  grid-template-columns: 0.35fr 2.1fr 0.7fr 1.2fr 1.1fr 0.7fr 0.7fr 0.8fr 0.5fr 1fr;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -482,6 +482,26 @@
 }
 
 .status-disabled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-compliant {
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.status-partial {
+  background: #fff7e6;
+  color: #b45309;
+}
+
+.status-notcompliant {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-unknown {
   background: #f1f5f9;
   color: #64748b;
 }
@@ -854,19 +874,20 @@
 
 @media (max-width: 1200px) {
   .row {
-    grid-template-columns: 0.5fr 1.6fr 0.9fr 1fr 0.8fr 0.7fr 0.7fr 0.5fr 1fr;
+    grid-template-columns: 0.5fr 1.5fr 0.9fr 1fr 0.8fr 0.7fr 0.7fr 0.8fr 0.5fr 1fr;
   }
 }
 
 @media (max-width: 900px) {
   .row {
-    grid-template-columns: 0.5fr 1.8fr 1.1fr 0.9fr 1fr;
+    grid-template-columns: 0.5fr 1.8fr 1.2fr 0.9fr 1fr;
   }
 
   .row > :nth-child(3),
   .row > :nth-child(5),
   .row > :nth-child(6),
-  .row > :nth-child(8) {
+  .row > :nth-child(7),
+  .row > :nth-child(9) {
     display: none;
   }
 }
