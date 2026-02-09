@@ -100,3 +100,67 @@ button {
     background-position: -200% 0%;
   }
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+  }
+
+  body {
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  app-sidebar,
+  .sidebar,
+  .sidebar-overlay,
+  .top-bar {
+    display: none !important;
+  }
+
+  app-shell,
+  .app-shell,
+  .shell-main,
+  .page,
+  .page-container,
+  .page-container > * {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  app-shell,
+  .app-shell {
+    display: block !important;
+  }
+
+  .page-container {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .dashboard-header .header-actions,
+  .dashboard-header .export-btn,
+  .dashboard-header .cta {
+    display: none !important;
+  }
+
+  .panel,
+  .kpi-card,
+  .attention-card,
+  .trend-panel,
+  .comparison-row,
+  .gap-row {
+    box-shadow: none !important;
+  }
+
+  .panel {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

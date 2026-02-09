@@ -128,6 +128,7 @@ export class ControlKbService {
     topicId?: string | null;
     query?: string | null;
     status?: string | null;
+    complianceStatus?: string | null;
     ownerRole?: string | null;
     evidenceType?: string | null;
     isoMapping?: string | null;
@@ -193,6 +194,9 @@ export class ControlKbService {
     const needsIsoFilter = Boolean(isoMapping);
     const needsFrameworkRefFilter = Boolean(frameworkRef);
     const needsGapFilter = Boolean(gap);
+    const complianceRaw = String(params.complianceStatus || '').trim();
+    const needsComplianceFilter = Boolean(complianceRaw) && complianceRaw.toLowerCase() !== 'all';
+    const complianceStatus = needsComplianceFilter ? this.normalizeComplianceStatus(complianceRaw) : null;
     const frameworkWhere = activeFrameworks
       ? { framework: { in: Array.from(activeFrameworks) } }
       : framework
@@ -233,7 +237,7 @@ export class ControlKbService {
       ...(needsEvidenceFilter ? { testComponents: { select: { evidenceTypes: true } } } : {}),
     });
 
-    if (needsEvidenceFilter || needsIsoFilter || needsFrameworkRefFilter || needsGapFilter) {
+    if (needsEvidenceFilter || needsIsoFilter || needsFrameworkRefFilter || needsGapFilter || needsComplianceFilter) {
       const items = await this.prisma.controlDefinition.findMany({
         where,
         orderBy: [{ sortOrder: 'asc' }, { controlCode: 'asc' }],
@@ -273,8 +277,18 @@ export class ControlKbService {
         filtered = await this.filterControlsByGap(filtered, gap);
       }
 
-      const total = filtered.length;
-      const paged = filtered.slice(skip, skip + pageSize).map((control) => {
+      let withCompliance = await this.attachComplianceStatus(
+        filtered as Array<{ controlCode: string }>,
+      );
+
+      if (needsComplianceFilter && complianceStatus) {
+        withCompliance = withCompliance.filter(
+          (control) => control.complianceStatus === complianceStatus,
+        );
+      }
+
+      const total = withCompliance.length;
+      const paged = withCompliance.slice(skip, skip + pageSize).map((control) => {
         if ('testComponents' in control) {
           const { testComponents, ...rest } = control as any;
           return rest;
@@ -301,8 +315,10 @@ export class ControlKbService {
       }),
     ]);
 
+    const withCompliance = await this.attachComplianceStatus(items as Array<{ controlCode: string }>);
+
     return {
-      items,
+      items: withCompliance,
       total,
       page,
       pageSize,
@@ -323,6 +339,65 @@ export class ControlKbService {
     if (statuses.includes('PARTIAL')) return 'PARTIAL';
     if (statuses.includes('NOT_COMPLIANT')) return 'NOT_COMPLIANT';
     return 'UNKNOWN';
+  }
+
+  private normalizeComplianceStatus(value?: string | null) {
+    const normalized = String(value || '')
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+    if (normalized === 'COMPLIANT') return 'COMPLIANT';
+    if (normalized === 'PARTIAL') return 'PARTIAL';
+    if (normalized === 'NOT_COMPLIANT') return 'NOT_COMPLIANT';
+    if (normalized === 'UNKNOWN') return 'UNKNOWN';
+    return 'UNKNOWN';
+  }
+
+  private async attachComplianceStatus<T extends { controlCode: string }>(items: T[]) {
+    if (!items.length) return items as Array<T & { complianceStatus: string }>;
+
+    const controlCodes = items
+      .map((item) => String(item.controlCode || '').trim())
+      .filter(Boolean);
+
+    if (!controlCodes.length) return items as Array<T & { complianceStatus: string }>;
+
+    const evaluations = await this.prisma.evidenceEvaluation.findMany({
+      where: { controlId: { in: controlCodes } },
+      orderBy: { createdAt: 'desc' },
+      select: { controlId: true, status: true },
+    });
+
+    const latestEvalByControl = new Map<string, string>();
+    for (const evaluation of evaluations) {
+      const code = String(evaluation.controlId || '').trim();
+      if (!code || latestEvalByControl.has(code)) continue;
+      latestEvalByControl.set(code, this.normalizeComplianceStatus(evaluation.status));
+    }
+
+    const missingCodes = controlCodes.filter((code) => !latestEvalByControl.has(code));
+    const docsByControl = new Map<string, Array<{ matchStatus: string | null }>>();
+
+    if (missingCodes.length) {
+      const documents = await this.prisma.document.findMany({
+        where: { matchControlId: { in: missingCodes } },
+        select: { matchControlId: true, matchStatus: true },
+      });
+
+      for (const doc of documents) {
+        const code = String(doc.matchControlId || '').trim();
+        if (!code) continue;
+        const list = docsByControl.get(code) || [];
+        list.push({ matchStatus: doc.matchStatus });
+        docsByControl.set(code, list);
+      }
+    }
+
+    return items.map((item) => {
+      const code = String(item.controlCode || '').trim();
+      const status =
+        latestEvalByControl.get(code) || this.resolveDocStatus(docsByControl.get(code) || []);
+      return { ...item, complianceStatus: status };
+    });
   }
 
   private async filterControlsByGap<T extends { id: string; controlCode: string; ownerRole: string | null }>(

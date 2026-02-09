@@ -65,12 +65,20 @@
                 type="button"
                 *ngFor="let cell of row; let colIndex = index"
                 [class.empty]="cell === 0"
+                [class.filled]="cell > 0"
                 [class.selected]="isHeatmapCellSelected(rowIndex, colIndex)"
                 [style.background]="getHeatmapColor(rowIndex, colIndex, cell)"
                 [attr.title]="getHeatmapTooltip(rowIndex, colIndex, cell)"
-                (click)="toggleHeatmapCell(rowIndex, colIndex)"
+                [disabled]="cell === 0"
+                [attr.aria-disabled]="cell === 0"
+                (click)="openControlsForHeatmapCell(rowIndex, colIndex, cell, $event)"
               >
-                <span [class.muted]="cell === 0">{{ formatHeatmapValue(cell) }}</span>
+                <span
+                  class="heatmap-count"
+                  [class.muted]="cell === 0"
+                >
+                  {{ formatHeatmapValue(cell) }}
+                </span>
               </button>
             </div>
             <div class="heatmap-x">
@@ -142,10 +150,18 @@
         </div>
       </div>
       <div class="legend-list">
-        <div class="legend-item"><span class="dot compliant"></span>Compliant {{ complianceBreakdown.compliant }}</div>
-        <div class="legend-item"><span class="dot partial"></span>Partial {{ complianceBreakdown.partial }}</div>
-        <div class="legend-item"><span class="dot missing"></span>Non-compliant {{ complianceBreakdown.notCompliant }}</div>
-        <div class="legend-item"><span class="dot unknown"></span>Unknown {{ complianceBreakdown.unknown }}</div>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('COMPLIANT', $event)">
+          <span class="dot compliant"></span>Compliant {{ complianceBreakdown.compliant }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('PARTIAL', $event)">
+          <span class="dot partial"></span>Partial {{ complianceBreakdown.partial }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('NOT_COMPLIANT', $event)">
+          <span class="dot missing"></span>Non-compliant {{ complianceBreakdown.notCompliant }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('UNKNOWN', $event)">
+          <span class="dot unknown"></span>Unknown {{ complianceBreakdown.unknown }}
+        </button>
       </div>
       <div class="gap-chart" *ngIf="complianceGaps.length; else emptyGaps">
         <div class="gap-header">
@@ -245,31 +261,6 @@
     </div>
   </section>
 
-  <section class="panel" *ngIf="!loading && !error && !executiveMode">
-    <button class="panel-toggle" type="button" (click)="toggleFrameworkComparison()">
-      <h3>Framework Comparison</h3>
-      <span class="chevron" [class.open]="frameworkOpen">▾</span>
-    </button>
-    <div class="panel-body" *ngIf="frameworkOpen">
-      <div class="comparison-list" *ngIf="frameworkComparisonV2.length; else emptyComparison">
-        <div class="comparison-row" *ngFor="let row of frameworkComparisonV2" (click)="openFrameworkComparison(row)">
-          <div class="comparison-meta">
-            <div class="comparison-title">{{ row.framework }}</div>
-            <div class="comparison-sub">{{ row.completionPercent }}% complete - {{ row.failedControls }} failed</div>
-          </div>
-          <div class="comparison-bar">
-            <span class="bar compliant" [style.width.%]="row.totalControls ? (row.compliant / row.totalControls) * 100 : 0"></span>
-            <span class="bar partial" [style.width.%]="row.totalControls ? (row.partial / row.totalControls) * 100 : 0"></span>
-            <span class="bar notcompliant" [style.width.%]="row.totalControls ? (row.notCompliant / row.totalControls) * 100 : 0"></span>
-            <span class="bar unknown" [style.width.%]="row.totalControls ? (row.unknown / row.totalControls) * 100 : 0"></span>
-          </div>
-        </div>
-      </div>
-      <ng-template #emptyComparison>
-        <p class="empty">Framework comparison will appear once evaluations are available.</p>
-      </ng-template>
-    </div>
-  </section>
 
   <div *ngIf="loading || error">
     <p class="empty" *ngIf="loading">Loading dashboard...</p>

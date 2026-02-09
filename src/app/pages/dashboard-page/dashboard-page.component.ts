@@ -389,6 +389,16 @@ export class DashboardPageComponent implements OnInit {
 
   openGap(item: ComplianceGapItem, event?: Event) {
     event?.stopPropagation();
+    const id = String(item?.id || '').toLowerCase();
+    const label = String(item?.label || '').toLowerCase();
+    if (id.includes('missing-evidence') || label.includes('missing evidence')) {
+      const query: Record<string, string> = { compliance: 'UNKNOWN', status: 'enabled' };
+      if (this.frameworkFilter) {
+        query['framework'] = this.frameworkFilter;
+      }
+      this.router.navigate(['/control-kb'], { queryParams: query });
+      return;
+    }
     if (item?.route) {
       this.router.navigate([item.route], { queryParams: item.query || {} });
       return;
@@ -415,6 +425,18 @@ export class DashboardPageComponent implements OnInit {
       return;
     }
     this.router.navigate(['/dashboard']);
+  }
+
+  openComplianceStatus(
+    status: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN',
+    event?: Event,
+  ) {
+    event?.stopPropagation();
+    const query: Record<string, string> = { compliance: status, status: 'enabled' };
+    if (this.frameworkFilter) {
+      query['framework'] = this.frameworkFilter;
+    }
+    this.router.navigate(['/control-kb'], { queryParams: query });
   }
 
   getTrendSeries(id: 'riskScore' | 'compliance' | 'mttr') {
@@ -780,6 +802,17 @@ export class DashboardPageComponent implements OnInit {
   }
 
   toggleRiskDriver(driverId: string) {
+    const driver = this.riskDrivers.find((item) => item.id === driverId);
+    const id = String(driver?.id || driverId || '').toLowerCase();
+    const label = String(driver?.label || '').toLowerCase();
+    if (id.includes('missing-evidence') || label.includes('missing evidence')) {
+      const query: Record<string, string> = { compliance: 'UNKNOWN', status: 'enabled' };
+      if (this.frameworkFilter) {
+        query['framework'] = this.frameworkFilter;
+      }
+      this.router.navigate(['/control-kb'], { queryParams: query });
+      return;
+    }
     if (this.selectedRiskDriverId === driverId) {
       this.selectedRiskDriverId = null;
       return;
@@ -809,6 +842,27 @@ export class DashboardPageComponent implements OnInit {
   getRiskDriverTooltip(driver: RiskDriver) {
     const count = driver.count || 0;
     return `${driver.label} · ${count} risk${count === 1 ? '' : 's'}`;
+  }
+
+  getComplianceFilterForCell(rowIndex: number | string, colIndex: number | string) {
+    const r = Number(rowIndex);
+    const c = Number(colIndex);
+    if (r === 1 && c === 1) return 'UNKNOWN';
+    if (r === 0 && c === 0) return 'COMPLIANT';
+    return 'COMPLIANT';
+  }
+
+  openControlsForHeatmapCell(
+    rowIndex: number,
+    colIndex: number,
+    value: number,
+    event?: Event,
+  ) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (!value || value <= 0) return;
+    const compliance = this.getComplianceFilterForCell(rowIndex, colIndex);
+    this.router.navigate(['/control-kb'], { queryParams: { compliance } });
   }
 
   get riskDriversContext() {
