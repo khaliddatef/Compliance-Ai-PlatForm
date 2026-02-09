@@ -150,10 +150,18 @@
         </div>
       </div>
       <div class="legend-list">
-        <div class="legend-item"><span class="dot compliant"></span>Compliant {{ complianceBreakdown.compliant }}</div>
-        <div class="legend-item"><span class="dot partial"></span>Partial {{ complianceBreakdown.partial }}</div>
-        <div class="legend-item"><span class="dot missing"></span>Non-compliant {{ complianceBreakdown.notCompliant }}</div>
-        <div class="legend-item"><span class="dot unknown"></span>Unknown {{ complianceBreakdown.unknown }}</div>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('COMPLIANT', $event)">
+          <span class="dot compliant"></span>Compliant {{ complianceBreakdown.compliant }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('PARTIAL', $event)">
+          <span class="dot partial"></span>Partial {{ complianceBreakdown.partial }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('NOT_COMPLIANT', $event)">
+          <span class="dot missing"></span>Non-compliant {{ complianceBreakdown.notCompliant }}
+        </button>
+        <button class="legend-item legend-button" type="button" (click)="openComplianceStatus('UNKNOWN', $event)">
+          <span class="dot unknown"></span>Unknown {{ complianceBreakdown.unknown }}
+        </button>
       </div>
       <div class="gap-chart" *ngIf="complianceGaps.length; else emptyGaps">
         <div class="gap-header">

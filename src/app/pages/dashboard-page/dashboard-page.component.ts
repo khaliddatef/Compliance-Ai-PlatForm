@@ -427,6 +427,18 @@ export class DashboardPageComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
+  openComplianceStatus(
+    status: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN',
+    event?: Event,
+  ) {
+    event?.stopPropagation();
+    const query: Record<string, string> = { compliance: status, status: 'enabled' };
+    if (this.frameworkFilter) {
+      query['framework'] = this.frameworkFilter;
+    }
+    this.router.navigate(['/control-kb'], { queryParams: query });
+  }
+
   getTrendSeries(id: 'riskScore' | 'compliance' | 'mttr') {
     return this.trendsV2.find((series) => series.id === id);
   }
