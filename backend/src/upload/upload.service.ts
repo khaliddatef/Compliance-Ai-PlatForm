@@ -650,6 +650,35 @@ export class UploadService {
     return withRefs[0] || updated;
   }
 
+  async updateDocumentMatchStatus(
+    id: string,
+    matchStatus: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN',
+  ) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
+        _count: { select: { chunks: true } },
+      },
+    });
+    if (!doc) return null;
+
+    const updated = await this.prisma.document.update({
+      where: { id },
+      data: {
+        matchStatus,
+        reviewedAt: new Date(),
+      },
+      include: {
+        conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
+        _count: { select: { chunks: true } },
+      },
+    });
+
+    const withRefs = await this.attachFrameworkReferences([updated]);
+    return withRefs[0] || updated;
+  }
+
   async cleanupOpenAiResources(params: {
     documents: Array<{
       openaiFileId?: string | null;
@@ -865,7 +894,6 @@ export class UploadService {
     if (!docsWithControl.length) return docs;
 
     const activeFrameworks = await this.getActiveFrameworkSet();
-    const { version: activeFrameworkVersion } = await this.getActiveFrameworkInfo();
 
     const controlCodes = Array.from(
       new Set(docsWithControl.map((doc) => String(doc.matchControlId)).filter(Boolean)),
@@ -916,57 +944,30 @@ export class UploadService {
 
       let mappings = control.frameworkMappings || [];
       if (activeFrameworks) {
-        mappings = mappings.filter((mapping) => activeFrameworks.has(mapping.framework));
+        const normalizedActive = new Set(
+          Array.from(activeFrameworks.values()).map((value) => value.trim().toLowerCase()),
+        );
+        mappings = mappings.filter((mapping) =>
+          normalizedActive.has(String(mapping.framework || '').trim().toLowerCase()),
+        );
       }
 
       const codes = new Set<string>();
-      let detectedVersion = '';
       for (const mapping of mappings) {
         const name = String(mapping.framework || '').trim();
         if (!name) continue;
         const code = String(mapping.frameworkCode || '').trim();
+        // Ignore framework version labels (for example: v2022) and keep real control refs only.
+        if (/^v\d{4}$/i.test(code)) continue;
         if (code) codes.add(code);
-        if (!detectedVersion) {
-          const version = this.normalizeFrameworkVersion(mapping.frameworkRef?.version, name);
-          if (version) detectedVersion = version;
-        }
       }
 
-      if (!codes.size) {
-        const useIsoFallback =
-          !activeFrameworks ||
-          Array.from(activeFrameworks).some((value) => value.toLowerCase().includes('iso'));
-        if (useIsoFallback) {
-          const iso = Array.isArray(control.isoMappings)
-            ? control.isoMappings.map((value) => String(value).trim()).filter(Boolean)
-            : [];
-          iso.forEach((value) => codes.add(value));
-        }
-      }
-
-      const references = codes.size
-        ? Array.from(codes.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-        : (() => {
-            const versionLabel = this.formatVersionLabel(detectedVersion || activeFrameworkVersion);
-            return versionLabel ? [versionLabel] : [];
-          })();
+      const references = Array.from(codes.values()).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      );
 
       return { ...doc, frameworkReferences: references };
     });
-  }
-
-  private normalizeFrameworkVersion(version?: string | null, frameworkName?: string | null) {
-    const raw = String(version || '').trim();
-    if (raw) return raw;
-    const name = String(frameworkName || '');
-    const match = name.match(/\b(v?\d{4})\b/i);
-    return match ? match[1] : '';
-  }
-
-  private formatVersionLabel(version?: string | null) {
-    const raw = String(version || '').trim();
-    if (!raw) return '';
-    return /^v/i.test(raw) ? raw : `v${raw}`;
   }
 
   private defaultMatchNote(status: string) {

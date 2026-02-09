@@ -548,6 +548,16 @@ export class ApiService {
     );
   }
 
+  updateUploadMatchStatus(
+    id: string,
+    matchStatus: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN',
+  ) {
+    return this.http.patch<{ ok: boolean; document: UploadDocumentRecord }>(
+      `/api/uploads/${id}/match-status`,
+      { matchStatus },
+    );
+  }
+
   downloadUpload(id: string) {
     return this.http.get(`/api/uploads/${id}/download`, { responseType: 'blob' });
   }

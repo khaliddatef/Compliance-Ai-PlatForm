@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
@@ -59,6 +59,7 @@ export class FrameworkControlsPageComponent implements OnInit {
 
   editingControlId: string | null = null;
   controlEdit: ControlForm | null = null;
+  openTopicMenuId: string | null = null;
 
   constructor(
     private readonly api: ApiService,
@@ -232,6 +233,25 @@ export class FrameworkControlsPageComponent implements OnInit {
         this.error = 'Unable to delete topic.';
       },
     });
+  }
+
+  toggleTopicMenu(topicId: string, event?: MouseEvent) {
+    event?.stopPropagation();
+    this.openTopicMenuId = this.openTopicMenuId === topicId ? null : topicId;
+  }
+
+  closeTopicMenu() {
+    this.openTopicMenuId = null;
+  }
+
+  @HostListener('document:click')
+  onDocumentClick() {
+    this.closeTopicMenu();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    this.closeTopicMenu();
   }
 
   toggleNewControl(topic: TopicView) {

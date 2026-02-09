@@ -20,6 +20,12 @@
   margin-bottom: 12px;
 }
 
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .panel-header h3 {
   margin: 0;
   font-size: 16px;
@@ -41,11 +47,88 @@
   cursor: pointer;
 }
 
+.secondary-btn {
+  border: 1px solid var(--border-subtle);
+  background: #fff;
+  color: var(--ink-strong);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-btn:hover,
+.secondary-btn:focus-visible {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+}
+
 .manager-upload {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.upload-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.upload-modal {
+  width: min(720px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 18px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upload-modal-header h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.upload-modal-header p {
+  margin: 4px 0 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.icon-btn {
+  border: 1px solid var(--border-subtle);
+  background: #fff;
+  color: var(--ink-strong);
+  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
 }
 
 .manager-upload-status {
@@ -128,7 +211,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 2.1fr 0.9fr 0.8fr 0.9fr 1.8fr 0.6fr 1.1fr;
+  grid-template-columns: 0.45fr 2fr 0.9fr 0.8fr 0.9fr 1.6fr 0.95fr 0.6fr 1.1fr;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -145,6 +228,12 @@
   color: var(--ink-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.row-number {
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-align: center;
 }
 
 .file-cell {
@@ -218,6 +307,74 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+.compliance-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.compliance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+button.compliance-badge {
+  cursor: pointer;
+}
+
+.compliance-badge .caret {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.compliance-badge.is-compliant {
+  background: #ecfdf3;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.compliance-badge.is-partial {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.compliance-badge.is-not-compliant {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.compliance-badge.is-unknown {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.compliance-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 170px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .reference-link {
@@ -389,8 +546,19 @@
     align-items: stretch;
   }
 
-  .panel-header .primary-btn {
+  .header-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panel-header .primary-btn,
+  .panel-header .secondary-btn {
+    width: 100%;
+  }
+
+  .upload-modal {
+    padding: 14px;
   }
 
   .filters {
@@ -426,7 +594,7 @@
   }
 
   .row {
-    min-width: 720px;
+    min-width: 860px;
     padding: 8px 10px;
   }
 

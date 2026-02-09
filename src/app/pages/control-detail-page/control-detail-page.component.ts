@@ -5,6 +5,7 @@ import {
   ApiService,
   ControlDefinitionRecord,
   ControlFrameworkMappingRecord,
+  FrameworkSummary,
   TestComponentRecord,
 } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
@@ -18,6 +19,8 @@ import { AuthService } from '../../services/auth.service';
 })
 export class ControlDetailPageComponent implements OnInit {
   control?: ControlDefinitionRecord;
+  activeFramework?: FrameworkSummary | null;
+  private activeReferenceCodes = new Set<string>();
   loading = true;
   error = '';
 
@@ -29,6 +32,7 @@ export class ControlDetailPageComponent implements OnInit {
   ) {}
 
   ngOnInit() {
+    this.loadActiveFramework();
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (!id) return;
@@ -58,13 +62,6 @@ export class ControlDetailPageComponent implements OnInit {
       .map((mapping) => mapping.title);
   }
 
-  get frameworkTags() {
-    return (this.control?.frameworkMappings || []).map((mapping) => ({
-      label: this.getFrameworkLabel(mapping),
-      code: mapping.frameworkCode,
-    }));
-  }
-
   fetchControl(id: string) {
     this.loading = true;
     this.error = '';
@@ -72,6 +69,7 @@ export class ControlDetailPageComponent implements OnInit {
     this.api.getControlDefinition(id).subscribe({
       next: (control) => {
         this.control = control || undefined;
+        this.rebuildActiveReferenceCodes();
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -116,8 +114,73 @@ export class ControlDetailPageComponent implements OnInit {
     return this.getTopicMappings().find((mapping) => mapping.relationshipType === 'PRIMARY') || null;
   }
 
-  private getFrameworkLabel(mapping: ControlFrameworkMappingRecord) {
-    const ref = mapping.frameworkRef;
-    return (ref?.externalId || ref?.name || mapping.framework || '').trim() || '—';
+  isActiveReferenceCode(code: string) {
+    const normalized = this.normalizeReferenceCode(code);
+    return normalized ? this.activeReferenceCodes.has(normalized) : false;
+  }
+
+  private loadActiveFramework() {
+    this.api.listFrameworks().subscribe({
+      next: (frameworks) => {
+        this.activeFramework = (frameworks || []).find((framework) => framework.status === 'enabled') || null;
+        this.rebuildActiveReferenceCodes();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.activeFramework = null;
+        this.rebuildActiveReferenceCodes();
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private rebuildActiveReferenceCodes() {
+    const next = new Set<string>();
+    const active = this.activeFramework;
+    const mappings = this.control?.frameworkMappings || [];
+    if (!active || !mappings.length) {
+      this.activeReferenceCodes = next;
+      return;
+    }
+
+    for (const mapping of mappings) {
+      if (!this.isMappingFromActiveFramework(mapping, active)) continue;
+      const normalizedCode = this.normalizeReferenceCode(mapping.frameworkCode);
+      if (normalizedCode) next.add(normalizedCode);
+    }
+    this.activeReferenceCodes = next;
+  }
+
+  private isMappingFromActiveFramework(
+    mapping: ControlFrameworkMappingRecord,
+    active: FrameworkSummary,
+  ) {
+    const activeTokens = [active.framework, active.frameworkId]
+      .map((value) => this.normalizeFrameworkToken(value))
+      .filter(Boolean);
+    if (!activeTokens.length) return false;
+
+    const mappingTokens = [mapping.framework, mapping.frameworkRef?.name, mapping.frameworkRef?.externalId]
+      .map((value) => this.normalizeFrameworkToken(value))
+      .filter(Boolean);
+
+    if (!mappingTokens.length) return false;
+    return mappingTokens.some(
+      (token) =>
+        activeTokens.includes(token) ||
+        activeTokens.some((activeToken) => token.includes(activeToken) || activeToken.includes(token)),
+    );
+  }
+
+  private normalizeFrameworkToken(value?: string | null) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private normalizeReferenceCode(value?: string | null) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
 }

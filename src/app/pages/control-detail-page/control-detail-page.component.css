@@ -126,6 +126,13 @@
   color: var(--ink-muted);
 }
 
+.tag--active-ref {
+  background: #ecfdf3;
+  border-color: #86efac;
+  color: #166534;
+  font-weight: 700;
+}
+
 .component-list {
   display: flex;
   flex-direction: column;

@@ -42,21 +42,15 @@
           <div class="meta-block" *ngIf="control.isoMappings?.length">
             <div class="label">Reference codes</div>
             <div class="tag-list">
-              <span class="tag" *ngFor="let item of control.isoMappings">{{ item }}</span>
+              <span
+                class="tag"
+                *ngFor="let item of control.isoMappings"
+                [class.tag--active-ref]="isActiveReferenceCode(item)"
+              >
+                {{ item }}
+              </span>
             </div>
           </div>
-        </div>
-
-        <div class="card">
-          <h5>Framework mappings</h5>
-          <div class="tag-list" *ngIf="frameworkTags.length; else noFrameworks">
-            <span class="tag" *ngFor="let mapping of frameworkTags">
-              {{ mapping.label }} · {{ mapping.code }}
-            </span>
-          </div>
-          <ng-template #noFrameworks>
-            <p class="empty">No framework mappings yet.</p>
-          </ng-template>
         </div>
       </div>
 

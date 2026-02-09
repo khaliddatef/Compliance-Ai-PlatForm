@@ -22,6 +22,8 @@ type UploadRow = {
   matchStatus?: string | null;
 };
 
+type ComplianceStatus = 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN';
+
 @Component({
   selector: 'app-uploads-page',
   standalone: true,
@@ -41,8 +43,10 @@ export class UploadsPageComponent implements OnInit {
   statusFilter = 'all';
   sortMode = 'recent';
   activeFramework = '';
-  activeFrameworkVersion = '';
   openMenuId: string | null = null;
+  openComplianceMenuId: string | null = null;
+  showUploadPanel = false;
+  readonly complianceOptions: ComplianceStatus[] = ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'];
 
   constructor(
     private readonly api: ApiService,
@@ -55,6 +59,23 @@ export class UploadsPageComponent implements OnInit {
     this.refresh();
   }
 
+  toggleUploadPanel() {
+    this.showUploadPanel = !this.showUploadPanel;
+  }
+
+  closeUploadPanel() {
+    this.showUploadPanel = false;
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.showUploadPanel) {
+      this.showUploadPanel = false;
+    }
+    this.closeMenu();
+    this.closeComplianceMenu();
+  }
+
   refresh() {
     this.loading = true;
     this.error = '';
@@ -64,9 +85,8 @@ export class UploadsPageComponent implements OnInit {
       next: (res) => {
         const docs = Array.isArray(res?.documents) ? res.documents : [];
         this.activeFramework = String(res?.activeFramework || '').trim();
-        this.activeFrameworkVersion = String(res?.activeFrameworkVersion || '').trim();
         this.files = docs
-          .map((doc) => this.mapDoc(doc, this.activeFramework, this.activeFrameworkVersion))
+          .map((doc) => this.mapDoc(doc, this.activeFramework))
           .sort((a, b) => b.uploadedAt - a.uploadedAt);
         this.loading = false;
         this.cdr.markForCheck();
@@ -99,6 +119,7 @@ export class UploadsPageComponent implements OnInit {
         const count = docs.length || res?.count || cleanFiles.length;
         this.uploadNotice = `Uploaded ${count} file${count === 1 ? '' : 's'} successfully.`;
         this.uploading = false;
+        this.showUploadPanel = false;
         this.refresh();
       },
       error: () => {
@@ -126,6 +147,7 @@ export class UploadsPageComponent implements OnInit {
 
   toggleMenu(id: string, event?: MouseEvent) {
     event?.stopPropagation();
+    this.openComplianceMenuId = null;
     this.openMenuId = this.openMenuId === id ? null : id;
   }
 
@@ -133,9 +155,20 @@ export class UploadsPageComponent implements OnInit {
     this.openMenuId = null;
   }
 
+  toggleComplianceMenu(id: string, event?: MouseEvent) {
+    event?.stopPropagation();
+    this.openMenuId = null;
+    this.openComplianceMenuId = this.openComplianceMenuId === id ? null : id;
+  }
+
+  closeComplianceMenu() {
+    this.openComplianceMenuId = null;
+  }
+
   @HostListener('document:click')
   onDocumentClick() {
     this.closeMenu();
+    this.closeComplianceMenu();
   }
 
   markReviewed(file: UploadRow) {
@@ -167,6 +200,21 @@ export class UploadsPageComponent implements OnInit {
       },
       error: () => {
         this.error = 'Unable to update this file right now.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  updateComplianceStatus(file: UploadRow, status: ComplianceStatus) {
+    if (!this.canManageStatus) return;
+    this.api.updateUploadMatchStatus(file.id, status).subscribe({
+      next: (res) => {
+        if (res?.document) this.replaceFile(res.document);
+        this.closeComplianceMenu();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to update compliance status right now.';
         this.cdr.markForCheck();
       },
     });
@@ -217,6 +265,22 @@ export class UploadsPageComponent implements OnInit {
     return this.sortFiles(list);
   }
 
+  getComplianceLabel(status?: string | null) {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'COMPLIANT') return 'Compliant';
+    if (normalized === 'PARTIAL') return 'Partial';
+    if (normalized === 'NOT_COMPLIANT') return 'Not compliant';
+    return 'Unknown';
+  }
+
+  getComplianceClass(status?: string | null) {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'COMPLIANT') return 'is-compliant';
+    if (normalized === 'PARTIAL') return 'is-partial';
+    if (normalized === 'NOT_COMPLIANT') return 'is-not-compliant';
+    return 'is-unknown';
+  }
+
   downloadFile(file: UploadRow) {
     this.api.downloadUpload(file.id).subscribe({
       next: (blob) => {
@@ -249,16 +313,13 @@ export class UploadsPageComponent implements OnInit {
   private mapDoc(
     doc: UploadDocumentRecord,
     activeFramework: string,
-    activeFrameworkVersion: string,
   ): UploadRow {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
     const rawReferences = Array.isArray(doc.frameworkReferences)
       ? doc.frameworkReferences.filter((ref) => Boolean(ref))
       : [];
-    const versionLabel = this.formatVersionLabel(activeFrameworkVersion, activeFramework);
-    const fallbackReferences = versionLabel ? [versionLabel] : [];
-    const frameworkReferences = rawReferences.length ? rawReferences : fallbackReferences;
+    const frameworkReferences = rawReferences;
     const framework = activeFramework || 'Unknown';
     const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
@@ -279,14 +340,6 @@ export class UploadsPageComponent implements OnInit {
       statusClass: statusMeta.className,
       matchStatus: doc?.matchStatus ?? null,
     };
-  }
-
-  private formatVersionLabel(version: string, frameworkName: string) {
-    const raw = String(version || '').trim();
-    if (raw) return raw.toLowerCase().startsWith('v') ? raw : `v${raw}`;
-    const match = String(frameworkName || '').match(/\b(v?\d{4})\b/i);
-    if (!match) return '';
-    return match[1].toLowerCase().startsWith('v') ? match[1] : `v${match[1]}`;
   }
 
   private formatSize(bytes: number) {
@@ -316,7 +369,7 @@ export class UploadsPageComponent implements OnInit {
   }
 
   private replaceFile(doc: UploadDocumentRecord) {
-    const next = this.mapDoc(doc, this.activeFramework, this.activeFrameworkVersion);
+    const next = this.mapDoc(doc, this.activeFramework);
     this.files = this.files.map((file) => (file.id === next.id ? next : file));
   }
 

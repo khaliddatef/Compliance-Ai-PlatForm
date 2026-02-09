@@ -88,6 +88,12 @@
   font-size: 12px;
 }
 
+.ghost-btn.primary-action {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+  color: var(--accent-700);
+}
+
 .ghost-btn.danger {
   border-color: #fecaca;
   color: #b91c1c;
@@ -115,9 +121,9 @@
 }
 
 .topic-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
   gap: 12px;
 }
 
@@ -129,8 +135,71 @@
 .topic-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.topic-actions-inline {
+  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.topic-actions-menu {
+  position: relative;
+  display: none;
+}
+
+.menu-btn {
+  padding: 6px 12px;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-strong);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--surface-3);
+}
+
+.menu-item.danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 .topic-edit {
@@ -249,9 +318,31 @@
 }
 
 @media (max-width: 900px) {
-  .topic-header {
+  .panel-header {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+
+  .panel-header .ghost-btn {
+    width: 100%;
+  }
+
+  .topic-header {
+    grid-template-columns: 1fr;
+  }
+
+  .topic-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .topic-actions-inline {
+    display: none;
+  }
+
+  .topic-actions-menu {
+    display: inline-flex;
+    align-self: flex-end;
   }
 
   .control-row {
@@ -262,5 +353,15 @@
   .control-meta {
     width: 100%;
     justify-content: space-between;
+  }
+}
+
+@media (max-width: 600px) {
+  .menu {
+    max-width: calc(100vw - 32px);
+  }
+
+  .menu {
+    min-width: 180px;
   }
 }

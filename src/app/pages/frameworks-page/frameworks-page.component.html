@@ -59,7 +59,7 @@
           <span>Controls</span>
           <span class="actions-header">Actions</span>
         </div>
-        <div class="row item" *ngFor="let fw of frameworks">
+        <div class="row item" *ngFor="let fw of pagedFrameworks">
           <div class="framework-cell">
             <span class="framework-id" [title]="fw.framework">{{ fw.frameworkId || fw.framework }}</span>
           </div>
@@ -80,7 +80,7 @@
                 <path d="M7 17l10-10"></path>
                 <path d="M8 7h9v9"></path>
               </svg>
-              <span>Open controls</span>
+              <span>Open</span>
             </button>
             <button
               class="action-btn"
@@ -97,6 +97,30 @@
               <span>{{ fw.status === 'enabled' ? 'Deactivate' : 'Activate' }}</span>
             </button>
           </div>
+        </div>
+      </div>
+      <div class="pagination" *ngIf="frameworks.length > 0">
+        <div class="pagination-left">
+          <button class="page-btn" type="button" (click)="prevPage()" [disabled]="currentPage === 1">Prev</button>
+          <button
+            class="page-btn"
+            type="button"
+            *ngFor="let page of pageNumbers"
+            [class.page-btn--active]="page === currentPage"
+            (click)="goToPage(page)"
+          >
+            {{ page }}
+          </button>
+          <button class="page-btn" type="button" (click)="nextPage()" [disabled]="currentPage === totalPages">Next</button>
+        </div>
+        <div class="pagination-right">
+          <label class="rows-label">
+            Rows
+            <select [ngModel]="pageSize" (ngModelChange)="updatePageSize($event)">
+              <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{ size }}</option>
+            </select>
+          </label>
+          <span class="sub">Showing {{ showingFrom }} to {{ showingTo }} of {{ totalItems }}</span>
         </div>
       </div>
       <ng-template #emptyState>

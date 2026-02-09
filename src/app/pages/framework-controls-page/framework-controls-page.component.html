@@ -48,13 +48,50 @@
             <p class="meta" *ngIf="topic.description">{{ topic.description }}</p>
           </div>
           <div class="topic-actions">
-            <button class="ghost-btn" type="button" (click)="openTopicControls(topic)">Open controls</button>
-            <ng-container *ngIf="isAdmin">
-              <button class="ghost-btn" type="button" (click)="startEditTopic(topic)" *ngIf="editingTopicId !== topic.id">Edit</button>
-              <button class="ghost-btn" type="button" (click)="saveTopic(topic)" *ngIf="editingTopicId === topic.id">Save</button>
-              <button class="ghost-btn" type="button" (click)="cancelEditTopic()" *ngIf="editingTopicId === topic.id">Cancel</button>
-              <button class="ghost-btn danger" type="button" (click)="deleteTopic(topic)">Delete</button>
-            </ng-container>
+            <div class="topic-actions-inline">
+              <button class="ghost-btn primary-action" type="button" (click)="openTopicControls(topic)">Open</button>
+              <ng-container *ngIf="isAdmin">
+                <button class="ghost-btn" type="button" (click)="startEditTopic(topic)" *ngIf="editingTopicId !== topic.id">Edit</button>
+                <button class="ghost-btn" type="button" (click)="saveTopic(topic)" *ngIf="editingTopicId === topic.id">Save</button>
+                <button class="ghost-btn" type="button" (click)="cancelEditTopic()" *ngIf="editingTopicId === topic.id">Cancel</button>
+                <button class="ghost-btn danger" type="button" (click)="deleteTopic(topic)">Delete</button>
+              </ng-container>
+            </div>
+            <div class="topic-actions-menu" (click)="$event.stopPropagation()">
+              <button class="ghost-btn menu-btn" type="button" (click)="toggleTopicMenu(topic.id, $event)">Actions</button>
+              <div class="menu" *ngIf="openTopicMenuId === topic.id">
+                <button class="menu-item" type="button" (click)="openTopicControls(topic); closeTopicMenu()">Open controls</button>
+                <ng-container *ngIf="isAdmin">
+                  <button
+                    class="menu-item"
+                    type="button"
+                    (click)="startEditTopic(topic); closeTopicMenu()"
+                    *ngIf="editingTopicId !== topic.id"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    class="menu-item"
+                    type="button"
+                    (click)="saveTopic(topic); closeTopicMenu()"
+                    *ngIf="editingTopicId === topic.id"
+                  >
+                    Save
+                  </button>
+                  <button
+                    class="menu-item"
+                    type="button"
+                    (click)="cancelEditTopic(); closeTopicMenu()"
+                    *ngIf="editingTopicId === topic.id"
+                  >
+                    Cancel
+                  </button>
+                  <button class="menu-item danger" type="button" (click)="deleteTopic(topic); closeTopicMenu()">
+                    Delete
+                  </button>
+                </ng-container>
+              </div>
+            </div>
           </div>
         </header>
 

@@ -4,15 +4,39 @@
       <div>
         <h3>Uploaded Files</h3>
         <p class="sub">Files uploaded from chat conversations.</p>
+        <p class="sub" *ngIf="!loading">Total uploaded: {{ files.length }}</p>
       </div>
-      <button class="primary-btn" type="button" (click)="refresh()">Refresh</button>
+      <div class="header-actions">
+        <button
+          *ngIf="canManageStatus"
+          class="secondary-btn"
+          type="button"
+          (click)="toggleUploadPanel()"
+        >
+          {{ showUploadPanel ? 'Close upload' : 'Upload files' }}
+        </button>
+        <button class="primary-btn" type="button" (click)="refresh()">Refresh</button>
+      </div>
     </div>
 
-    <div class="manager-upload" *ngIf="canManageStatus">
-      <app-upload-dropzone (filesAdded)="handleManagerUpload($event)"></app-upload-dropzone>
-      <div class="manager-upload-status" *ngIf="uploadNotice || uploadError">
-        <span *ngIf="uploadNotice" [class.loading]="uploading">{{ uploadNotice }}</span>
-        <span class="error" *ngIf="uploadError">{{ uploadError }}</span>
+    <div
+      class="upload-modal-backdrop"
+      *ngIf="canManageStatus && showUploadPanel"
+      (click)="closeUploadPanel()"
+    >
+      <div class="upload-modal" (click)="$event.stopPropagation()">
+        <div class="upload-modal-header">
+          <div>
+            <h4>Upload files</h4>
+            <p>Drag and drop or choose files to upload.</p>
+          </div>
+          <button class="icon-btn" type="button" (click)="closeUploadPanel()">✕</button>
+        </div>
+        <app-upload-dropzone (filesAdded)="handleManagerUpload($event)"></app-upload-dropzone>
+        <div class="manager-upload-status" *ngIf="uploadNotice || uploadError">
+          <span *ngIf="uploadNotice" [class.loading]="uploading">{{ uploadNotice }}</span>
+          <span class="error" *ngIf="uploadError">{{ uploadError }}</span>
+        </div>
       </div>
     </div>
 
@@ -59,6 +83,7 @@
       <div class="row skeleton-row" *ngFor="let _ of [1,2,3,4,5,6]">
         <div class="skeleton skeleton-line"></div>
         <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line"></div>
         <div class="skeleton skeleton-pill"></div>
         <div class="skeleton skeleton-line"></div>
         <div class="skeleton skeleton-line"></div>
@@ -69,15 +94,18 @@
 
     <div class="table" *ngIf="!loading && visibleFiles.length">
       <div class="row header">
+        <span>#</span>
         <span>File</span>
         <span>Framework</span>
         <span>Status</span>
         <span>Uploaded</span>
         <span>Control reference</span>
+        <span>Compliance</span>
         <span>Size</span>
         <span>Action</span>
       </div>
-      <div class="row" *ngFor="let file of visibleFiles">
+      <div class="row" *ngFor="let file of visibleFiles; let i = index">
+        <span class="row-number" data-label="#">{{ i + 1 }}</span>
         <div class="file-cell" data-label="File">
           <span class="file-name" [title]="file.name">{{ file.name }}</span>
           <span class="file-meta" *ngIf="file.chatTitle">Chat: {{ file.chatTitle }}</span>
@@ -101,6 +129,33 @@
           <ng-template #noReference>
             <span class="reference-empty">—</span>
           </ng-template>
+        </div>
+        <div class="compliance-cell" data-label="Compliance" (click)="$event.stopPropagation()">
+          <button
+            *ngIf="canManageStatus; else readonlyCompliance"
+            class="compliance-badge"
+            type="button"
+            [ngClass]="getComplianceClass(file.matchStatus)"
+            (click)="toggleComplianceMenu(file.id, $event)"
+          >
+            <span>{{ getComplianceLabel(file.matchStatus) }}</span>
+            <span class="caret">▾</span>
+          </button>
+          <ng-template #readonlyCompliance>
+            <span class="compliance-badge" [ngClass]="getComplianceClass(file.matchStatus)">
+              {{ getComplianceLabel(file.matchStatus) }}
+            </span>
+          </ng-template>
+          <div class="compliance-menu" *ngIf="canManageStatus && openComplianceMenuId === file.id">
+            <button
+              class="menu-item"
+              type="button"
+              *ngFor="let option of complianceOptions"
+              (click)="updateComplianceStatus(file, option)"
+            >
+              {{ getComplianceLabel(option) }}
+            </button>
+          </div>
         </div>
         <span data-label="Size">{{ file.size }}</span>
         <div class="action-group" data-label="Action" (click)="$event.stopPropagation()">

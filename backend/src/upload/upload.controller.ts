@@ -120,6 +120,30 @@ export class UploadController {
     return { ok: true, document: updated };
   }
 
+  @Patch(':id/match-status')
+  async updateMatchStatus(
+    @Param('id') id: string,
+    @Body() body: { matchStatus?: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN' },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (user.role === 'USER') {
+      throw new ForbiddenException('Not allowed to update file compliance status');
+    }
+
+    const matchStatus = String(body?.matchStatus || '').toUpperCase();
+    const allowed = ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'];
+    if (!allowed.includes(matchStatus)) {
+      throw new ForbiddenException('Invalid match status');
+    }
+
+    const updated = await this.uploadService.updateDocumentMatchStatus(
+      id,
+      matchStatus as 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN',
+    );
+    if (!updated) throw new NotFoundException('Document not found');
+    return { ok: true, document: updated };
+  }
+
   @Post(':id/reevaluate')
   async reevaluate(
     @Param('id') id: string,
