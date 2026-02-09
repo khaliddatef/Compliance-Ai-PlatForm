@@ -69,9 +69,16 @@
                 [class.selected]="isHeatmapCellSelected(rowIndex, colIndex)"
                 [style.background]="getHeatmapColor(rowIndex, colIndex, cell)"
                 [attr.title]="getHeatmapTooltip(rowIndex, colIndex, cell)"
-                (click)="toggleHeatmapCell(rowIndex, colIndex)"
+                [disabled]="cell === 0"
+                [attr.aria-disabled]="cell === 0"
+                (click)="openControlsForHeatmapCell(rowIndex, colIndex, cell, $event)"
               >
-                <span [class.muted]="cell === 0">{{ formatHeatmapValue(cell) }}</span>
+                <span
+                  class="heatmap-count"
+                  [class.muted]="cell === 0"
+                >
+                  {{ formatHeatmapValue(cell) }}
+                </span>
               </button>
             </div>
             <div class="heatmap-x">

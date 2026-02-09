@@ -289,8 +289,20 @@
   padding: 0;
 }
 
+.heatmap-cell:disabled {
+  cursor: default;
+}
+
 .heatmap-cell span {
   font-weight: 700;
+}
+
+.heatmap-count {
+  cursor: pointer;
+}
+
+.heatmap-count.muted {
+  cursor: default;
 }
 
 .heatmap-cell.empty {

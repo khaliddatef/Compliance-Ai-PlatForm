@@ -79,6 +79,7 @@ export class ControlKbPageComponent implements OnInit {
   pendingFramework = '';
   pendingFrameworkRef = '';
   pendingGap = '';
+  pendingCompliance = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -130,6 +131,7 @@ export class ControlKbPageComponent implements OnInit {
       this.pendingFramework = String(params.get('framework') || '').trim();
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
       this.pendingGap = String(params.get('gap') || '').trim();
+      this.pendingCompliance = String(params.get('compliance') || params.get('complianceStatus') || '').trim();
       this.refreshTopics();
     });
   }
@@ -206,6 +208,15 @@ export class ControlKbPageComponent implements OnInit {
     }
 
     this.gapFilter = this.pendingGap;
+    if (this.pendingCompliance) {
+      const normalized = this.pendingCompliance
+        .toUpperCase()
+        .replace(/[\s-]+/g, '_')
+        .trim();
+      if (['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'].includes(normalized)) {
+        this.complianceFilter = normalized;
+      }
+    }
 
     if (this.pendingTopicId) {
       const found = this.topics.find((topic) => topic.id === this.pendingTopicId);
@@ -216,6 +227,7 @@ export class ControlKbPageComponent implements OnInit {
     this.pendingTopicId = '';
     this.pendingFrameworkRef = '';
     this.pendingGap = '';
+    this.pendingCompliance = '';
   }
 
   selectTopic(topic: ControlTopic) {
