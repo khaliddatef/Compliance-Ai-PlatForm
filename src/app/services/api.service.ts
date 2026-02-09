@@ -485,6 +485,7 @@ export type ControlDefinitionRecord = {
   topicMappings?: ControlTopicMappingRecord[];
   ownerRole?: string | null;
   status?: string;
+  complianceStatus?: 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN';
   sortOrder?: number;
   _count?: { testComponents: number };
   testComponents?: TestComponentRecord[];
@@ -636,6 +637,7 @@ export class ApiService {
     topicId?: string;
     query?: string;
     status?: string;
+    complianceStatus?: string;
     ownerRole?: string;
     evidenceType?: string;
     isoMapping?: string;
@@ -649,6 +651,7 @@ export class ApiService {
     if (paramsInput.topicId) params = params.set('topicId', paramsInput.topicId);
     if (paramsInput.query) params = params.set('q', paramsInput.query);
     if (paramsInput.status) params = params.set('status', paramsInput.status);
+    if (paramsInput.complianceStatus) params = params.set('compliance', paramsInput.complianceStatus);
     if (paramsInput.ownerRole) params = params.set('ownerRole', paramsInput.ownerRole);
     if (paramsInput.evidenceType) params = params.set('evidenceType', paramsInput.evidenceType);
     if (paramsInput.isoMapping) params = params.set('isoMapping', paramsInput.isoMapping);

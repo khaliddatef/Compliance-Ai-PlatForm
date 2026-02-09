@@ -25,6 +25,7 @@
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-pill"></div>
           <div class="skeleton skeleton-pill"></div>
+          <div class="skeleton skeleton-pill"></div>
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-line"></div>
         </div>
@@ -87,6 +88,16 @@
               </select>
             </label>
             <label>
+              Compliance
+              <select [(ngModel)]="complianceFilter" (change)="applyFilters()">
+                <option value="all">All</option>
+                <option value="COMPLIANT">Compliant</option>
+                <option value="PARTIAL">Partial</option>
+                <option value="NOT_COMPLIANT">Not compliant</option>
+                <option value="UNKNOWN">Unknown</option>
+              </select>
+            </label>
+            <label>
               Evidence type
               <input
                 type="text"
@@ -140,6 +151,7 @@
           <span>References</span>
           <span>Framework status</span>
           <span>Activation</span>
+          <span>Compliance</span>
           <span>Tests</span>
           <span>Actions</span>
         </div>
@@ -202,6 +214,7 @@
           <span class="reference-cell" [title]="getControlReferenceCodes(control)">{{ getControlReferenceCodes(control) }}</span>
           <span class="status-pill" [ngClass]="getFrameworkStatusClass(control)">{{ getFrameworkStatusLabel(control) }}</span>
           <span class="status-pill" [ngClass]="getControlStatusClass(control)">{{ getControlStatusLabel(control) }}</span>
+          <span class="status-pill" [ngClass]="getComplianceStatusClass(control)">{{ getComplianceStatusLabel(control) }}</span>
           <span class="tests">{{ control._count?.testComponents || 0 }}</span>
           <div class="action-group" (click)="$event.stopPropagation()">
             <button class="ghost-btn open-btn" type="button" (click)="openControlPage(control, $event)">Open</button>
