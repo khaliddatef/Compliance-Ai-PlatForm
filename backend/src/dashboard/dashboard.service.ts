@@ -380,6 +380,348 @@ export class DashboardService {
     return count ? Math.round(totalDays / count) : 0;
   }
 
+  private buildEmptyDashboard(params: {
+    frameworkScope: string | null;
+    filters?: {
+      framework?: string | null;
+      businessUnit?: string | null;
+      riskCategory?: string | null;
+      rangeDays?: number;
+    };
+    filterOptions: DashboardFilterOptions;
+    rangeDays: number;
+  }) {
+    const { frameworkScope, filters, filterOptions, rangeDays } = params;
+    const partialWeight = 0.6;
+    const trendDays = this.buildDaySeries(rangeDays);
+    const trendDates = trendDays.map((item) => item.label);
+    const months = this.buildMonthSeries(6).map((month) => month.label);
+    const comparisonTargets = ['ISO 27001', 'SOC 2', 'NIST'];
+
+    const evidenceHealth: EvidenceHealth = {
+      high: 0,
+      medium: 0,
+      low: 0,
+      score: 0,
+      total: 0,
+    };
+
+    const auditReadiness: AuditReadiness = {
+      percent: 0,
+      acceptedControls: 0,
+      totalControls: 0,
+      missingPolicies: 0,
+      missingLogs: 0,
+    };
+
+    const submissionReadiness: SubmissionReadiness = {
+      percent: 0,
+      submitted: 0,
+      reviewed: 0,
+    };
+
+    const complianceBreakdown: ComplianceBreakdown = {
+      compliant: 0,
+      partial: 0,
+      notCompliant: 0,
+      unknown: 0,
+      total: 0,
+      compliantPct: 0,
+      partialPct: 0,
+      notCompliantPct: 0,
+      unknownPct: 0,
+    };
+
+    const evidenceHealthDetail: EvidenceHealthDetail = {
+      expiringSoon: 0,
+      expired: 0,
+      missing: 0,
+      reusedAcrossFrameworks: 0,
+      rejected: 0,
+      outdated: 0,
+    };
+
+    const evidenceHealthDetailV2 = {
+      expiringIn30: 0,
+      expired: 0,
+      missing: 0,
+      reusedAcrossFrameworks: 0,
+      rejected: 0,
+      outdated: 0,
+    };
+
+    const riskHeatmap: RiskHeatmap = {
+      impactLabels: ['Low', 'Medium', 'High'],
+      likelihoodLabels: ['Low', 'Medium', 'High'],
+      matrix: this.buildHeatmapMatrix(),
+    };
+
+    const riskDistribution: RiskDistribution = {
+      high: 0,
+      medium: 0,
+      low: 0,
+      total: 0,
+      exposure: 'low',
+    };
+
+    const attentionToday: AttentionTodayItem[] = [
+      {
+        id: 'failed-controls',
+        label: 'Failed Controls',
+        count: 0,
+        severity: 'low',
+        kind: 'control',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'missing-evidence',
+        label: 'Missing Evidence',
+        count: 0,
+        severity: 'low',
+        kind: 'evidence',
+        route: '/uploads',
+      },
+      {
+        id: 'risks-without-owner',
+        label: 'Risks Without Owner',
+        count: 0,
+        severity: 'low',
+        kind: 'risk',
+        route: '/dashboard',
+      },
+      {
+        id: 'upcoming-audits',
+        label: 'Upcoming Audits',
+        count: 0,
+        severity: 'low',
+        kind: 'audit',
+        route: '/dashboard',
+        query: { range: '30' },
+      },
+    ];
+
+    const attentionItems: AttentionItem[] = [
+      {
+        id: 'failed-controls',
+        label: 'Controls failed',
+        count: 0,
+        severity: 'low',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'overdue-controls',
+        label: 'Overdue controls',
+        count: 0,
+        severity: 'low',
+        route: '/control-kb',
+        query: { status: 'enabled' },
+      },
+      {
+        id: 'risks-without-mitigation',
+        label: 'Risks without mitigation',
+        count: 0,
+        severity: 'low',
+        route: '/dashboard',
+      },
+      {
+        id: 'evidence-issues',
+        label: 'Evidence missing/expired',
+        count: 0,
+        severity: 'low',
+        route: '/uploads',
+      },
+      {
+        id: 'upcoming-audits',
+        label: 'Audits in next 30 days',
+        count: 0,
+        severity: 'low',
+        route: '/dashboard',
+      },
+    ];
+
+    const trends = {
+      riskScore: months.map(() => 0),
+      compliance: months.map(() => 0),
+      mttr: months.map(() => 0),
+    };
+
+    const trendsV2: TrendSeriesV2[] = [
+      { id: 'riskScore', label: 'Risk Score', points: trendDates.map(() => 0), dates: trendDates, rangeDays, unit: 'percent' },
+      { id: 'compliance', label: 'Compliance', points: trendDates.map(() => 0), dates: trendDates, rangeDays, unit: 'percent' },
+      { id: 'mttr', label: 'MTTR', points: trendDates.map(() => 0), dates: trendDates, rangeDays, unit: 'days' },
+    ];
+
+    const frameworkComparison: FrameworkComparison[] = comparisonTargets.map((framework) => ({
+      framework,
+      completionPercent: 0,
+      failedControls: 0,
+    }));
+
+    const frameworkComparisonV2: FrameworkComparisonV2[] = comparisonTargets.map((framework) => ({
+      framework,
+      totalControls: 0,
+      compliant: 0,
+      partial: 0,
+      notCompliant: 0,
+      unknown: 0,
+      completionPercent: 0,
+      failedControls: 0,
+    }));
+
+    const auditSummary: AuditSummary = {
+      upcoming14: 0,
+      upcoming30: 0,
+      upcoming90: 0,
+      upcoming: [],
+    };
+
+    const kpis: DashboardKpi[] = [
+      {
+        id: 'coverage',
+        label: 'Overall Coverage',
+        value: '0%',
+        note: '0/0 controls reviewed',
+        severity: 'low',
+        drilldown: { route: '/control-kb', query: { status: 'enabled' } },
+      },
+      {
+        id: 'evidence-health',
+        label: 'Evidence Health Score',
+        value: '0%',
+        note: 'High 0 | Medium 0 | Low 0',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'audit-readiness',
+        label: 'Audit Readiness',
+        value: '0%',
+        note: 'Missing policies 0 | Missing logs 0',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'submission-readiness',
+        label: 'Submission Readiness',
+        value: '0%',
+        note: '0/0 submitted',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'overdue-evidence',
+        label: 'Overdue Evidence',
+        value: '0',
+        note: 'Awaiting review >14 days',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'open-risks',
+        label: 'Open Risks',
+        value: '0',
+        note: 'Partial or missing controls',
+        severity: 'low',
+        drilldown: { route: '/dashboard' },
+      },
+      {
+        id: 'documents-uploaded',
+        label: 'Documents Uploaded',
+        value: '0',
+        note: 'Total evidence files',
+        severity: 'low',
+        drilldown: { route: '/uploads' },
+      },
+      {
+        id: 'matched-controls',
+        label: 'Matched Controls',
+        value: '0',
+        note: 'Distinct controls with uploads',
+        severity: 'low',
+        drilldown: { route: '/control-kb', query: { compliance: 'COMPLIANT' } },
+      },
+    ];
+
+    const executiveSummary: ExecutiveSummary = {
+      headline: '0% coverage across 0 controls',
+      highlights: [
+        '0 compliant | 0 partial | 0 failed',
+        'Evidence health 0%',
+        'Audit readiness 0%',
+      ],
+      risks: [
+        'No active framework selected',
+        'Activate a framework to start measuring controls',
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return {
+      ok: true,
+      appliedFilters: {
+        framework: frameworkScope,
+        businessUnit: filters?.businessUnit || null,
+        riskCategory: filters?.riskCategory || null,
+        rangeDays,
+      },
+      filterOptions,
+      attentionToday,
+      attentionItems,
+      evidenceHealthDetail,
+      evidenceHealthDetailV2,
+      trends,
+      trendsV2,
+      frameworkComparison,
+      frameworkComparisonV2,
+      recommendedActions: [] as RecommendedAction[],
+      recommendedActionsV2: [] as RecommendedActionV2[],
+      auditSummary,
+      kpis,
+      executiveSummary,
+      complianceGaps: [] as ComplianceGapItem[],
+      metrics: {
+        coveragePercent: 0,
+        evaluatedControls: 0,
+        compliant: 0,
+        partial: 0,
+        missing: 0,
+        unknown: 0,
+        evidenceItems: 0,
+        awaitingReview: 0,
+        openRisks: 0,
+        overdueEvidence: 0,
+        lastReviewAt: null,
+        evidenceHealth,
+        auditReadiness,
+        submissionReadiness,
+      },
+      uploadSummary: {
+        totalUploadedDocuments: 0,
+        distinctMatchedControls: 0,
+        documentsPerControl: [],
+      },
+      complianceBreakdown,
+      riskDrivers: [] as RiskDriver[],
+      riskHeatmap,
+      riskHeatmapControls: [],
+      riskDistribution,
+      evidenceHealthVisual: {
+        valid: 0,
+        expiringSoon: 0,
+        expired: 0,
+        missing: 0,
+        total: 0,
+      },
+      frameworkProgress: [] as FrameworkProgress[],
+      months,
+      riskCoverage: [] as RiskCoverage[],
+      riskControls: [] as RiskControl[],
+      activity: [] as ActivityItem[],
+    };
+  }
+
   async getDashboard(filters?: {
     framework?: string | null;
     businessUnit?: string | null;
@@ -414,6 +756,15 @@ export class DashboardService {
       riskCategories: [],
       timeRanges: [30, 90, 180, 365],
     };
+
+    if (!frameworkScope) {
+      return this.buildEmptyDashboard({
+        frameworkScope: null,
+        filters,
+        filterOptions,
+        rangeDays,
+      });
+    }
 
     const controls = await this.prisma.controlDefinition.findMany({
       where: {
