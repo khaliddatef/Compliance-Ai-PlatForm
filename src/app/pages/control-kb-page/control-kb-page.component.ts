@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import {
   ApiService,
   ControlDefinitionRecord,
@@ -69,12 +70,22 @@ export class ControlKbPageComponent implements OnInit {
   totalPages = 1;
   showNewTopic = false;
   showNewControl = false;
+  showAssignControl = false;
   showNewComponent = false;
   showTopicManager = false;
   showFilters = false;
   topicPopoverControlId: string | null = null;
   frameworkPopoverControlId: string | null = null;
   relatedTopicId = '';
+  frameworkMappingTarget = '';
+  frameworkMappingCode = '';
+  assignSearchTerm = '';
+  assignResults: ControlDefinitionRecord[] = [];
+  assignSelectedControlId = '';
+  assignReferenceCode = '';
+  assignSourceFramework = 'all';
+  assignLoading = false;
+  assignError = '';
   pendingTopicId = '';
   pendingFramework = '';
   pendingFrameworkRef = '';
@@ -83,6 +94,8 @@ export class ControlKbPageComponent implements OnInit {
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
+  private initialQueryHasFilters = false;
+  private initialFrameworkAutoApplied = false;
 
   topicDraft: TopicForm = {
     title: '',
@@ -132,6 +145,7 @@ export class ControlKbPageComponent implements OnInit {
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
       this.pendingGap = String(params.get('gap') || '').trim();
       this.pendingCompliance = String(params.get('compliance') || params.get('complianceStatus') || '').trim();
+      this.initialFrameworkAutoApplied = false;
       this.refreshTopics();
     });
   }
@@ -186,8 +200,7 @@ export class ControlKbPageComponent implements OnInit {
         this.applyQueryFilters();
         this.loading = false;
         this.syncSelectedTopic();
-        this.loadFrameworks();
-        this.loadControls();
+        this.loadFrameworks(true);
         this.cdr.markForCheck();
       },
       error: () => {
@@ -199,26 +212,31 @@ export class ControlKbPageComponent implements OnInit {
   }
 
   private applyQueryFilters() {
-    if (this.pendingFramework) {
-      this.frameworkFilter = this.pendingFramework;
-    }
+    this.initialQueryHasFilters = Boolean(
+      this.pendingFramework ||
+      this.pendingTopicId ||
+      this.pendingFrameworkRef ||
+      this.pendingGap ||
+      this.pendingCompliance,
+    );
 
-    if (this.pendingFrameworkRef) {
-      this.frameworkRefFilter = this.pendingFrameworkRef;
-    }
+    this.frameworkFilter = this.pendingFramework || 'all';
+    this.frameworkRefFilter = this.pendingFrameworkRef || '';
+    this.gapFilter = this.pendingGap || '';
 
-    this.gapFilter = this.pendingGap;
-    if (this.pendingCompliance) {
-      const normalized = this.pendingCompliance
-        .toUpperCase()
-        .replace(/[\s-]+/g, '_')
-        .trim();
-      if (['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'].includes(normalized)) {
-        this.complianceFilter = normalized;
-      }
-    }
+    const normalizedCompliance = this.pendingCompliance
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_')
+      .trim();
+    this.complianceFilter = ['COMPLIANT', 'PARTIAL', 'NOT_COMPLIANT', 'UNKNOWN'].includes(
+      normalizedCompliance,
+    )
+      ? normalizedCompliance
+      : 'all';
 
-    if (this.pendingTopicId) {
+    if (!this.pendingTopicId) {
+      this.topicFilter = 'all';
+    } else {
       const found = this.topics.find((topic) => topic.id === this.pendingTopicId);
       this.topicFilter = found ? found.id : 'all';
     }
@@ -333,7 +351,7 @@ export class ControlKbPageComponent implements OnInit {
     }
   }
 
-  loadFrameworks() {
+  loadFrameworks(loadControlsAfter = false) {
     this.api.listFrameworks().subscribe({
       next: (frameworks) => {
         const list = frameworks || [];
@@ -341,11 +359,36 @@ export class ControlKbPageComponent implements OnInit {
         const enabled = list.filter((fw) => fw.status === 'enabled').map((fw) => fw.framework).filter(Boolean);
         const names = enabled.length ? enabled : list.map((fw) => fw.framework).filter(Boolean);
         this.frameworkOptions = Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+
+        const activeFramework = list.find((fw) => fw.status === 'enabled')?.framework || '';
+        const shouldAutoApplyActive =
+          !this.initialFrameworkAutoApplied &&
+          !this.initialQueryHasFilters &&
+          this.frameworkFilter === 'all' &&
+          this.topicFilter === 'all' &&
+          Boolean(activeFramework);
+
+        if (shouldAutoApplyActive) {
+          this.frameworkFilter = activeFramework;
+          this.page = 1;
+          this.initialFrameworkAutoApplied = true;
+          this.loadControls();
+        } else if (loadControlsAfter) {
+          this.loadControls();
+        }
+
+        if (this.selectedControl) {
+          this.syncFrameworkMappingDraft(this.selectedControl);
+        }
+
         this.cdr.markForCheck();
       },
       error: () => {
         this.frameworkOptions = [];
         this.frameworkStatusMap = new Map();
+        if (loadControlsAfter) {
+          this.loadControls();
+        }
         this.cdr.markForCheck();
       },
     });
@@ -359,6 +402,7 @@ export class ControlKbPageComponent implements OnInit {
         this.editingControl = false;
         this.showNewComponent = false;
         this.relatedTopicId = '';
+        this.syncFrameworkMappingDraft(full);
         this.cdr.markForCheck();
       },
       error: () => {
@@ -459,6 +503,8 @@ export class ControlKbPageComponent implements OnInit {
     const title = this.controlDraft.title.trim();
     const controlCode = this.controlDraft.controlCode.trim();
     if (!title || !controlCode) return;
+    const isoMappings = this.parseList(this.controlDraft.isoMappingsText);
+    const frameworkCode = isoMappings[0] || controlCode;
 
     this.api
       .createControlDefinition({
@@ -466,10 +512,12 @@ export class ControlKbPageComponent implements OnInit {
         controlCode,
         title,
         description: this.controlDraft.description.trim(),
-        isoMappings: this.parseList(this.controlDraft.isoMappingsText),
+        isoMappings,
         ownerRole: this.controlDraft.ownerRole.trim() || undefined,
         status: this.controlDraft.status,
         sortOrder: this.controlDraft.sortOrder,
+        framework: this.frameworkFilter !== 'all' ? this.frameworkFilter : undefined,
+        frameworkCode,
       })
       .subscribe({
         next: () => {
@@ -800,6 +848,230 @@ export class ControlKbPageComponent implements OnInit {
     });
   }
 
+  toggleAssignControl() {
+    this.showAssignControl = !this.showAssignControl;
+    this.assignError = '';
+    if (!this.showAssignControl) {
+      this.resetAssignControlDraft();
+      return;
+    }
+
+    const target = this.resolveAssignTargetFramework();
+    this.frameworkMappingTarget = target || '';
+    this.assignReferenceCode = '';
+    this.searchAssignableControls();
+  }
+
+  getFrameworkMappingLabel(mapping: { frameworkRef?: { externalId?: string | null; name?: string | null } | null; framework: string }) {
+    return (mapping.frameworkRef?.externalId || mapping.frameworkRef?.name || mapping.framework || '').trim();
+  }
+
+  getAvailableFrameworkMappingOptions(control?: ControlDefinitionRecord) {
+    const frameworkNames = Array.from(this.frameworkStatusMap.keys())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    if (!control) return frameworkNames;
+
+    const mappedFrameworks = new Set(
+      (control.frameworkMappings || [])
+        .map((mapping) => String(mapping.framework || '').trim())
+        .filter(Boolean),
+    );
+
+    return frameworkNames.filter((name) => !mappedFrameworks.has(name));
+  }
+
+  getAssignableFrameworkOptions() {
+    return Array.from(this.frameworkStatusMap.keys())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  onAssignSourceFrameworkChange() {
+    this.assignSelectedControlId = '';
+    this.assignReferenceCode = '';
+    this.searchAssignableControls();
+  }
+
+  resolveAssignTargetFramework() {
+    if (this.frameworkFilter !== 'all') return this.frameworkFilter;
+    return Array.from(this.frameworkStatusMap.entries()).find(([, status]) => status === 'enabled')?.[0] || '';
+  }
+
+  searchAssignableControls() {
+    const query = this.assignSearchTerm.trim();
+    const framework = this.assignSourceFramework.trim();
+    const baseParams: {
+      query?: string;
+      framework?: string;
+      page?: number;
+      pageSize?: number;
+    } = {
+      query: query || undefined,
+      framework: framework && framework !== 'all' ? framework : undefined,
+      pageSize: 500,
+    };
+
+    this.assignLoading = true;
+    this.assignError = '';
+
+    this.api
+      .listControlDefinitions({
+        page: 1,
+        ...baseParams,
+      })
+      .subscribe({
+        next: (firstPage) => {
+          const firstItems = Array.isArray(firstPage?.items) ? firstPage.items : [];
+          const total = Math.max(Number(firstPage?.total) || 0, firstItems.length);
+          const totalPages = Math.max(1, Math.ceil(total / 500));
+
+          if (totalPages <= 1) {
+            this.applyAssignableResults(firstItems);
+            return;
+          }
+
+          const pageRequests = [];
+          for (let page = 2; page <= totalPages; page += 1) {
+            pageRequests.push(
+              this.api.listControlDefinitions({
+                ...baseParams,
+                page,
+              }),
+            );
+          }
+
+          forkJoin(pageRequests).subscribe({
+            next: (pages) => {
+              const allItems = [...firstItems];
+              for (const page of pages) {
+                const items = Array.isArray(page?.items) ? page.items : [];
+                allItems.push(...items);
+              }
+              this.applyAssignableResults(allItems);
+            },
+            error: () => {
+              this.failAssignableControls('Unable to load controls.');
+            },
+          });
+        },
+        error: () => {
+          this.failAssignableControls('Unable to load controls.');
+        },
+      });
+  }
+
+  onAssignControlSelectionChange() {
+    const selected = this.assignResults.find((item) => item.id === this.assignSelectedControlId);
+    const defaultCode = this.getDefaultFrameworkCode(selected);
+    this.assignReferenceCode = defaultCode;
+  }
+
+  assignControl() {
+    if (!this.canEdit) return;
+
+    const targetFramework = this.resolveAssignTargetFramework();
+    if (!targetFramework) {
+      this.assignError = 'Select a framework filter first.';
+      return;
+    }
+
+    const controlId = this.assignSelectedControlId.trim();
+    if (!controlId) {
+      this.assignError = 'Select a control to assign.';
+      return;
+    }
+
+    const selected = this.assignResults.find((item) => item.id === controlId);
+    const frameworkCode =
+      this.assignReferenceCode.trim() || this.getDefaultFrameworkCode(selected) || selected?.controlCode || '';
+    if (!frameworkCode) {
+      this.assignError = 'Reference code is required.';
+      return;
+    }
+
+    this.assignLoading = true;
+    this.assignError = '';
+
+    this.api
+      .addControlFrameworkMapping(controlId, {
+        framework: targetFramework,
+        frameworkCode,
+        relationshipType: 'RELATED',
+      })
+      .subscribe({
+        next: (updated) => {
+          if (this.topicFilter !== 'all') {
+            this.api.addControlTopicMapping(controlId, this.topicFilter, 'RELATED').subscribe({
+              next: (topicUpdated) => {
+                this.finishAssignControl(topicUpdated || updated);
+              },
+              error: () => {
+                this.assignLoading = false;
+                this.assignError = 'Framework assigned, but failed to map topic.';
+                this.cdr.markForCheck();
+              },
+            });
+            return;
+          }
+          this.finishAssignControl(updated);
+        },
+        error: () => {
+          this.assignLoading = false;
+          this.assignError = 'Unable to assign control.';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  addFrameworkMapping() {
+    if (!this.canEdit || !this.selectedControl) return;
+
+    const framework = this.frameworkMappingTarget.trim();
+    if (!framework) return;
+
+    const defaultCode = this.getDefaultFrameworkCode(this.selectedControl);
+    const frameworkCode = this.frameworkMappingCode.trim() || defaultCode;
+
+    this.api
+      .addControlFrameworkMapping(this.selectedControl.id, {
+        framework,
+        frameworkCode,
+        relationshipType: 'RELATED',
+      })
+      .subscribe({
+        next: (updated) => {
+          this.selectedControl = updated;
+          this.controlEdit = this.mapControlForm(updated);
+          this.updateControlInList(updated);
+          this.syncFrameworkMappingDraft(updated);
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          this.error = 'Unable to add framework mapping.';
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  removeFrameworkMapping(mappingId: string) {
+    if (!this.canEdit || !this.selectedControl) return;
+
+    this.api.removeControlFrameworkMapping(this.selectedControl.id, mappingId).subscribe({
+      next: (updated) => {
+        this.selectedControl = updated;
+        this.controlEdit = this.mapControlForm(updated);
+        this.updateControlInList(updated);
+        this.syncFrameworkMappingDraft(updated);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to remove framework mapping.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   getAvailableRelatedTopics() {
     if (!this.selectedControl) return this.topics;
     const mapped = new Set((this.selectedControl.topicMappings || []).map((mapping) => mapping.topicId));
@@ -809,13 +1081,25 @@ export class ControlKbPageComponent implements OnInit {
 
   private updateControlInList(updated: ControlDefinitionRecord) {
     this.controls = this.controls.map((control) =>
-      control.id === updated.id ? { ...control, topicMappings: updated.topicMappings, topic: updated.topic } : control,
+      control.id === updated.id
+        ? {
+            ...control,
+            topicMappings: updated.topicMappings,
+            topic: updated.topic,
+            frameworkMappings: updated.frameworkMappings,
+            isoMappings: updated.isoMappings,
+            status: updated.status,
+            complianceStatus: updated.complianceStatus,
+          }
+        : control,
     );
   }
 
   clearFilters() {
+    const activeFramework =
+      Array.from(this.frameworkStatusMap.entries()).find(([, status]) => status === 'enabled')?.[0] || 'all';
     this.searchTerm = '';
-    this.frameworkFilter = 'all';
+    this.frameworkFilter = activeFramework;
     this.frameworkQuery = '';
     this.topicFilter = 'all';
     this.statusFilter = 'all';
@@ -826,6 +1110,8 @@ export class ControlKbPageComponent implements OnInit {
     this.gapFilter = '';
     this.frameworkPopoverControlId = null;
     this.topicPopoverControlId = null;
+    this.showAssignControl = false;
+    this.resetAssignControlDraft();
     this.page = 1;
     this.syncSelectedTopic();
     this.loadControls();
@@ -1016,5 +1302,75 @@ export class ControlKbPageComponent implements OnInit {
       this.topicFilter = 'all';
       this.editingTopic = false;
     }
+  }
+
+  private getDefaultFrameworkCode(control?: ControlDefinitionRecord) {
+    const fromIso = Array.isArray(control?.isoMappings) ? String(control?.isoMappings[0] || '').trim() : '';
+    if (fromIso) return fromIso;
+    return String(control?.controlCode || '').trim();
+  }
+
+  private syncFrameworkMappingDraft(control?: ControlDefinitionRecord) {
+    if (!control) {
+      this.frameworkMappingTarget = '';
+      this.frameworkMappingCode = '';
+      return;
+    }
+
+    const options = this.getAvailableFrameworkMappingOptions(control);
+    if (!options.length) {
+      this.frameworkMappingTarget = '';
+    } else if (!options.includes(this.frameworkMappingTarget)) {
+      this.frameworkMappingTarget = options[0];
+    }
+
+    if (!this.frameworkMappingCode.trim()) {
+      this.frameworkMappingCode = this.getDefaultFrameworkCode(control);
+    }
+  }
+
+  private finishAssignControl(updated: ControlDefinitionRecord) {
+    this.assignLoading = false;
+    this.showAssignControl = false;
+    this.selectedControl = updated;
+    this.controlEdit = this.mapControlForm(updated);
+    this.resetAssignControlDraft();
+    this.page = 1;
+    this.loadControls();
+    this.cdr.markForCheck();
+  }
+
+  private resetAssignControlDraft() {
+    this.assignSearchTerm = '';
+    this.assignResults = [];
+    this.assignSelectedControlId = '';
+    this.assignReferenceCode = '';
+    this.assignSourceFramework = 'all';
+    this.assignLoading = false;
+    this.assignError = '';
+  }
+
+  private applyAssignableResults(items: ControlDefinitionRecord[]) {
+    const unique = Array.from(new Map(items.map((item) => [item.id, item])).values());
+    this.assignResults = unique;
+    if (!this.assignResults.length) {
+      this.assignSelectedControlId = '';
+      this.assignReferenceCode = '';
+      this.assignError = 'No controls found for the selected filters.';
+    } else if (!this.assignResults.some((item) => item.id === this.assignSelectedControlId)) {
+      this.assignSelectedControlId = this.assignResults[0].id;
+      this.onAssignControlSelectionChange();
+    }
+    this.assignLoading = false;
+    this.cdr.markForCheck();
+  }
+
+  private failAssignableControls(message: string) {
+    this.assignResults = [];
+    this.assignSelectedControlId = '';
+    this.assignReferenceCode = '';
+    this.assignError = message;
+    this.assignLoading = false;
+    this.cdr.markForCheck();
   }
 }

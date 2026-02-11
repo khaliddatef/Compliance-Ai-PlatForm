@@ -37,33 +37,45 @@ const GAP_ALIAS_MAP: Record<string, ComplianceGapKey> = {
 
 @Injectable()
 export class ControlKbService {
+  private readonly inQueryBatchSize = 400;
+
   constructor(private readonly prisma: PrismaService) {}
 
-  async listTopics(framework?: string | null, includeDisabled = false) {
-    const activeFrameworks = await this.getActiveFrameworkSet();
-    if (activeFrameworks && activeFrameworks.size === 0) {
-      return [];
+  private toUniqueValues(values: Array<string | null | undefined>) {
+    return Array.from(
+      new Set(
+        values
+          .map((value) => String(value || '').trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private splitIntoBatches<T>(items: T[], size = this.inQueryBatchSize) {
+    if (!items.length) return [] as T[][];
+    const batches: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+      batches.push(items.slice(index, index + size));
     }
+    return batches;
+  }
+
+  async listTopics(framework?: string | null, includeDisabled = false) {
+    const frameworkFilterName = framework?.trim() || null;
 
     const topics = await this.prisma.controlTopic.findMany({
       orderBy: [{ priority: 'desc' }, { title: 'asc' }],
       include: { _count: { select: { controls: true } } },
     });
 
-    if (!framework && !activeFrameworks) {
+    if (!frameworkFilterName) {
       return topics.map((topic) => ({
         ...topic,
         controlCount: topic._count.controls,
       }));
     }
 
-    const frameworkFilter = framework ? { frameworkMappings: { some: { framework } } } : null;
-    const activeFilter = activeFrameworks
-      ? { frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } }
-      : null;
-    const where = frameworkFilter && activeFilter
-      ? { AND: [frameworkFilter, activeFilter] }
-      : frameworkFilter || activeFilter || undefined;
+    const where = { frameworkMappings: { some: { framework: frameworkFilterName } } };
 
     const grouped = await this.prisma.controlDefinition.groupBy({
       by: ['topicId'],
@@ -74,10 +86,14 @@ export class ControlKbService {
       grouped.map((row) => [row.topicId, (row as { _count?: { _all?: number } })._count?._all ?? 0]),
     );
 
-    return topics.map((topic) => ({
+    const withCounts = topics.map((topic) => ({
       ...topic,
       controlCount: countMap.get(topic.id) || 0,
     }));
+
+    // Keep empty topics visible inside framework-specific views so newly created topics do not disappear
+    // before the first control is added and mapped.
+    return withCounts.filter((topic) => (topic.controlCount || 0) > 0 || topic._count.controls === 0);
   }
 
   async createTopic(input: {
@@ -139,15 +155,8 @@ export class ControlKbService {
     pageSize?: number;
     includeDisabled?: boolean;
   }) {
-    const activeFrameworks = await this.getActiveFrameworkSet();
-    if (activeFrameworks && activeFrameworks.size === 0) {
-      return {
-        items: [],
-        total: 0,
-        page: 1,
-        pageSize: Math.min(Math.max(params.pageSize || 10, 1), 500),
-      };
-    }
+    const framework = params.framework?.trim();
+
     const filters: any[] = [];
     if (params.topicId) {
       filters.push({
@@ -165,12 +174,8 @@ export class ControlKbService {
     if (ownerRole) {
       filters.push({ ownerRole: { contains: ownerRole } });
     }
-    const framework = params.framework?.trim();
     if (framework) {
       filters.push({ frameworkMappings: { some: { framework } } });
-    }
-    if (activeFrameworks) {
-      filters.push({ frameworkMappings: { some: { framework: { in: Array.from(activeFrameworks) } } } });
     }
     const query = params.query?.trim();
     if (query) {
@@ -197,11 +202,7 @@ export class ControlKbService {
     const complianceRaw = String(params.complianceStatus || '').trim();
     const needsComplianceFilter = Boolean(complianceRaw) && complianceRaw.toLowerCase() !== 'all';
     const complianceStatus = needsComplianceFilter ? this.normalizeComplianceStatus(complianceRaw) : null;
-    const frameworkWhere = activeFrameworks
-      ? { framework: { in: Array.from(activeFrameworks) } }
-      : framework
-        ? { framework }
-        : undefined;
+    const frameworkWhere = framework ? { framework } : undefined;
 
     const select = Prisma.validator<Prisma.ControlDefinitionSelect>()({
       id: true,
@@ -355,17 +356,21 @@ export class ControlKbService {
   private async attachComplianceStatus<T extends { controlCode: string }>(items: T[]) {
     if (!items.length) return items as Array<T & { complianceStatus: string }>;
 
-    const controlCodes = items
-      .map((item) => String(item.controlCode || '').trim())
-      .filter(Boolean);
+    const controlCodes = this.toUniqueValues(
+      items.map((item) => String(item.controlCode || '').trim()),
+    );
 
     if (!controlCodes.length) return items as Array<T & { complianceStatus: string }>;
 
-    const evaluations = await this.prisma.evidenceEvaluation.findMany({
-      where: { controlId: { in: controlCodes } },
-      orderBy: { createdAt: 'desc' },
-      select: { controlId: true, status: true },
-    });
+    const evaluations: Array<{ controlId: string; status: string }> = [];
+    for (const batch of this.splitIntoBatches(controlCodes)) {
+      const batchEvaluations = await this.prisma.evidenceEvaluation.findMany({
+        where: { controlId: { in: batch } },
+        orderBy: { createdAt: 'desc' },
+        select: { controlId: true, status: true },
+      });
+      evaluations.push(...batchEvaluations);
+    }
 
     const latestEvalByControl = new Map<string, string>();
     for (const evaluation of evaluations) {
@@ -374,14 +379,20 @@ export class ControlKbService {
       latestEvalByControl.set(code, this.normalizeComplianceStatus(evaluation.status));
     }
 
-    const missingCodes = controlCodes.filter((code) => !latestEvalByControl.has(code));
+    const missingCodes = this.toUniqueValues(
+      controlCodes.filter((code) => !latestEvalByControl.has(code)),
+    );
     const docsByControl = new Map<string, Array<{ matchStatus: string | null }>>();
 
     if (missingCodes.length) {
-      const documents = await this.prisma.document.findMany({
-        where: { matchControlId: { in: missingCodes } },
-        select: { matchControlId: true, matchStatus: true },
-      });
+      const documents: Array<{ matchControlId: string | null; matchStatus: string | null }> = [];
+      for (const batch of this.splitIntoBatches(missingCodes)) {
+        const batchDocuments = await this.prisma.document.findMany({
+          where: { matchControlId: { in: batch } },
+          select: { matchControlId: true, matchStatus: true },
+        });
+        documents.push(...batchDocuments);
+      }
 
       for (const doc of documents) {
         const code = String(doc.matchControlId || '').trim();
@@ -405,14 +416,18 @@ export class ControlKbService {
     gap: ComplianceGapKey,
   ): Promise<T[]> {
     if (!controls.length) return controls;
-    const controlCodes = controls.map((control) => control.controlCode);
-    const controlIds = controls.map((control) => control.id);
+    const controlCodes = this.toUniqueValues(controls.map((control) => control.controlCode));
+    const controlIds = this.toUniqueValues(controls.map((control) => control.id));
 
-    const evaluations = await this.prisma.evidenceEvaluation.findMany({
-      where: { controlId: { in: controlCodes } },
-      orderBy: { createdAt: 'desc' },
-      select: { controlId: true, status: true, createdAt: true },
-    });
+    const evaluations: Array<{ controlId: string; status: string; createdAt: Date }> = [];
+    for (const batch of this.splitIntoBatches(controlCodes)) {
+      const batchEvaluations = await this.prisma.evidenceEvaluation.findMany({
+        where: { controlId: { in: batch } },
+        orderBy: { createdAt: 'desc' },
+        select: { controlId: true, status: true, createdAt: true },
+      });
+      evaluations.push(...batchEvaluations);
+    }
 
     const latestEvalByControl = new Map<string, { status: string }>();
     for (const evaluation of evaluations) {
@@ -421,18 +436,30 @@ export class ControlKbService {
       }
     }
 
-    const documents = await this.prisma.document.findMany({
-      where: { matchControlId: { in: controlCodes } },
-      select: {
-        matchControlId: true,
-        matchStatus: true,
-        reviewedAt: true,
-        submittedAt: true,
-        createdAt: true,
-        docType: true,
-        originalName: true,
-      },
-    });
+    const documents: Array<{
+      matchControlId: string | null;
+      matchStatus: string | null;
+      reviewedAt: Date | null;
+      submittedAt: Date | null;
+      createdAt: Date;
+      docType: string | null;
+      originalName: string;
+    }> = [];
+    for (const batch of this.splitIntoBatches(controlCodes)) {
+      const batchDocuments = await this.prisma.document.findMany({
+        where: { matchControlId: { in: batch } },
+        select: {
+          matchControlId: true,
+          matchStatus: true,
+          reviewedAt: true,
+          submittedAt: true,
+          createdAt: true,
+          docType: true,
+          originalName: true,
+        },
+      });
+      documents.push(...batchDocuments);
+    }
 
     const docsByControl = new Map<string, typeof documents>();
     const latestDocByControl = new Map<string, { createdAt: Date; docType: string | null; originalName: string }>();
@@ -453,10 +480,17 @@ export class ControlKbService {
       }
     }
 
-    const evidenceMappings = await this.prisma.controlEvidenceMapping.findMany({
-      where: { controlId: { in: controlIds } },
-      include: { evidenceRequest: { select: { artifact: true, description: true } } },
-    });
+    const evidenceMappings: Array<{
+      controlId: string;
+      evidenceRequest?: { artifact: string | null; description: string | null } | null;
+    }> = [];
+    for (const batch of this.splitIntoBatches(controlIds)) {
+      const batchMappings = await this.prisma.controlEvidenceMapping.findMany({
+        where: { controlId: { in: batch } },
+        include: { evidenceRequest: { select: { artifact: true, description: true } } },
+      });
+      evidenceMappings.push(...batchMappings);
+    }
 
     const controlIdToCode = new Map(controls.map((control) => [control.id, control.controlCode]));
     const policyRequiredByControlCode = new Map<string, boolean>();
@@ -759,6 +793,8 @@ export class ControlKbService {
     ownerRole?: string | null;
     status?: string | null;
     sortOrder?: number | null;
+    framework?: string | null;
+    frameworkCode?: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const control = await tx.controlDefinition.create({
@@ -781,6 +817,37 @@ export class ControlKbService {
           relationshipType: 'PRIMARY',
         },
       });
+
+      const requestedFramework = String(input.framework || '').trim();
+      const targetFramework =
+        (requestedFramework
+          ? await tx.framework.findUnique({
+              where: { name: requestedFramework },
+              select: { id: true, name: true },
+            })
+          : null) ||
+        (await tx.framework.findFirst({
+          where: { status: 'enabled' },
+          orderBy: { updatedAt: 'desc' },
+          select: { id: true, name: true },
+        }));
+
+      const derivedFrameworkCode =
+        String(input.frameworkCode || '').trim() ||
+        String(input.isoMappings?.[0] || '').trim() ||
+        String(input.controlCode || '').trim();
+
+      if (targetFramework && derivedFrameworkCode) {
+        await tx.controlFrameworkMapping.create({
+          data: {
+            controlId: control.id,
+            frameworkId: targetFramework.id,
+            framework: targetFramework.name,
+            frameworkCode: derivedFrameworkCode,
+            relationshipType: 'PRIMARY',
+          },
+        });
+      }
 
       return control;
     });
@@ -882,6 +949,94 @@ export class ControlKbService {
         topicId,
         relationshipType: 'RELATED',
       },
+    });
+
+    return this.getControl(controlId, true);
+  }
+
+  async addControlFrameworkMapping(
+    controlId: string,
+    input: {
+      frameworkId?: string | null;
+      framework?: string | null;
+      frameworkCode?: string | null;
+      relationshipType?: 'PRIMARY' | 'RELATED';
+      priority?: number | null;
+    },
+  ) {
+    const control = await this.prisma.controlDefinition.findUnique({
+      where: { id: controlId },
+      select: { id: true, controlCode: true, isoMappings: true },
+    });
+    if (!control) throw new BadRequestException('Control not found');
+
+    const frameworkId = String(input.frameworkId || '').trim();
+    const frameworkName = String(input.framework || '').trim();
+
+    const framework = frameworkId
+      ? await this.prisma.framework.findUnique({
+          where: { id: frameworkId },
+          select: { id: true, name: true },
+        })
+      : frameworkName
+        ? await this.prisma.framework.findUnique({
+            where: { name: frameworkName },
+            select: { id: true, name: true },
+          })
+        : null;
+
+    if (!framework) {
+      throw new BadRequestException('Framework not found');
+    }
+
+    const fallbackCode = Array.isArray(control.isoMappings) && control.isoMappings.length
+      ? String(control.isoMappings[0] || '').trim()
+      : String(control.controlCode || '').trim();
+    const frameworkCode = String(input.frameworkCode || '').trim() || fallbackCode;
+    if (!frameworkCode) {
+      throw new BadRequestException('frameworkCode is required');
+    }
+
+    const relationshipType = (input.relationshipType || 'RELATED').toUpperCase() as 'PRIMARY' | 'RELATED';
+    const priority = typeof input.priority === 'number' ? input.priority : null;
+
+    const existing = await this.prisma.controlFrameworkMapping.findFirst({
+      where: {
+        controlId,
+        framework: framework.name,
+        frameworkCode,
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      await this.prisma.controlFrameworkMapping.create({
+        data: {
+          controlId,
+          frameworkId: framework.id,
+          framework: framework.name,
+          frameworkCode,
+          relationshipType,
+          priority,
+        },
+      });
+    }
+
+    return this.getControl(controlId, true);
+  }
+
+  async removeControlFrameworkMapping(controlId: string, mappingId: string) {
+    const mapping = await this.prisma.controlFrameworkMapping.findFirst({
+      where: { id: mappingId, controlId },
+      select: { id: true },
+    });
+
+    if (!mapping) {
+      throw new BadRequestException('Framework mapping not found');
+    }
+
+    await this.prisma.controlFrameworkMapping.delete({
+      where: { id: mapping.id },
     });
 
     return this.getControl(controlId, true);

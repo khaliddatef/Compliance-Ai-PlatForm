@@ -90,7 +90,7 @@ export class FrameworkControlsPageComponent implements OnInit {
     this.cdr.markForCheck();
     this.api.listControlTopics(this.framework || undefined).subscribe({
       next: (topics) => {
-        const items = (topics || []).filter((topic) => !this.framework || (topic.controlCount || 0) > 0);
+        const items = topics || [];
         this.topics = items.map((topic) => this.toTopicView(topic));
         this.loading = false;
         this.cdr.markForCheck();
@@ -263,6 +263,8 @@ export class FrameworkControlsPageComponent implements OnInit {
     const controlCode = topic.draftControl.controlCode.trim();
     const title = topic.draftControl.title.trim();
     if (!controlCode || !title) return;
+    const isoMappings = this.parseList(topic.draftControl.isoMappingsText);
+    const frameworkCode = isoMappings[0] || controlCode;
 
     this.api
       .createControlDefinition({
@@ -270,8 +272,10 @@ export class FrameworkControlsPageComponent implements OnInit {
         controlCode,
         title,
         description: '',
-        isoMappings: this.parseList(topic.draftControl.isoMappingsText),
+        isoMappings,
         status: topic.draftControl.status,
+        framework: this.framework || undefined,
+        frameworkCode,
       })
       .subscribe({
         next: () => {

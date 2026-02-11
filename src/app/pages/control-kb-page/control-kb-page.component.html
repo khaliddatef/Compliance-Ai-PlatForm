@@ -49,6 +49,9 @@
           <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewControl = !showNewControl">
             {{ showNewControl ? 'Close' : 'New control' }}
           </button>
+          <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="toggleAssignControl()">
+            {{ showAssignControl ? 'Close assign' : 'Assign control' }}
+          </button>
         </div>
         <div class="filter-chips" *ngIf="activeFilterChips.length && !showFilters">
           <span class="chip" *ngFor="let chip of activeFilterChips" [title]="chip.value">
@@ -337,7 +340,7 @@
 
         <div class="detail-card">
           <div class="edit-header">
-            <h5>Level 3 · Test components</h5>
+            <h5>Level 3 - Test components</h5>
             <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewComponent = !showNewComponent">
               {{ showNewComponent ? 'Close' : 'New component' }}
             </button>
@@ -466,15 +469,83 @@
           <div class="reference-tags" *ngIf="selectedControl?.isoMappings?.length">
             <span class="tag" *ngFor="let item of selectedControl?.isoMappings">{{ item }}</span>
           </div>
-          <div class="mapping-block" *ngIf="isAdmin && selectedControl?.frameworkMappings?.length">
+          <div class="mapping-block" *ngIf="selectedControl">
             <div class="section-label">Framework mappings</div>
-            <div class="mapping-list">
-              <span class="tag" *ngFor="let mapping of selectedControl?.frameworkMappings">
-                {{ mapping.frameworkRef?.externalId || mapping.frameworkRef?.name || mapping.framework }} · {{ mapping.frameworkCode }}
-              </span>
+            <div class="mapping-list" *ngIf="selectedControl?.frameworkMappings?.length; else noFrameworkMappings">
+              <div class="mapping-item" *ngFor="let mapping of selectedControl?.frameworkMappings">
+                <span class="tag">
+                  {{ getFrameworkMappingLabel(mapping) }} - {{ mapping.frameworkCode }}
+                </span>
+              </div>
             </div>
+            <ng-template #noFrameworkMappings>
+              <p class="empty">No framework mappings yet.</p>
+            </ng-template>
           </div>
         </div>
+      </div>
+
+      <div class="draft-card" *ngIf="showAssignControl && canEdit">
+        <h5>Assign control</h5>
+        <p class="meta" *ngIf="resolveAssignTargetFramework(); else noAssignFramework">
+          Target framework: <strong>{{ resolveAssignTargetFramework() }}</strong>
+        </p>
+        <ng-template #noAssignFramework>
+          <p class="empty error">Select a framework filter first.</p>
+        </ng-template>
+        <p class="meta" *ngIf="topicFilter !== 'all'">
+          Current topic will be added as a related topic mapping.
+        </p>
+
+        <div class="field">
+          <label>Controls source framework</label>
+          <select [(ngModel)]="assignSourceFramework" (change)="onAssignSourceFrameworkChange()">
+            <option value="all">All frameworks</option>
+            <option *ngFor="let framework of getAssignableFrameworkOptions()" [value]="framework">
+              {{ framework }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Search existing controls</label>
+          <div class="assign-search-row">
+            <input
+              type="text"
+              [(ngModel)]="assignSearchTerm"
+              placeholder="Type control code or title"
+              (keyup.enter)="searchAssignableControls()"
+            />
+            <button class="ghost-btn" type="button" (click)="searchAssignableControls()" [disabled]="assignLoading">
+              {{ assignLoading ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+        </div>
+        <p class="meta" *ngIf="assignResults.length">Loaded controls: {{ assignResults.length }}</p>
+
+        <div class="field">
+          <label>Control</label>
+          <select [(ngModel)]="assignSelectedControlId" (change)="onAssignControlSelectionChange()">
+            <option value="">Select control...</option>
+            <option *ngFor="let control of assignResults" [value]="control.id">
+              {{ control.controlCode }} - {{ control.title }}
+            </option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Reference code</label>
+          <input
+            type="text"
+            [(ngModel)]="assignReferenceCode"
+            placeholder="Framework reference code"
+          />
+        </div>
+
+        <button class="ghost-btn" type="button" (click)="assignControl()" [disabled]="assignLoading">
+          {{ assignLoading ? 'Assigning...' : 'Assign control' }}
+        </button>
+        <p class="empty error" *ngIf="assignError">{{ assignError }}</p>
       </div>
 
     </div>
@@ -483,3 +554,4 @@
     <p class="empty error" *ngIf="error">{{ error }}</p>
   </div>
 </section>
+

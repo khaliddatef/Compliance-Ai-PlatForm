@@ -181,6 +181,8 @@ export class ControlKbController {
       ownerRole?: string;
       status?: string;
       sortOrder?: number;
+      framework?: string;
+      frameworkCode?: string;
     },
   ) {
     this.assertAdmin(user);
@@ -247,6 +249,40 @@ export class ControlKbController {
   ) {
     this.assertAdmin(user);
     return this.service.removeControlTopicMapping(id, topicId);
+  }
+
+  @Post('controls/:id/frameworks')
+  async addControlFrameworkMapping(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      frameworkId?: string;
+      framework?: string;
+      frameworkCode?: string;
+      relationshipType?: 'PRIMARY' | 'RELATED';
+      priority?: number;
+    },
+  ) {
+    this.assertAdmin(user);
+    const relationshipType = (body.relationshipType || 'RELATED').toUpperCase() as 'PRIMARY' | 'RELATED';
+    return this.service.addControlFrameworkMapping(id, {
+      frameworkId: body.frameworkId,
+      framework: body.framework,
+      frameworkCode: body.frameworkCode,
+      relationshipType,
+      priority: body.priority,
+    });
+  }
+
+  @Delete('controls/:id/frameworks/:mappingId')
+  async removeControlFrameworkMapping(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('mappingId') mappingId: string,
+  ) {
+    this.assertAdmin(user);
+    return this.service.removeControlFrameworkMapping(id, mappingId);
   }
 
   @Delete('controls/:id')
