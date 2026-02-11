@@ -766,6 +766,13 @@ export class ControlKbPageComponent implements OnInit {
     this.loadControls();
   }
 
+  openAssignPage() {
+    const queryParams: Record<string, string> = {};
+    if (this.frameworkFilter !== 'all') queryParams['framework'] = this.frameworkFilter;
+    if (this.topicFilter !== 'all') queryParams['topicId'] = this.topicFilter;
+    this.router.navigate(['/control-kb/assign'], { queryParams });
+  }
+
   updatePageSize(value: number | string) {
     const next = Number(value) || 10;
     if (next === this.pageSize) return;
