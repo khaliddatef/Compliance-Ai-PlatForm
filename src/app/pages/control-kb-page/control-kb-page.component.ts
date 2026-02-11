@@ -94,8 +94,8 @@ export class ControlKbPageComponent implements OnInit {
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
-  private initialQueryHasFilters = false;
   private initialFrameworkAutoApplied = false;
+  private noActiveFrameworkScope = false;
 
   topicDraft: TopicForm = {
     title: '',
@@ -212,14 +212,6 @@ export class ControlKbPageComponent implements OnInit {
   }
 
   private applyQueryFilters() {
-    this.initialQueryHasFilters = Boolean(
-      this.pendingFramework ||
-      this.pendingTopicId ||
-      this.pendingFrameworkRef ||
-      this.pendingGap ||
-      this.pendingCompliance,
-    );
-
     this.frameworkFilter = this.pendingFramework || 'all';
     this.frameworkRefFilter = this.pendingFrameworkRef || '';
     this.gapFilter = this.pendingGap || '';
@@ -265,6 +257,14 @@ export class ControlKbPageComponent implements OnInit {
     this.editingControl = false;
     this.topicPopoverControlId = null;
     this.frameworkPopoverControlId = null;
+
+    if (this.noActiveFrameworkScope && this.frameworkFilter === 'all') {
+      this.totalControls = 0;
+      this.totalPages = 1;
+      this.error = '';
+      this.cdr.markForCheck();
+      return;
+    }
 
     this.api
       .listControlDefinitions({
@@ -363,10 +363,11 @@ export class ControlKbPageComponent implements OnInit {
         const activeFramework = list.find((fw) => fw.status === 'enabled')?.framework || '';
         const shouldAutoApplyActive =
           !this.initialFrameworkAutoApplied &&
-          !this.initialQueryHasFilters &&
           this.frameworkFilter === 'all' &&
           this.topicFilter === 'all' &&
           Boolean(activeFramework);
+
+        this.noActiveFrameworkScope = !activeFramework && this.frameworkFilter === 'all';
 
         if (shouldAutoApplyActive) {
           this.frameworkFilter = activeFramework;
@@ -386,6 +387,7 @@ export class ControlKbPageComponent implements OnInit {
       error: () => {
         this.frameworkOptions = [];
         this.frameworkStatusMap = new Map();
+        this.noActiveFrameworkScope = false;
         if (loadControlsAfter) {
           this.loadControls();
         }
