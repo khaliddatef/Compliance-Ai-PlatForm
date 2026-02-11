@@ -88,6 +88,11 @@
   font-size: 12px;
 }
 
+.ghost-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .ghost-btn.primary-action {
   border-color: var(--accent-200);
   background: var(--accent-050);
@@ -183,6 +188,11 @@
   font-weight: 600;
   cursor: pointer;
   text-align: left;
+}
+
+.menu-item:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .menu-item:hover,

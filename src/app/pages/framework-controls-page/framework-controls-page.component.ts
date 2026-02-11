@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, ControlDefinitionRecord, ControlTopic } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { finalize } from 'rxjs/operators';
 
 type TopicForm = {
   title: string;
@@ -45,6 +46,7 @@ export class FrameworkControlsPageComponent implements OnInit {
   error = '';
   pageSize = 10;
   showNewTopic = false;
+  creatingTopic = false;
 
   topicDraft: TopicForm = {
     title: '',
@@ -60,6 +62,7 @@ export class FrameworkControlsPageComponent implements OnInit {
   editingControlId: string | null = null;
   controlEdit: ControlForm | null = null;
   openTopicMenuId: string | null = null;
+  deletingTopicIds = new Set<string>();
 
   constructor(
     private readonly api: ApiService,
@@ -90,8 +93,7 @@ export class FrameworkControlsPageComponent implements OnInit {
     this.cdr.markForCheck();
     this.api.listControlTopics(this.framework || undefined).subscribe({
       next: (topics) => {
-        const items = (topics || []).filter((topic) => !this.framework || (topic.controlCount || 0) > 0);
-        this.topics = items.map((topic) => this.toTopicView(topic));
+        this.topics = (topics || []).map((topic) => this.toTopicView(topic));
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -152,26 +154,67 @@ export class FrameworkControlsPageComponent implements OnInit {
   }
 
   createTopic() {
-    if (!this.isAdmin) return;
+    if (!this.isAdmin || this.creatingTopic) return;
     const title = this.topicDraft.title.trim();
     if (!title) return;
 
+    const draft: TopicForm = {
+      title,
+      description: this.topicDraft.description.trim(),
+      mode: this.topicDraft.mode,
+      status: this.topicDraft.status,
+      priority: this.topicDraft.priority,
+    };
+    const tempId = `tmp-topic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticTopic = this.toTopicView({
+      id: tempId,
+      title: draft.title,
+      description: draft.description,
+      mode: draft.mode,
+      status: draft.status,
+      priority: draft.priority,
+      controlCount: 0,
+    });
+
+    this.error = '';
+    this.creatingTopic = true;
+    this.topics = [optimisticTopic, ...this.topics];
+    this.topicDraft = { title: '', description: '', mode: 'continuous', status: 'enabled', priority: 0 };
+    this.showNewTopic = false;
+    this.cdr.markForCheck();
+
     this.api
       .createControlTopic({
-        title,
-        description: this.topicDraft.description.trim(),
-        mode: this.topicDraft.mode,
-        status: this.topicDraft.status,
-        priority: this.topicDraft.priority,
+        title: draft.title,
+        description: draft.description,
+        mode: draft.mode,
+        status: draft.status,
+        priority: draft.priority,
+        framework: this.framework || undefined,
       })
+      .pipe(
+        finalize(() => {
+          this.creatingTopic = false;
+          this.cdr.markForCheck();
+        }),
+      )
       .subscribe({
         next: (topic) => {
-          this.topics = [this.toTopicView(topic), ...this.topics];
-          this.topicDraft = { title: '', description: '', mode: 'continuous', status: 'enabled', priority: 0 };
-          this.showNewTopic = false;
+          const index = this.topics.findIndex((item) => item.id === tempId);
+          const createdTopic = this.toTopicView(topic);
+          if (index >= 0) {
+            this.topics[index] = createdTopic;
+          } else {
+            this.topics = [createdTopic, ...this.topics];
+          }
+          this.cdr.markForCheck();
         },
         error: () => {
+          this.topics = this.topics.filter((item) => item.id !== tempId);
+          this.topicDraft = { ...draft };
+          this.showNewTopic = true;
           this.error = 'Unable to create topic.';
+          this.cdr.markForCheck();
         },
       });
   }
@@ -225,14 +268,35 @@ export class FrameworkControlsPageComponent implements OnInit {
   deleteTopic(topic: TopicView) {
     if (!this.isAdmin) return;
     if (!confirm(`Delete topic ${topic.title}?`)) return;
-    this.api.deleteControlTopic(topic.id).subscribe({
-      next: () => {
-        this.topics = this.topics.filter((item) => item.id !== topic.id);
-      },
-      error: () => {
-        this.error = 'Unable to delete topic.';
-      },
-    });
+    if (this.deletingTopicIds.has(topic.id)) return;
+
+    const removeIndex = this.topics.findIndex((item) => item.id === topic.id);
+    if (removeIndex < 0) return;
+    const removedTopic = this.topics[removeIndex];
+    this.topics = this.topics.filter((item) => item.id !== topic.id);
+    this.closeTopicMenu();
+    this.cdr.markForCheck();
+
+    this.deletingTopicIds.add(topic.id);
+    this.api
+      .deleteControlTopic(topic.id)
+      .pipe(
+        finalize(() => {
+          this.deletingTopicIds.delete(topic.id);
+        }),
+      )
+      .subscribe({
+        next: () => {},
+        error: () => {
+          if (!this.topics.some((item) => item.id === removedTopic.id)) {
+            const next = [...this.topics];
+            next.splice(Math.min(removeIndex, next.length), 0, removedTopic);
+            this.topics = next;
+          }
+          this.error = 'Unable to delete topic.';
+          this.cdr.markForCheck();
+        },
+      });
   }
 
   toggleTopicMenu(topicId: string, event?: MouseEvent) {

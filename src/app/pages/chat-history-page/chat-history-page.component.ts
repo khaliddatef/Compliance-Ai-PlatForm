@@ -17,6 +17,9 @@ export class ChatHistoryPageComponent implements OnInit {
   remoteConversations: ChatConversationSummary[] = [];
   remoteLoading = false;
   remoteError = '';
+  currentPage = 1;
+  pageSize = 10;
+  readonly pageSizeOptions = [5, 10, 20, 50];
 
   constructor(
     private readonly router: Router,
@@ -50,6 +53,40 @@ export class ChatHistoryPageComponent implements OnInit {
     });
   }
 
+  get totalItems() {
+    return this.filteredRemoteConversations.length;
+  }
+
+  get totalPages() {
+    return Math.max(1, Math.ceil(this.totalItems / this.pageSize));
+  }
+
+  get pagedRemoteConversations(): ChatConversationSummary[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredRemoteConversations.slice(start, start + this.pageSize);
+  }
+
+  get showingFrom() {
+    if (!this.totalItems) return 0;
+    return (this.currentPage - 1) * this.pageSize + 1;
+  }
+
+  get showingTo() {
+    if (!this.totalItems) return 0;
+    return Math.min(this.currentPage * this.pageSize, this.totalItems);
+  }
+
+  get pageNumbers() {
+    const total = this.totalPages;
+    const current = this.currentPage;
+    if (total <= 7) return Array.from({ length: total }, (_, idx) => idx + 1);
+
+    const start = Math.max(1, current - 2);
+    const end = Math.min(total, start + 4);
+    const normalizedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - normalizedStart + 1 }, (_, idx) => normalizedStart + idx);
+  }
+
   openRemoteConversation(conversationId: string) {
     if (this.isPrivileged) {
       this.router.navigate(['/history', conversationId]);
@@ -72,6 +109,7 @@ export class ChatHistoryPageComponent implements OnInit {
     this.api.deleteConversation(conversationId).subscribe({
       next: () => {
         this.remoteConversations = this.remoteConversations.filter((item) => item.id !== conversationId);
+        this.ensureValidPage();
         this.cdr.markForCheck();
       },
       error: () => {
@@ -99,6 +137,36 @@ export class ChatHistoryPageComponent implements OnInit {
     return conversation.id;
   }
 
+  onSearchChange() {
+    this.currentPage = 1;
+  }
+
+  prevPage() {
+    if (this.currentPage <= 1) return;
+    this.currentPage -= 1;
+  }
+
+  nextPage() {
+    if (this.currentPage >= this.totalPages) return;
+    this.currentPage += 1;
+  }
+
+  goToPage(page: number) {
+    if (page < 1 || page > this.totalPages) return;
+    this.currentPage = page;
+  }
+
+  updatePageSize(value: string | number) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    this.pageSize = parsed;
+    this.currentPage = 1;
+  }
+
+  getRowNumber(index: number) {
+    return (this.currentPage - 1) * this.pageSize + index + 1;
+  }
+
   private loadRemoteConversations() {
     this.remoteLoading = true;
     this.remoteError = '';
@@ -107,6 +175,7 @@ export class ChatHistoryPageComponent implements OnInit {
     this.api.listChatConversations().subscribe({
       next: (items) => {
         this.remoteConversations = Array.isArray(items) ? items : [];
+        this.ensureValidPage();
         this.cdr.markForCheck();
       },
       error: () => {
@@ -119,5 +188,15 @@ export class ChatHistoryPageComponent implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  private ensureValidPage() {
+    const total = this.totalPages;
+    if (this.currentPage > total) {
+      this.currentPage = total;
+    }
+    if (this.currentPage < 1) {
+      this.currentPage = 1;
+    }
   }
 }

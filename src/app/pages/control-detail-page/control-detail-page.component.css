@@ -49,14 +49,20 @@
 }
 
 .ghost-btn {
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-1);
-  color: var(--ink-strong);
-  padding: 8px 14px;
-  border-radius: 12px;
-  cursor: pointer;
-  font-weight: 600;
-  text-decoration: none;
+    border: 1px solid var(--border-subtle);
+    background: var(--surface-1);
+    color: var(--ink-strong);
+    padding: 6px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.ghost-btn.danger {
+  border-color: #fecaca;
+  color: #b91c1c;
 }
 
 .detail-grid {
@@ -87,10 +93,56 @@
   gap: 12px;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.field-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field input,
+.field textarea,
+.field select,
+.field-row input,
+.field-row select {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .meta-block {

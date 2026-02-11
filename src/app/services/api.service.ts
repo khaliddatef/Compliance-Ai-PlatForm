@@ -616,6 +616,10 @@ export class ApiService {
     return this.http.patch<FrameworkSummary>(`/api/control-kb/frameworks/${id}`, payload);
   }
 
+  deleteFramework(id: string) {
+    return this.http.delete<{ ok: boolean }>(`/api/control-kb/frameworks/${id}`);
+  }
+
   listControlCatalog() {
     return this.http.get<ControlCatalogItem[]>('/api/control-kb/catalog');
   }
@@ -631,6 +635,7 @@ export class ApiService {
     mode?: string;
     status?: string;
     priority?: number;
+    framework?: string;
   }) {
     return this.http.post<ControlTopic>('/api/control-kb/topics', payload);
   }
@@ -640,7 +645,7 @@ export class ApiService {
   }
 
   deleteControlTopic(id: string) {
-    return this.http.delete<ControlTopic>(`/api/control-kb/topics/${id}`);
+    return this.http.delete<{ ok: boolean; deleted?: boolean }>(`/api/control-kb/topics/${id}`);
   }
 
   listControlDefinitions(paramsInput: {
@@ -686,6 +691,7 @@ export class ApiService {
     ownerRole?: string;
     status?: string;
     sortOrder?: number;
+    framework?: string;
   }) {
     return this.http.post<ControlDefinitionRecord>('/api/control-kb/controls', payload);
   }

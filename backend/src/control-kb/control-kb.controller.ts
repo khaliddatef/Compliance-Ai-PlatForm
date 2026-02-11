@@ -67,6 +67,13 @@ export class ControlKbController {
     return this.service.updateFramework(id, body);
   }
 
+  @Delete('frameworks/:id')
+  async deleteFramework(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    this.assertAdmin(user);
+    await this.service.deleteFramework(id);
+    return { ok: true };
+  }
+
   @Get('catalog')
   async listCatalog(@CurrentUser() user: AuthUser) {
     this.assertViewAccess(user);
@@ -99,6 +106,7 @@ export class ControlKbController {
       mode?: string;
       status?: string;
       priority?: number;
+      framework?: string;
     },
   ) {
     this.assertAdmin(user);
@@ -181,6 +189,7 @@ export class ControlKbController {
       ownerRole?: string;
       status?: string;
       sortOrder?: number;
+      framework?: string;
     },
   ) {
     this.assertAdmin(user);
