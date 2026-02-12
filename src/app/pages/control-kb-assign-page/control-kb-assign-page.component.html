@@ -23,14 +23,14 @@
       </div>
 
       <div class="field">
-        <label>Related topic mapping (optional)</label>
+        <label>Target topic (optional)</label>
         <select [(ngModel)]="topicFilter">
           <option value="all">No topic mapping</option>
           <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
         </select>
       </div>
       <p class="meta" *ngIf="topicFilter !== 'all' && selectedTopicLabel">
-        Selected topic will be added as a related topic: <strong>{{ selectedTopicLabel }}</strong>
+        Selected topic will become the primary topic for this control: <strong>{{ selectedTopicLabel }}</strong>
       </p>
 
       <div class="field">

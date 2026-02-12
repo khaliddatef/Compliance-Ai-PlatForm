@@ -992,6 +992,7 @@ export class ControlKbPageComponent implements OnInit {
     }
 
     const selected = this.assignResults.find((item) => item.id === controlId);
+    const sourceTopicId = String(selected?.topicId || '').trim();
     const frameworkCode =
       this.assignReferenceCode.trim() || this.getDefaultFrameworkCode(selected) || selected?.controlCode || '';
     if (!frameworkCode) {
@@ -1011,8 +1012,20 @@ export class ControlKbPageComponent implements OnInit {
       .subscribe({
         next: (updated) => {
           if (this.topicFilter !== 'all') {
-            this.api.addControlTopicMapping(controlId, this.topicFilter, 'RELATED').subscribe({
+            const targetTopicId = this.topicFilter;
+            this.api.addControlTopicMapping(controlId, targetTopicId, 'PRIMARY').subscribe({
               next: (topicUpdated) => {
+                if (sourceTopicId && sourceTopicId !== targetTopicId) {
+                  this.api.removeControlTopicMapping(controlId, sourceTopicId).subscribe({
+                    next: () => this.finishAssignControl(topicUpdated || updated),
+                    error: () => {
+                      this.assignLoading = false;
+                      this.assignError = 'Framework assigned, but failed to move control to selected topic.';
+                      this.cdr.markForCheck();
+                    },
+                  });
+                  return;
+                }
                 this.finishAssignControl(topicUpdated || updated);
               },
               error: () => {

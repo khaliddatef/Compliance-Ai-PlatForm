@@ -1,4 +1,5 @@
 ﻿import { BadRequestException, Injectable } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ControlContext } from '../agent/agent.service';
@@ -675,6 +676,34 @@ export class ControlKbService {
       controlCount: counts.controlCount,
       topicCount: counts.topicCount,
     };
+  }
+
+  async deleteFramework(id: string) {
+    const framework = await this.prisma.framework.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!framework) {
+      throw new NotFoundException('Framework not found');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.controlFrameworkMapping.deleteMany({
+        where: {
+          OR: [{ frameworkId: framework.id }, { framework: framework.name }],
+        },
+      });
+
+      await tx.frameworkSource.deleteMany({
+        where: {
+          OR: [{ frameworkId: framework.id }, { frameworkName: framework.name }],
+        },
+      });
+
+      await tx.framework.delete({ where: { id: framework.id } });
+    });
+
+    return { ok: true };
   }
 
   private async getFrameworkCounts(framework: string) {
