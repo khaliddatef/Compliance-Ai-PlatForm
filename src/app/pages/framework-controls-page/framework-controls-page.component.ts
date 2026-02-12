@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+﻿import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -45,6 +45,7 @@ export class FrameworkControlsPageComponent implements OnInit {
   error = '';
   pageSize = 10;
   showNewTopic = false;
+  creatingTopic = false;
 
   topicDraft: TopicForm = {
     title: '',
@@ -60,6 +61,7 @@ export class FrameworkControlsPageComponent implements OnInit {
   editingControlId: string | null = null;
   controlEdit: ControlForm | null = null;
   openTopicMenuId: string | null = null;
+  deletingTopicIds = new Set<string>();
 
   constructor(
     private readonly api: ApiService,
@@ -152,9 +154,11 @@ export class FrameworkControlsPageComponent implements OnInit {
   }
 
   createTopic() {
-    if (!this.isAdmin) return;
+    if (!this.isAdmin || this.creatingTopic) return;
     const title = this.topicDraft.title.trim();
     if (!title) return;
+    this.creatingTopic = true;
+    this.error = '';
 
     this.api
       .createControlTopic({
@@ -169,9 +173,13 @@ export class FrameworkControlsPageComponent implements OnInit {
           this.topics = [this.toTopicView(topic), ...this.topics];
           this.topicDraft = { title: '', description: '', mode: 'continuous', status: 'enabled', priority: 0 };
           this.showNewTopic = false;
+          this.creatingTopic = false;
+          this.cdr.markForCheck();
         },
         error: () => {
           this.error = 'Unable to create topic.';
+          this.creatingTopic = false;
+          this.cdr.markForCheck();
         },
       });
   }
@@ -225,12 +233,18 @@ export class FrameworkControlsPageComponent implements OnInit {
   deleteTopic(topic: TopicView) {
     if (!this.isAdmin) return;
     if (!confirm(`Delete topic ${topic.title}?`)) return;
+    this.deletingTopicIds.add(topic.id);
+    this.error = '';
     this.api.deleteControlTopic(topic.id).subscribe({
       next: () => {
         this.topics = this.topics.filter((item) => item.id !== topic.id);
+        this.deletingTopicIds.delete(topic.id);
+        this.cdr.markForCheck();
       },
       error: () => {
         this.error = 'Unable to delete topic.';
+        this.deletingTopicIds.delete(topic.id);
+        this.cdr.markForCheck();
       },
     });
   }

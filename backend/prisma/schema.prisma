@@ -112,6 +112,7 @@ model ControlTopic {
 
   controls ControlDefinition[]
   controlMappings ControlTopicMapping[]
+  frameworkMappings TopicFrameworkMapping[]
 
 }
 
@@ -204,9 +205,27 @@ model Framework {
   updatedAt DateTime @updatedAt
 
   controlMappings ControlFrameworkMapping[]
+  topicMappings TopicFrameworkMapping[]
   sources FrameworkSource[]
 
   @@unique([name])
+}
+
+model TopicFrameworkMapping {
+  id          String   @id @default(cuid())
+  topicId     String
+  frameworkId String?
+  framework   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  topic        ControlTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  frameworkRef Framework?   @relation(fields: [frameworkId], references: [id], onDelete: SetNull)
+
+  @@unique([topicId, framework])
+  @@index([topicId])
+  @@index([framework])
+  @@index([frameworkId])
 }
 
 model TestComponent {

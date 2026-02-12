@@ -1,6 +1,5 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { RouterModule } from '@angular/router';
 import {
@@ -25,7 +24,7 @@ import {
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule],
   templateUrl: './dashboard-page.component.html',
   styleUrl: './dashboard-page.component.css'
 })
@@ -123,9 +122,7 @@ export class DashboardPageComponent implements OnInit {
   executiveMode = false;
   evidenceOpen = false;
   frameworkOpen = false;
-  frameworkFilter = '';
-  businessUnitFilter = '';
-  riskCategoryFilter = '';
+  appliedFrameworkLabel = '';
   rangeDays = 90;
   riskRows: {
     control: string;
@@ -168,9 +165,6 @@ export class DashboardPageComponent implements OnInit {
     this.cdr.markForCheck();
 
     this.api.getDashboard({
-      framework: this.frameworkFilter || undefined,
-      businessUnit: this.businessUnitFilter || undefined,
-      riskCategory: this.riskCategoryFilter || undefined,
       rangeDays: this.rangeDays,
     }).subscribe({
       next: (res: DashboardResponse) => {
@@ -190,6 +184,7 @@ export class DashboardPageComponent implements OnInit {
         if (res?.appliedFilters?.rangeDays) {
           this.rangeDays = res.appliedFilters.rangeDays;
         }
+        this.appliedFrameworkLabel = String(res?.appliedFilters?.framework || '').trim();
         const attentionTodayRaw = Array.isArray(res?.attentionToday)
           ? res.attentionToday
           : this.mapLegacyAttention(res?.attentionItems);
@@ -304,20 +299,6 @@ export class DashboardPageComponent implements OnInit {
     this.refresh();
   }
 
-  applyFilters() {
-    this.persistFilters();
-    this.refresh();
-  }
-
-  clearFilters() {
-    this.frameworkFilter = '';
-    this.businessUnitFilter = '';
-    this.riskCategoryFilter = '';
-    this.rangeDays = 90;
-    this.persistFilters();
-    this.refresh();
-  }
-
   toggleExecutive() {
     this.executiveMode = !this.executiveMode;
   }
@@ -393,8 +374,8 @@ export class DashboardPageComponent implements OnInit {
     const label = String(item?.label || '').toLowerCase();
     if (id.includes('missing-evidence') || label.includes('missing evidence')) {
       const query: Record<string, string> = { compliance: 'UNKNOWN', status: 'enabled' };
-      if (this.frameworkFilter) {
-        query['framework'] = this.frameworkFilter;
+      if (this.appliedFrameworkLabel) {
+        query['framework'] = this.appliedFrameworkLabel;
       }
       this.router.navigate(['/control-kb'], { queryParams: query });
       return;
@@ -433,8 +414,8 @@ export class DashboardPageComponent implements OnInit {
   ) {
     event?.stopPropagation();
     const query: Record<string, string> = { compliance: status, status: 'enabled' };
-    if (this.frameworkFilter) {
-      query['framework'] = this.frameworkFilter;
+    if (this.appliedFrameworkLabel) {
+      query['framework'] = this.appliedFrameworkLabel;
     }
     this.router.navigate(['/control-kb'], { queryParams: query });
   }
@@ -665,9 +646,6 @@ export class DashboardPageComponent implements OnInit {
   private persistFilters() {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem('dashboardFilters', JSON.stringify({
-      frameworkFilter: this.frameworkFilter,
-      businessUnitFilter: this.businessUnitFilter,
-      riskCategoryFilter: this.riskCategoryFilter,
       rangeDays: this.rangeDays,
     }));
   }
@@ -678,9 +656,6 @@ export class DashboardPageComponent implements OnInit {
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw);
-      this.frameworkFilter = parsed.frameworkFilter || '';
-      this.businessUnitFilter = parsed.businessUnitFilter || '';
-      this.riskCategoryFilter = parsed.riskCategoryFilter || '';
       this.rangeDays = Number(parsed.rangeDays) || 90;
     } catch {
       // ignore
@@ -807,8 +782,8 @@ export class DashboardPageComponent implements OnInit {
     const label = String(driver?.label || '').toLowerCase();
     if (id.includes('missing-evidence') || label.includes('missing evidence')) {
       const query: Record<string, string> = { compliance: 'UNKNOWN', status: 'enabled' };
-      if (this.frameworkFilter) {
-        query['framework'] = this.frameworkFilter;
+      if (this.appliedFrameworkLabel) {
+        query['framework'] = this.appliedFrameworkLabel;
       }
       this.router.navigate(['/control-kb'], { queryParams: query });
       return;

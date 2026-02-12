@@ -7,12 +7,14 @@
           type="search"
           placeholder="Search chats..."
           [(ngModel)]="searchTerm"
+          (ngModelChange)="onSearchChange()"
         />
       </div>
     </div>
 
     <div class="history-list" *ngIf="filteredRemoteConversations.length; else remoteEmpty">
-      <div class="history-item" *ngFor="let conversation of filteredRemoteConversations; trackBy: trackByRemoteId">
+      <div class="history-item" *ngFor="let conversation of pagedRemoteConversations; let i = index; trackBy: trackByRemoteId">
+        <div class="history-index" aria-hidden="true">{{ getRowNumber(i) }}</div>
         <div class="history-main">
           <div class="title">{{ getRemoteTitle(conversation) }}</div>
           <div class="meta">
@@ -34,6 +36,31 @@
             Delete
           </button>
         </div>
+      </div>
+    </div>
+
+    <div class="pagination" *ngIf="totalItems > 0">
+      <div class="pagination-left">
+        <button class="page-btn" type="button" (click)="prevPage()" [disabled]="currentPage === 1">Prev</button>
+        <button
+          class="page-btn"
+          type="button"
+          *ngFor="let page of pageNumbers"
+          [class.page-btn--active]="page === currentPage"
+          (click)="goToPage(page)"
+        >
+          {{ page }}
+        </button>
+        <button class="page-btn" type="button" (click)="nextPage()" [disabled]="currentPage === totalPages">Next</button>
+      </div>
+      <div class="pagination-right">
+        <label class="rows-label">
+          Rows
+          <select [ngModel]="pageSize" (ngModelChange)="updatePageSize($event)">
+            <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{ size }}</option>
+          </select>
+        </label>
+        <span class="sub">Showing {{ showingFrom }} to {{ showingTo }} of {{ totalItems }}</span>
       </div>
     </div>
 

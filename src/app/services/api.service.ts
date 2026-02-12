@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { map } from 'rxjs/operators';
 
@@ -616,6 +616,10 @@ export class ApiService {
 
   updateFramework(id: string, payload: { name?: string; status?: string }) {
     return this.http.patch<FrameworkSummary>(`/api/control-kb/frameworks/${id}`, payload);
+  }
+
+  deleteFramework(id: string) {
+    return this.http.delete<{ ok: boolean }>(`/api/control-kb/frameworks/${id}`);
   }
 
   listControlCatalog() {

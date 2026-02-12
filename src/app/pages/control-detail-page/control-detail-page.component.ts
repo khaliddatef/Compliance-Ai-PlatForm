@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import {
   ApiService,
   ControlDefinitionRecord,
@@ -10,24 +11,37 @@ import {
 } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
+type ControlForm = {
+  controlCode: string;
+  title: string;
+  description: string;
+  isoMappingsText: string;
+  ownerRole: string;
+  status: string;
+  sortOrder: number;
+};
+
 @Component({
   selector: 'app-control-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, FormsModule],
   templateUrl: './control-detail-page.component.html',
   styleUrl: './control-detail-page.component.css',
 })
 export class ControlDetailPageComponent implements OnInit {
   control?: ControlDefinitionRecord;
+  controlEdit: ControlForm | null = null;
   activeFramework?: FrameworkSummary | null;
   private activeReferenceCodes = new Set<string>();
   loading = true;
   error = '';
+  editingControl = false;
 
   constructor(
     private readonly api: ApiService,
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
+    private readonly router: Router,
     private readonly cdr: ChangeDetectorRef,
   ) {}
 
@@ -42,6 +56,10 @@ export class ControlDetailPageComponent implements OnInit {
 
   get isAdmin() {
     return this.auth.user()?.role === 'ADMIN';
+  }
+
+  get canEdit() {
+    return this.isAdmin;
   }
 
   get statusLabel() {
@@ -69,6 +87,8 @@ export class ControlDetailPageComponent implements OnInit {
     this.api.getControlDefinition(id).subscribe({
       next: (control) => {
         this.control = control || undefined;
+        this.controlEdit = this.control ? this.mapControlForm(this.control) : null;
+        this.editingControl = false;
         this.rebuildActiveReferenceCodes();
         this.loading = false;
         this.cdr.markForCheck();
@@ -96,6 +116,58 @@ export class ControlDetailPageComponent implements OnInit {
     }
     if (typeof raw === 'string') return raw;
     return '';
+  }
+
+  startEditControl() {
+    if (!this.canEdit || !this.controlEdit) return;
+    this.editingControl = true;
+  }
+
+  cancelEditControl() {
+    if (!this.control) return;
+    this.controlEdit = this.mapControlForm(this.control);
+    this.editingControl = false;
+  }
+
+  saveControl() {
+    if (!this.canEdit || !this.control || !this.controlEdit) return;
+    const payload = {
+      controlCode: this.controlEdit.controlCode.trim(),
+      title: this.controlEdit.title.trim(),
+      description: this.controlEdit.description.trim(),
+      isoMappings: this.parseList(this.controlEdit.isoMappingsText),
+      ownerRole: this.controlEdit.ownerRole.trim() || undefined,
+      status: this.controlEdit.status,
+      sortOrder: this.controlEdit.sortOrder,
+    };
+
+    this.api.updateControlDefinition(this.control.id, payload).subscribe({
+      next: (updated) => {
+        this.control = updated;
+        this.controlEdit = this.mapControlForm(updated);
+        this.editingControl = false;
+        this.rebuildActiveReferenceCodes();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to update control.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  deleteControl() {
+    if (!this.canEdit || !this.control) return;
+    if (!confirm(`Delete control ${this.control.controlCode}?`)) return;
+    this.api.deleteControlDefinition(this.control.id).subscribe({
+      next: () => {
+        this.router.navigate(['/control-kb']);
+      },
+      error: () => {
+        this.error = 'Unable to delete control.';
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   private getTopicMappings() {
@@ -182,5 +254,24 @@ export class ControlDetailPageComponent implements OnInit {
     return String(value || '')
       .toLowerCase()
       .replace(/[^a-z0-9]/g, '');
+  }
+
+  private mapControlForm(control: ControlDefinitionRecord): ControlForm {
+    return {
+      controlCode: control.controlCode,
+      title: control.title,
+      description: control.description || '',
+      isoMappingsText: Array.isArray(control.isoMappings) ? control.isoMappings.join(', ') : '',
+      ownerRole: control.ownerRole || '',
+      status: control.status || 'enabled',
+      sortOrder: typeof control.sortOrder === 'number' ? control.sortOrder : 0,
+    };
+  }
+
+  private parseList(value: string) {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 }

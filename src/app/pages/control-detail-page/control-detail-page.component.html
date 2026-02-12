@@ -16,6 +16,7 @@
           </div>
       </div>
 
+      
       <div class="detail-grid">
         <div class="card">
           <h5>Overview</h5>
@@ -43,57 +44,94 @@
             <div class="label">Reference codes</div>
             <div class="tag-list">
               <span
-                class="tag"
-                *ngFor="let item of control.isoMappings"
-                [class.tag--active-ref]="isActiveReferenceCode(item)"
+              class="tag"
+              *ngFor="let item of control.isoMappings"
+              [class.tag--active-ref]="isActiveReferenceCode(item)"
               >
-                {{ item }}
-              </span>
+              {{ item }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">
+        <h5>Test components</h5>
+        <span class="muted">Evidence requirements and signals</span>
+      </div>
+      <div class="component-list" *ngIf="control.testComponents?.length; else noComponents">
+        <div class="component" *ngFor="let component of control.testComponents; let idx = index">
+          <div class="component-title">
+            <span class="component-index">#{{ idx + 1 }}</span>
+            <span>{{ component.requirement }}</span>
+          </div>
+          <div class="component-meta">
+            <div>
+              <div class="label">Evidence types</div>
+              <div class="value">{{ formatEvidence(component) || '—' }}</div>
+            </div>
+            <div>
+              <div class="label">Acceptance</div>
+              <div class="value">{{ component.acceptanceCriteria || '—' }}</div>
+            </div>
+            <div>
+              <div class="label">Partial</div>
+              <div class="value">{{ component.partialCriteria || '—' }}</div>
+            </div>
+            <div>
+              <div class="label">Reject</div>
+              <div class="value">{{ component.rejectCriteria || '—' }}</div>
             </div>
           </div>
         </div>
       </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h5>Test components</h5>
-          <span class="muted">Evidence requirements and signals</span>
-        </div>
-        <div class="component-list" *ngIf="control.testComponents?.length; else noComponents">
-          <div class="component" *ngFor="let component of control.testComponents; let idx = index">
-            <div class="component-title">
-              <span class="component-index">#{{ idx + 1 }}</span>
-              <span>{{ component.requirement }}</span>
-            </div>
-            <div class="component-meta">
-              <div>
-                <div class="label">Evidence types</div>
-                <div class="value">{{ formatEvidence(component) || '—' }}</div>
-              </div>
-              <div>
-                <div class="label">Acceptance</div>
-                <div class="value">{{ component.acceptanceCriteria || '—' }}</div>
-              </div>
-              <div>
-                <div class="label">Partial</div>
-                <div class="value">{{ component.partialCriteria || '—' }}</div>
-              </div>
-              <div>
-                <div class="label">Reject</div>
-                <div class="value">{{ component.rejectCriteria || '—' }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <ng-template #noComponents>
-          <p class="empty">No test components yet.</p>
-        </ng-template>
+      <ng-template #noComponents>
+        <p class="empty">No test components yet.</p>
+      </ng-template>
+    </div>
+    
+    <div class="card" *ngIf="!canEdit">
+      <h5>Notes</h5>
+      <p class="muted">This view is read-only for your role.</p>
+    </div>
+  </ng-container>
+  <div class="card" *ngIf="controlEdit">
+    <div class="card-header">
+      <h5>Control details</h5>
+      <div class="card-actions" *ngIf="canEdit">
+        <button class="ghost-btn" type="button" *ngIf="!editingControl" (click)="startEditControl()">Edit</button>
+        <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="saveControl()">Save</button>
+        <button class="ghost-btn" type="button" *ngIf="editingControl" (click)="cancelEditControl()">Cancel</button>
+        <button class="ghost-btn danger" type="button" (click)="deleteControl()">Delete</button>
       </div>
-
-      <div class="card" *ngIf="isAdmin">
-        <h5>Notes</h5>
-        <p class="muted">This view is read-only. Use the Control Knowledge Base page to edit mappings and test components.</p>
-      </div>
-    </ng-container>
+      <span class="muted" *ngIf="!canEdit">View only</span>
+    </div>
+    <div class="field-row">
+      <label>
+        Code
+        <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl || !canEdit" />
+      </label>
+      <label>
+        Activation
+        <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl || !canEdit">
+          <option value="enabled">Active</option>
+          <option value="disabled">Inactive</option>
+        </select>
+      </label>
+    </div>
+    <div class="field">
+      <label>Title</label>
+      <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl || !canEdit"></textarea>
+    </div>
+    <div class="field">
+      <label>ISO mappings</label>
+      <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl || !canEdit" />
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl || !canEdit"></textarea>
+    </div>
   </div>
+</div>
 </section>

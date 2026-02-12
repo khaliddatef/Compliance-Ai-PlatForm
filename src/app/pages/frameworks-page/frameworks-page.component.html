@@ -36,7 +36,7 @@
     <p class="sub error" *ngIf="error">{{ error }}</p>
     <div class="table" *ngIf="loading">
       <div class="row header">
-        <span>Framework ID</span>
+        <span>Framework</span>
         <span>Status</span>
         <span>Topics</span>
         <span>Controls</span>
@@ -53,15 +53,16 @@
     <ng-container *ngIf="!loading">
       <div class="table" *ngIf="frameworks.length; else emptyState">
       <div class="row header">
-        <span>Framework ID</span>
+          <span>Framework</span>
           <span>Status</span>
           <span>Topics</span>
           <span>Controls</span>
           <span class="actions-header">Actions</span>
         </div>
-        <div class="row item" *ngFor="let fw of pagedFrameworks">
+        <div class="row item" *ngFor="let fw of pagedFrameworks" (click)="openFramework(fw)">
           <div class="framework-cell">
-            <span class="framework-id" [title]="fw.framework">{{ fw.frameworkId || fw.framework }}</span>
+            <span class="framework-name" [title]="fw.framework">{{ fw.framework }}</span>
+            <span class="framework-id" *ngIf="fw.frameworkId && fw.frameworkId !== fw.framework">ID: {{ fw.frameworkId }}</span>
           </div>
           <span class="status-pill" [class.status-pill--inactive]="fw.status !== 'enabled'">
             {{ fw.status === 'enabled' ? 'Active' : 'Inactive' }}
@@ -69,26 +70,26 @@
           <span class="metric">{{ fw.topicCount }}</span>
           <span class="metric">{{ fw.controlCount }}</span>
           <div class="row-actions">
-            <button
-              class="action-btn action-btn--open"
-              type="button"
-              [routerLink]="['/framework-controls']"
-              [queryParams]="{ framework: fw.framework }"
-              *ngIf="isAdmin || isManager"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 17l10-10"></path>
-                <path d="M8 7h9v9"></path>
-              </svg>
-              <span>Open</span>
-            </button>
+            <div class="action-menu-wrap" *ngIf="isAdmin || isManager" (click)="$event.stopPropagation()">
+              <button class="action-btn action-btn--menu" type="button" (click)="toggleActionsMenu(fw.id, $event)">
+                Actions
+              </button>
+              <div class="action-menu" *ngIf="openMenuId === fw.id">
+                <button class="menu-item" type="button" *ngIf="isAdmin" (click)="editFramework(fw, $event)">
+                  Rename
+                </button>
+                <button class="menu-item danger" type="button" *ngIf="isAdmin" (click)="deleteFramework(fw, $event)">
+                  Delete
+                </button>
+              </div>
+            </div>
             <button
               class="action-btn"
               [class.action-btn--deactivate]="fw.status === 'enabled'"
               [class.action-btn--activate]="fw.status !== 'enabled'"
               type="button"
               *ngIf="isAdmin"
-              (click)="toggleFramework(fw)"
+              (click)="toggleFramework(fw, $event)"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 3v9"></path>

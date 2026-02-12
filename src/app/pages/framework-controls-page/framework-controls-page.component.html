@@ -36,7 +36,14 @@
           </select>
         </label>
       </div>
-      <button class="ghost-btn" type="button" (click)="createTopic()">Add topic</button>
+      <button
+        class="ghost-btn"
+        type="button"
+        (click)="createTopic()"
+        [disabled]="creatingTopic || !topicDraft.title.trim()"
+      >
+        {{ creatingTopic ? 'Adding...' : 'Add topic' }}
+      </button>
     </div>
 
     <div class="topics" *ngIf="!loading">
@@ -54,7 +61,14 @@
                 <button class="ghost-btn" type="button" (click)="startEditTopic(topic)" *ngIf="editingTopicId !== topic.id">Edit</button>
                 <button class="ghost-btn" type="button" (click)="saveTopic(topic)" *ngIf="editingTopicId === topic.id">Save</button>
                 <button class="ghost-btn" type="button" (click)="cancelEditTopic()" *ngIf="editingTopicId === topic.id">Cancel</button>
-                <button class="ghost-btn danger" type="button" (click)="deleteTopic(topic)">Delete</button>
+                <button
+                  class="ghost-btn danger"
+                  type="button"
+                  [disabled]="deletingTopicIds.has(topic.id)"
+                  (click)="deleteTopic(topic)"
+                >
+                  {{ deletingTopicIds.has(topic.id) ? 'Deleting...' : 'Delete' }}
+                </button>
               </ng-container>
             </div>
             <div class="topic-actions-menu" (click)="$event.stopPropagation()">
@@ -86,8 +100,13 @@
                   >
                     Cancel
                   </button>
-                  <button class="menu-item danger" type="button" (click)="deleteTopic(topic); closeTopicMenu()">
-                    Delete
+                  <button
+                    class="menu-item danger"
+                    type="button"
+                    [disabled]="deletingTopicIds.has(topic.id)"
+                    (click)="deleteTopic(topic); closeTopicMenu()"
+                  >
+                    {{ deletingTopicIds.has(topic.id) ? 'Deleting...' : 'Delete' }}
                   </button>
                 </ng-container>
               </div>
