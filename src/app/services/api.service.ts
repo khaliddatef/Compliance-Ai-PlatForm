@@ -461,6 +461,8 @@ export type ControlFrameworkMappingRecord = {
   frameworkId?: string | null;
   framework: string;
   frameworkCode: string;
+  relationshipType?: 'PRIMARY' | 'RELATED';
+  priority?: number | null;
   frameworkRef?: {
     externalId?: string | null;
     name?: string | null;
@@ -686,6 +688,8 @@ export class ApiService {
     ownerRole?: string;
     status?: string;
     sortOrder?: number;
+    framework?: string;
+    frameworkCode?: string;
   }) {
     return this.http.post<ControlDefinitionRecord>('/api/control-kb/controls', payload);
   }
@@ -714,6 +718,23 @@ export class ApiService {
 
   removeControlTopicMapping(controlId: string, topicId: string) {
     return this.http.delete<ControlDefinitionRecord>(`/api/control-kb/controls/${controlId}/topics/${topicId}`);
+  }
+
+  addControlFrameworkMapping(
+    controlId: string,
+    payload: {
+      frameworkId?: string;
+      framework?: string;
+      frameworkCode?: string;
+      relationshipType?: 'PRIMARY' | 'RELATED';
+      priority?: number;
+    },
+  ) {
+    return this.http.post<ControlDefinitionRecord>(`/api/control-kb/controls/${controlId}/frameworks`, payload);
+  }
+
+  removeControlFrameworkMapping(controlId: string, mappingId: string) {
+    return this.http.delete<ControlDefinitionRecord>(`/api/control-kb/controls/${controlId}/frameworks/${mappingId}`);
   }
 
   deleteControlDefinition(id: string) {

@@ -11,6 +11,7 @@ import { ChatHistoryPageComponent } from './pages/chat-history-page/chat-history
 import { ChatViewerPageComponent } from './pages/chat-viewer-page/chat-viewer-page.component';
 import { ControlKbPageComponent } from './pages/control-kb-page/control-kb-page.component';
 import { ControlDetailPageComponent } from './pages/control-detail-page/control-detail-page.component';
+import { ControlKbAssignPageComponent } from './pages/control-kb-assign-page/control-kb-assign-page.component';
 import { requireAuthGuard } from './guards/require-auth.guard';
 import { redirectAuthGuard } from './guards/redirect-auth.guard';
 import { requireAdminGuard } from './guards/require-admin.guard';
@@ -30,6 +31,7 @@ export const routes: Routes = [
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
       { path: 'frameworks', component: FrameworksPageComponent, canActivate: [requireKbGuard], data: { title: 'Frameworks' } },
       { path: 'framework-controls', component: FrameworkControlsPageComponent, canActivate: [requireKbGuard], data: { title: 'Topics' } },
+      { path: 'control-kb/assign', component: ControlKbAssignPageComponent, canActivate: [requireKbGuard], data: { title: 'Assign Control' } },
       { path: 'control-kb/:id', component: ControlDetailPageComponent, canActivate: [requireKbGuard], data: { title: 'Control Details' } },
       { path: 'control-kb', component: ControlKbPageComponent, canActivate: [requireKbGuard], data: { title: 'Control Knowledge Base' } },
       { path: 'settings', component: SettingsPageComponent, data: { title: 'Settings' } },

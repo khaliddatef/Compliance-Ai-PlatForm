@@ -1,0 +1,134 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--panel-radius);
+  padding: var(--panel-padding);
+  box-shadow: var(--shadow-soft);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.sub {
+  margin: 2px 0 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.draft-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  font: inherit;
+}
+
+.assign-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assign-search-row input {
+  flex: 1;
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.empty.error {
+  color: #b91c1c;
+}
+
+.empty.success {
+  color: #166534;
+}
+
+.primary-btn {
+  border: 1px solid var(--accent-300);
+  background: var(--accent-500);
+  color: #fff;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 40px;
+}
+
+.ghost-btn {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--ink-strong);
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.ghost-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .assign-search-row {
+    flex-wrap: wrap;
+  }
+
+  .assign-search-row .ghost-btn {
+    width: 100%;
+  }
+}

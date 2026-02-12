@@ -86,6 +86,20 @@
   color: var(--ink-strong);
 }
 
+.assign-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assign-search-row input {
+  flex: 1;
+}
+
+.assign-search-row .ghost-btn {
+  white-space: nowrap;
+}
+
 .filter-panel {
   display: grid;
   gap: 10px;
@@ -791,11 +805,18 @@
 
 .mapping-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
   max-height: 140px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.mapping-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .tag {
@@ -889,5 +910,13 @@
   .row > :nth-child(7),
   .row > :nth-child(9) {
     display: none;
+  }
+
+  .assign-search-row {
+    flex-wrap: wrap;
+  }
+
+  .assign-search-row .ghost-btn {
+    width: 100%;
   }
 }

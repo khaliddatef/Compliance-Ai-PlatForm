@@ -1,0 +1,90 @@
+<section class="page">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>Assign control</h3>
+        <p class="sub">Assign existing controls to another framework.</p>
+      </div>
+      <button class="ghost-btn" type="button" (click)="goBack()">Back to Control KB</button>
+    </div>
+
+    <p class="empty error" *ngIf="!canEdit">Only admin users can assign controls.</p>
+    <p class="empty error" *ngIf="error">{{ error }}</p>
+
+    <div *ngIf="!loading && canEdit" class="draft-card">
+      <div class="field">
+        <label>Target framework</label>
+        <select [(ngModel)]="targetFramework" (change)="onTargetFrameworkChange()">
+          <option value="">Select target framework...</option>
+          <option *ngFor="let framework of frameworkOptions" [value]="framework">
+            {{ framework }}
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Related topic mapping (optional)</label>
+        <select [(ngModel)]="topicFilter">
+          <option value="all">No topic mapping</option>
+          <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
+        </select>
+      </div>
+      <p class="meta" *ngIf="topicFilter !== 'all' && selectedTopicLabel">
+        Selected topic will be added as a related topic: <strong>{{ selectedTopicLabel }}</strong>
+      </p>
+
+      <div class="field">
+        <label>Controls source framework</label>
+        <select [(ngModel)]="assignSourceFramework" (change)="onAssignSourceFrameworkChange()">
+          <option value="all">All frameworks</option>
+          <option *ngFor="let framework of frameworkOptions" [value]="framework">
+            {{ framework }}
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Search existing controls</label>
+        <div class="assign-search-row">
+          <input
+            type="text"
+            [(ngModel)]="assignSearchTerm"
+            placeholder="Type control code or title"
+            (keyup.enter)="searchAssignableControls()"
+          />
+          <button class="ghost-btn" type="button" (click)="searchAssignableControls()" [disabled]="assignLoading">
+            {{ assignLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+        </div>
+      </div>
+      <p class="meta" *ngIf="assignResults.length">Loaded controls: {{ assignResults.length }}</p>
+
+      <div class="field">
+        <label>Control</label>
+        <select [(ngModel)]="assignSelectedControlId" (change)="onAssignControlSelectionChange()">
+          <option value="">Select control...</option>
+          <option *ngFor="let control of assignResults" [value]="control.id">
+            {{ control.controlCode }} - {{ control.title }}
+          </option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Reference code</label>
+        <input
+          type="text"
+          [(ngModel)]="assignReferenceCode"
+          placeholder="Framework reference code"
+        />
+      </div>
+
+      <button class="primary-btn" type="button" (click)="assignControl()" [disabled]="assignLoading">
+        {{ assignLoading ? 'Assigning...' : 'Assign control' }}
+      </button>
+      <p class="empty success" *ngIf="success">{{ success }}</p>
+      <p class="empty error" *ngIf="assignError">{{ assignError }}</p>
+    </div>
+
+    <p class="empty" *ngIf="loading">Loading assignment page...</p>
+  </div>
+</section>

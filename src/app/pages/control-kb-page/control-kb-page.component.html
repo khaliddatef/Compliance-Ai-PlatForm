@@ -49,6 +49,9 @@
           <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewControl = !showNewControl">
             {{ showNewControl ? 'Close' : 'New control' }}
           </button>
+          <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="openAssignPage()">
+            Assign control
+          </button>
         </div>
         <div class="filter-chips" *ngIf="activeFilterChips.length && !showFilters">
           <span class="chip" *ngFor="let chip of activeFilterChips" [title]="chip.value">
@@ -337,7 +340,7 @@
 
         <div class="detail-card">
           <div class="edit-header">
-            <h5>Level 3 · Test components</h5>
+            <h5>Level 3 - Test components</h5>
             <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewComponent = !showNewComponent">
               {{ showNewComponent ? 'Close' : 'New component' }}
             </button>
@@ -466,13 +469,18 @@
           <div class="reference-tags" *ngIf="selectedControl?.isoMappings?.length">
             <span class="tag" *ngFor="let item of selectedControl?.isoMappings">{{ item }}</span>
           </div>
-          <div class="mapping-block" *ngIf="isAdmin && selectedControl?.frameworkMappings?.length">
+          <div class="mapping-block" *ngIf="selectedControl">
             <div class="section-label">Framework mappings</div>
-            <div class="mapping-list">
-              <span class="tag" *ngFor="let mapping of selectedControl?.frameworkMappings">
-                {{ mapping.frameworkRef?.externalId || mapping.frameworkRef?.name || mapping.framework }} · {{ mapping.frameworkCode }}
-              </span>
+            <div class="mapping-list" *ngIf="selectedControl?.frameworkMappings?.length; else noFrameworkMappings">
+              <div class="mapping-item" *ngFor="let mapping of selectedControl?.frameworkMappings">
+                <span class="tag">
+                  {{ getFrameworkMappingLabel(mapping) }} - {{ mapping.frameworkCode }}
+                </span>
+              </div>
             </div>
+            <ng-template #noFrameworkMappings>
+              <p class="empty">No framework mappings yet.</p>
+            </ng-template>
           </div>
         </div>
       </div>
@@ -483,3 +491,4 @@
     <p class="empty error" *ngIf="error">{{ error }}</p>
   </div>
 </section>
+
