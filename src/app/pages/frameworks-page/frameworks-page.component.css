@@ -134,6 +134,7 @@
 
 .row.item {
   border: 1px solid var(--border-subtle);
+  cursor: pointer;
 }
 
 .actions-header {
@@ -142,16 +143,22 @@
 
 .framework-cell {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   min-width: 0;
 }
 
-.framework-id {
+.framework-name {
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.framework-id {
+  font-size: 11px;
+  color: var(--ink-muted);
 }
 
 .metric {
@@ -178,6 +185,59 @@
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.action-menu-wrap {
+  position: relative;
+}
+
+.action-btn--menu {
+  min-width: 92px;
+  justify-content: center;
+}
+
+.action-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 140px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 20;
+}
+
+.menu-item {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-strong);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+  outline: none;
+}
+
+.menu-item.danger {
+  color: #b42318;
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .skeleton-row .skeleton {

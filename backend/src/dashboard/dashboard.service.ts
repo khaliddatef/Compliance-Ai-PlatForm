@@ -740,8 +740,7 @@ export class DashboardService {
     });
 
     const activeFrameworkName = String(activeFramework?.name || '').trim();
-    const requestedFramework = String(filters?.framework || '').trim();
-    const frameworkScope = requestedFramework || activeFrameworkName;
+    const frameworkScope = activeFrameworkName;
 
     const frameworkOptions = await this.prisma.framework.findMany({
       select: { name: true },

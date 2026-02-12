@@ -840,6 +840,12 @@
   gap: 6px;
 }
 
+.framework-scope {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
 .exec-summary {
   display: flex;
   flex-direction: column;

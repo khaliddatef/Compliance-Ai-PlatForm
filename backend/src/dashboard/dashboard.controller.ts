@@ -12,7 +12,6 @@ export class DashboardController {
   @Get()
   async getDashboard(
     @CurrentUser() user?: AuthUser,
-    @Query('framework') framework?: string,
     @Query('businessUnit') businessUnit?: string,
     @Query('riskCategory') riskCategory?: string,
     @Query('rangeDays') rangeDays?: string,
@@ -21,7 +20,6 @@ export class DashboardController {
       throw new ForbiddenException('Dashboard access is restricted');
     }
     return this.dashboard.getDashboard({
-      framework: framework?.trim() || null,
       businessUnit: businessUnit?.trim() || null,
       riskCategory: riskCategory?.trim() || null,
       rangeDays: rangeDays ? Number(rangeDays) : undefined,

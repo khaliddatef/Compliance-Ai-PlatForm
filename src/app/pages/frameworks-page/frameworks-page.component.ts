@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { ApiService, FrameworkSummary } from '../../services/api.service';
 
@@ -19,6 +19,7 @@ export class FrameworksPageComponent implements OnInit {
   showNewFramework = false;
   newFrameworkName = '';
   creating = false;
+  openMenuId: string | null = null;
   currentPage = 1;
   pageSize = 10;
   readonly pageSizeOptions = [5, 10, 20, 50];
@@ -26,7 +27,8 @@ export class FrameworksPageComponent implements OnInit {
   constructor(
     private readonly auth: AuthService,
     private readonly api: ApiService,
-    private readonly cdr: ChangeDetectorRef
+    private readonly cdr: ChangeDetectorRef,
+    private readonly router: Router
   ) {}
 
   ngOnInit() {
@@ -72,7 +74,8 @@ export class FrameworksPageComponent implements OnInit {
     });
   }
 
-  toggleFramework(framework: FrameworkSummary) {
+  toggleFramework(framework: FrameworkSummary, event?: MouseEvent) {
+    event?.stopPropagation();
     if (!this.isAdmin) return;
     this.error = '';
     const nextStatus = framework.status === 'enabled' ? 'disabled' : 'enabled';
@@ -80,6 +83,68 @@ export class FrameworksPageComponent implements OnInit {
       next: () => this.loadFrameworks(),
       error: () => {
         this.error = 'Unable to update framework status.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  toggleActionsMenu(frameworkId: string, event?: MouseEvent) {
+    event?.stopPropagation();
+    this.openMenuId = this.openMenuId === frameworkId ? null : frameworkId;
+  }
+
+  closeActionsMenu() {
+    this.openMenuId = null;
+  }
+
+  @HostListener('document:click')
+  onDocumentClick() {
+    this.closeActionsMenu();
+  }
+
+  editFramework(framework: FrameworkSummary, event?: MouseEvent) {
+    event?.stopPropagation();
+    if (!this.isAdmin) return;
+
+    const current = String(framework.framework || '').trim();
+    const next = String(window.prompt('Edit framework name', current) || '').trim();
+    if (!next || next === current) {
+      this.closeActionsMenu();
+      return;
+    }
+
+    this.error = '';
+    this.api.updateFramework(framework.id, { name: next }).subscribe({
+      next: () => {
+        this.closeActionsMenu();
+        this.loadFrameworks();
+      },
+      error: (err) => {
+        const message = String(err?.error?.message || '').trim();
+        this.error = message || 'Unable to update framework name.';
+        this.closeActionsMenu();
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  deleteFramework(framework: FrameworkSummary, event?: MouseEvent) {
+    event?.stopPropagation();
+    if (!this.isAdmin) return;
+
+    const label = framework.frameworkId || framework.framework;
+    if (!confirm(`Delete framework "${label}"? This removes its mappings.`)) return;
+
+    this.error = '';
+    this.api.deleteFramework(framework.id).subscribe({
+      next: () => {
+        this.closeActionsMenu();
+        this.loadFrameworks();
+      },
+      error: (err) => {
+        const message = String(err?.error?.message || '').trim();
+        this.error = message || 'Unable to delete framework.';
+        this.closeActionsMenu();
         this.cdr.markForCheck();
       },
     });
@@ -139,6 +204,13 @@ export class FrameworksPageComponent implements OnInit {
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     this.pageSize = parsed;
     this.currentPage = 1;
+  }
+
+  openFramework(framework: FrameworkSummary) {
+    const target = String(framework.framework || '').trim();
+    if (!target) return;
+    this.closeActionsMenu();
+    this.router.navigate(['/framework-controls'], { queryParams: { framework: target } });
   }
 
   private ensureValidPage() {

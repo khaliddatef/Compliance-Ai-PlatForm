@@ -3,6 +3,7 @@
     <div class="header-copy">
       <h2>Executive Compliance Dashboard</h2>
       <p>Action-driven snapshot of compliance health, evidence, and risk posture.</p>
+      <p class="framework-scope" *ngIf="appliedFrameworkLabel">Framework scope: {{ appliedFrameworkLabel }}</p>
       <div class="exec-summary" *ngIf="executiveMode && executiveSummary">
         <div class="exec-headline">{{ executiveSummary.headline }}</div>
         <div class="exec-highlights">
