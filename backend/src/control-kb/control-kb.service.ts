@@ -184,7 +184,7 @@ export class ControlKbService {
     pageSize?: number;
     includeDisabled?: boolean;
   }) {
-    const activeFrameworks = await this.getActiveFrameworkSet();
+    const activeFrameworks = params.includeDisabled ? null : await this.getActiveFrameworkSet();
     if (activeFrameworks && activeFrameworks.size === 0) {
       return {
         items: [],
