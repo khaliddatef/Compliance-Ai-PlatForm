@@ -508,6 +508,15 @@ export type FrameworkSummary = {
   topicCount: number;
 };
 
+export type AssignControlResponse = {
+  ok: boolean;
+  controlId: string;
+  framework: string;
+  frameworkCode: string;
+  topicId?: string | null;
+  control?: ControlDefinitionRecord | null;
+};
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   constructor(private http: HttpClient) {}
@@ -705,6 +714,17 @@ export class ApiService {
 
   updateControlActivation(id: string, payload: { status: 'enabled' | 'disabled' }) {
     return this.http.patch<ControlDefinitionRecord>(`/api/control-kb/controls/${id}/activation`, payload);
+  }
+
+  assignControlToFramework(
+    controlId: string,
+    payload: {
+      framework: string;
+      frameworkCode: string;
+      topicId?: string | null;
+    },
+  ) {
+    return this.http.post<AssignControlResponse>(`/api/control-kb/controls/${controlId}/assign`, payload);
   }
 
   addControlTopicMapping(

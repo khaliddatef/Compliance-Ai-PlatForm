@@ -3,11 +3,12 @@ const path = require('path');
 
 const npmCmd = 'npm';
 const rootDir = __dirname;
+const backendDir = path.join(rootDir, 'backend');
 const frontend = spawn(npmCmd, ['run', 'dev'], { stdio: 'inherit', shell: true, cwd: rootDir });
-const backend = spawn(npmCmd, ['--prefix', 'backend', 'run', 'dev'], {
+const backend = spawn(npmCmd, ['run', 'dev'], {
   stdio: 'inherit',
   shell: true,
-  cwd: rootDir,
+  cwd: backendDir,
 });
 
 const shutdown = (code) => {

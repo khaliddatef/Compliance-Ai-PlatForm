@@ -233,6 +233,34 @@ export class ControlKbController {
     return this.service.updateControlActivation(id, status);
   }
 
+  @Post('controls/:id/assign')
+  async assignControlToFramework(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      framework?: string;
+      frameworkCode?: string;
+      topicId?: string;
+    },
+  ) {
+    this.assertAdmin(user);
+    const framework = String(body.framework || '').trim();
+    const frameworkCode = String(body.frameworkCode || '').trim();
+    const topicId = String(body.topicId || '').trim() || null;
+
+    if (!framework || !frameworkCode) {
+      throw new BadRequestException('framework and frameworkCode are required');
+    }
+
+    return this.service.assignControlToFramework({
+      controlId: id,
+      framework,
+      frameworkCode,
+      topicId,
+    });
+  }
+
   @Post('controls/:id/topics')
   async addControlTopicMapping(
     @CurrentUser() user: AuthUser,

@@ -187,6 +187,11 @@ export class DashboardPageComponent implements OnInit {
         this.submissionReadiness = metrics?.submissionReadiness || this.submissionReadiness;
 
         this.filterOptions = res?.filterOptions || this.filterOptions;
+        const appliedFramework = String(res?.appliedFilters?.framework || '').trim();
+        if (this.frameworkFilter !== appliedFramework) {
+          this.frameworkFilter = appliedFramework;
+          this.persistFilters();
+        }
         if (res?.appliedFilters?.rangeDays) {
           this.rangeDays = res.appliedFilters.rangeDays;
         }

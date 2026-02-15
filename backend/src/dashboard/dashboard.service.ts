@@ -391,20 +391,25 @@ export class DashboardService {
       ? Math.min(Math.max(rangeDaysRaw, 30), 365)
       : 90;
 
-    const activeFramework = await this.prisma.framework.findFirst({
-      where: { status: 'enabled' },
-      orderBy: { updatedAt: 'desc' },
-      select: { name: true },
-    });
-
-    const activeFrameworkName = String(activeFramework?.name || '').trim();
-    const requestedFramework = String(filters?.framework || '').trim();
-    const frameworkScope = requestedFramework || activeFrameworkName;
-
     const frameworkOptions = await this.prisma.framework.findMany({
-      select: { name: true },
+      select: { name: true, status: true, updatedAt: true },
       orderBy: { name: 'asc' },
     });
+
+    const enabledFrameworks = frameworkOptions
+      .filter((framework) => String(framework.status || '').toLowerCase() === 'enabled')
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    const activeFrameworkName = String(enabledFrameworks[0]?.name || '').trim();
+    const enabledFrameworkSet = new Set(
+      enabledFrameworks.map((framework) => String(framework.name || '').trim()).filter(Boolean),
+    );
+
+    const requestedFramework = String(filters?.framework || '').trim();
+    const frameworkScope =
+      requestedFramework && enabledFrameworkSet.has(requestedFramework)
+        ? requestedFramework
+        : activeFrameworkName;
 
     const filterOptions: DashboardFilterOptions = {
       frameworks: Array.from(new Set(frameworkOptions.map((fw) => fw.name).filter(Boolean))).sort((a, b) =>
@@ -415,13 +420,18 @@ export class DashboardService {
       timeRanges: [30, 90, 180, 365],
     };
 
+    const controlsWhere: any = frameworkScope
+      ? {
+          status: 'enabled',
+          frameworkMappings: { some: { framework: frameworkScope } },
+        }
+      : {
+          status: 'enabled',
+          id: '__NO_ACTIVE_FRAMEWORK__', // no active framework -> force empty dashboard scope
+        };
+
     const controls = await this.prisma.controlDefinition.findMany({
-      where: {
-        status: 'enabled',
-        ...(frameworkScope
-          ? { frameworkMappings: { some: { framework: frameworkScope } } }
-          : {}),
-      },
+      where: controlsWhere,
       select: {
         id: true,
         controlCode: true,

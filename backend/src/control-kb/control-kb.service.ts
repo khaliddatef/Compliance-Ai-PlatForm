@@ -1017,6 +1017,128 @@ export class ControlKbService {
     });
   }
 
+  async assignControlToFramework(input: {
+    controlId: string;
+    framework: string;
+    frameworkCode: string;
+    topicId?: string | null;
+  }) {
+    const controlId = String(input.controlId || '').trim();
+    const framework = String(input.framework || '').trim();
+    const frameworkCode = String(input.frameworkCode || '').trim();
+    const topicId = String(input.topicId || '').trim() || null;
+
+    if (!controlId || !framework || !frameworkCode) {
+      throw new BadRequestException('controlId, framework, and frameworkCode are required');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const control = await tx.controlDefinition.findUnique({
+        where: { id: controlId },
+        select: { id: true },
+      });
+      if (!control) {
+        throw new BadRequestException('Control not found');
+      }
+
+      const frameworkRef = await tx.framework.findUnique({
+        where: { name: framework },
+        select: { id: true, name: true },
+      });
+      if (!frameworkRef) {
+        throw new BadRequestException('Framework not found');
+      }
+
+      const existingMappings = await tx.controlFrameworkMapping.findMany({
+        where: {
+          controlId: control.id,
+          framework: frameworkRef.name,
+        },
+        select: {
+          id: true,
+          frameworkCode: true,
+        },
+      });
+
+      const existing = existingMappings.find(
+        (mapping) =>
+          String(mapping.frameworkCode || '').trim().toLowerCase() === frameworkCode.toLowerCase(),
+      );
+
+      if (existing) {
+        await tx.controlFrameworkMapping.update({
+          where: { id: existing.id },
+          data: {
+            frameworkId: frameworkRef.id,
+            framework: frameworkRef.name,
+            frameworkCode,
+          },
+        });
+      } else {
+        const mappingsCount = await tx.controlFrameworkMapping.count({
+          where: { controlId: control.id },
+        });
+        await tx.controlFrameworkMapping.create({
+          data: {
+            controlId: control.id,
+            frameworkId: frameworkRef.id,
+            framework: frameworkRef.name,
+            frameworkCode,
+            relationshipType: mappingsCount ? 'RELATED' : 'PRIMARY',
+          },
+        });
+      }
+
+      let relatedTopicId: string | null = null;
+      if (topicId) {
+        const topic = await tx.controlTopic.findUnique({
+          where: { id: topicId },
+          select: { id: true },
+        });
+        if (!topic) {
+          throw new BadRequestException('Topic not found');
+        }
+        relatedTopicId = topic.id;
+
+        const existingTopicMapping = await tx.controlTopicMapping.findUnique({
+          where: { controlId_topicId: { controlId: control.id, topicId: topic.id } },
+          select: { id: true, relationshipType: true },
+        });
+
+        if (existingTopicMapping) {
+          if (existingTopicMapping.relationshipType !== 'PRIMARY') {
+            await tx.controlTopicMapping.update({
+              where: { id: existingTopicMapping.id },
+              data: { relationshipType: 'RELATED' },
+            });
+          }
+        } else {
+          await tx.controlTopicMapping.create({
+            data: {
+              controlId: control.id,
+              topicId: topic.id,
+              relationshipType: 'RELATED',
+            },
+          });
+        }
+      }
+
+      return {
+        controlId: control.id,
+        framework: frameworkRef.name,
+        frameworkCode,
+        topicId: relatedTopicId,
+      };
+    });
+
+    const control = await this.getControl(result.controlId, true);
+    return {
+      ok: true,
+      ...result,
+      control,
+    };
+  }
+
   async addControlTopicMapping(controlId: string, topicId: string, relationshipType: 'PRIMARY' | 'RELATED') {
     const control = await this.prisma.controlDefinition.findUnique({
       where: { id: controlId },
