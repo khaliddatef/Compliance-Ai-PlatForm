@@ -145,7 +145,7 @@ export class AssignControlPageComponent implements OnInit {
 
       const topicLabel = this.selectedTopicLabel;
       this.notice = topicLabel
-        ? `Control assigned successfully. Related topic added: ${topicLabel}.`
+        ? `Control assigned successfully to topic: ${topicLabel}.`
         : 'Control assigned successfully.';
     } catch (error) {
       this.error = this.parseApiError(error, 'Unable to assign control.');

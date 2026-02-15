@@ -1089,7 +1089,7 @@ export class ControlKbService {
         });
       }
 
-      let relatedTopicId: string | null = null;
+      let assignedTopicId: string | null = null;
       if (topicId) {
         const topic = await tx.controlTopic.findUnique({
           where: { id: topicId },
@@ -1098,36 +1098,35 @@ export class ControlKbService {
         if (!topic) {
           throw new BadRequestException('Topic not found');
         }
-        relatedTopicId = topic.id;
+        assignedTopicId = topic.id;
 
-        const existingTopicMapping = await tx.controlTopicMapping.findUnique({
-          where: { controlId_topicId: { controlId: control.id, topicId: topic.id } },
-          select: { id: true, relationshipType: true },
+        // Set selected topic as primary for the assigned control.
+        await tx.controlDefinition.update({
+          where: { id: control.id },
+          data: { topicId: topic.id },
         });
 
-        if (existingTopicMapping) {
-          if (existingTopicMapping.relationshipType !== 'PRIMARY') {
-            await tx.controlTopicMapping.update({
-              where: { id: existingTopicMapping.id },
-              data: { relationshipType: 'RELATED' },
-            });
-          }
-        } else {
-          await tx.controlTopicMapping.create({
-            data: {
-              controlId: control.id,
-              topicId: topic.id,
-              relationshipType: 'RELATED',
-            },
-          });
-        }
+        await tx.controlTopicMapping.updateMany({
+          where: { controlId: control.id, relationshipType: 'PRIMARY' },
+          data: { relationshipType: 'RELATED' },
+        });
+
+        await tx.controlTopicMapping.upsert({
+          where: { controlId_topicId: { controlId: control.id, topicId: topic.id } },
+          update: { relationshipType: 'PRIMARY' },
+          create: {
+            controlId: control.id,
+            topicId: topic.id,
+            relationshipType: 'PRIMARY',
+          },
+        });
       }
 
       return {
         controlId: control.id,
         framework: frameworkRef.name,
         frameworkCode,
-        topicId: relatedTopicId,
+        topicId: assignedTopicId,
       };
     });
 

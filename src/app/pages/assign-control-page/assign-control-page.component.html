@@ -20,7 +20,7 @@
       </label>
 
       <label>
-        Related topic mapping (optional)
+        Target topic (optional)
         <select [(ngModel)]="topicId">
           <option value="">No related topic</option>
           <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
@@ -28,7 +28,7 @@
       </label>
 
       <p class="hint" *ngIf="selectedTopicLabel">
-        Selected topic will be added as a related topic:
+        Control will be assigned to topic:
         <strong>{{ selectedTopicLabel }}</strong>
       </p>
 
