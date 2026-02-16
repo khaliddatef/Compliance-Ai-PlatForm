@@ -9,76 +9,96 @@
     </div>
 
     <div class="form-card" *ngIf="!loading; else loadingState">
-      <label>
-        Target framework
-        <select [(ngModel)]="targetFramework" (change)="onTargetFrameworkChange()">
-          <option value="" disabled>Select framework</option>
-          <option *ngFor="let framework of frameworks" [value]="framework.framework">
-            {{ framework.framework }}
-          </option>
-        </select>
-      </label>
+      <div class="form-section">
+        <h4 class="section-title">Target setup</h4>
+        <div class="field-grid field-grid--two-col">
+          <label class="field">
+            <span>Target framework</span>
+            <select [(ngModel)]="targetFramework" (change)="onTargetFrameworkChange()">
+              <option value="" disabled>Select framework</option>
+              <option *ngFor="let framework of frameworks" [value]="framework.framework">
+                {{ framework.framework }}
+              </option>
+            </select>
+          </label>
 
-      <label>
-        Target topic (optional)
-        <select [(ngModel)]="topicId">
-          <option value="">No related topic</option>
-          <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
-        </select>
-      </label>
-
-      <p class="hint" *ngIf="selectedTopicLabel">
-        Control will be assigned to topic:
-        <strong>{{ selectedTopicLabel }}</strong>
-      </p>
-
-      <label>
-        Controls source framework
-        <select [(ngModel)]="sourceFramework" (change)="refreshControls()">
-          <option value="all">All frameworks</option>
-          <option *ngFor="let framework of sourceFrameworkOptions" [value]="framework">
-            {{ framework }}
-          </option>
-        </select>
-      </label>
-
-      <label>Search existing controls</label>
-      <div class="search-row">
-        <input
-          type="search"
-          [(ngModel)]="controlQuery"
-          placeholder="Type control code or title"
-          (keyup.enter)="refreshControls()"
-        />
-        <button class="ghost-btn" type="button" (click)="refreshControls()" [disabled]="loadingControls">
-          {{ loadingControls ? 'Refreshing...' : 'Refresh' }}
-        </button>
+          <label class="field">
+            <span>Target topic (optional)</span>
+            <select [(ngModel)]="topicId">
+              <option value="">No related topic</option>
+              <option *ngFor="let topic of topics" [value]="topic.id">{{ topic.title }}</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" *ngIf="selectedTopicLabel">
+          Control will be assigned to topic:
+          <strong>{{ selectedTopicLabel }}</strong>
+        </p>
       </div>
 
-      <p class="hint">Loaded controls: {{ loadedControls }}</p>
+      <div class="form-section">
+        <h4 class="section-title">Source controls</h4>
+        <div class="field-grid field-grid--two-col">
+          <label class="field">
+            <span>Controls source framework</span>
+            <select [(ngModel)]="sourceFramework" (change)="refreshControls()">
+              <option value="all">All frameworks</option>
+              <option *ngFor="let framework of sourceFrameworkOptions" [value]="framework">
+                {{ framework }}
+              </option>
+            </select>
+          </label>
 
-      <label>
-        Control
-        <select [(ngModel)]="selectedControlId" (change)="onControlChanged()">
-          <option value="" disabled>Select control</option>
-          <option *ngFor="let control of controls" [value]="control.id">
-            {{ getControlLabel(control) }}
-          </option>
-        </select>
-      </label>
+          <div class="field field--search">
+            <span>Search existing controls</span>
+            <div class="search-row">
+              <input
+                type="search"
+                [(ngModel)]="controlQuery"
+                placeholder="Type control code or title"
+                (keyup.enter)="refreshControls()"
+              />
+              <button class="ghost-btn" type="button" (click)="refreshControls()" [disabled]="loadingControls">
+                {{ loadingControls ? 'Refreshing...' : 'Refresh' }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="hint">
+          Loaded controls:
+          <strong>{{ loadedControls }}</strong>
+        </p>
+      </div>
 
-      <label>
-        Reference code
-        <input
-          type="text"
-          [(ngModel)]="referenceCode"
-          placeholder="ISO-27001 A.5.1, RQ-05-02.a..."
-        />
-      </label>
+      <div class="form-section">
+        <h4 class="section-title">Assignment details</h4>
+        <div class="field-grid">
+          <label class="field field--full">
+            <span>Control</span>
+            <select [(ngModel)]="selectedControlId" (change)="onControlChanged()">
+              <option value="" disabled>Select control</option>
+              <option *ngFor="let control of controls" [value]="control.id">
+                {{ getControlLabel(control) }}
+              </option>
+            </select>
+          </label>
 
-      <button class="primary-btn assign-btn" type="button" (click)="assignControl()" [disabled]="!canAssign">
-        {{ saving ? 'Assigning...' : 'Assign control' }}
-      </button>
+          <label class="field">
+            <span>Reference code</span>
+            <input
+              type="text"
+              [(ngModel)]="referenceCode"
+              placeholder="ISO-27001 A.5.1, RQ-05-02.a..."
+            />
+          </label>
+        </div>
+      </div>
+
+      <div class="actions-row">
+        <button class="primary-btn assign-btn" type="button" (click)="assignControl()" [disabled]="!canAssign">
+          {{ saving ? 'Assigning...' : 'Assign control' }}
+        </button>
+      </div>
 
       <p class="notice success" *ngIf="notice">{{ notice }}</p>
       <p class="notice error" *ngIf="error">{{ error }}</p>

@@ -70,6 +70,7 @@ export class ControlKbPageComponent implements OnInit {
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
+  deletingControlId: string | null = null;
 
   topicDraft: TopicForm = {
     title: '',
@@ -254,19 +255,18 @@ export class ControlKbPageComponent implements OnInit {
   toggleControlStatus(control: ControlDefinitionRecord, event?: Event) {
     event?.stopPropagation();
     if (!this.canToggleActivation) return;
+
     const nextStatus = this.isControlEnabled(control) ? 'disabled' : 'enabled';
-    this.api
-      .updateControlActivation(control.id, { status: nextStatus })
-      .subscribe({
-        next: () => {
-          this.applyControlStatus(control.id, nextStatus);
-          this.cdr.markForCheck();
-        },
-        error: () => {
-          this.error = 'Unable to update control status.';
-          this.cdr.markForCheck();
-        },
-      });
+    this.api.updateControlActivation(control.id, { status: nextStatus }).subscribe({
+      next: () => {
+        this.applyControlStatus(control.id, nextStatus);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = 'Unable to update control status.';
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   private applyControlStatus(controlId: string, status: string) {
@@ -605,6 +605,42 @@ export class ControlKbPageComponent implements OnInit {
   getFrameworkStatusClass(control: ControlDefinitionRecord) {
     const status = this.getFrameworkStatusValue(control);
     return status === 'enabled' ? 'status-enabled' : 'status-disabled';
+  }
+
+  onControlRowKeydown(control: ControlDefinitionRecord, event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, select, textarea')) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.openControlPage(control);
+  }
+
+  deleteControl(control: ControlDefinitionRecord, event?: Event) {
+    event?.stopPropagation();
+    if (!this.canEdit || this.deletingControlId) return;
+
+    const code = String(control.controlCode || '').trim() || 'this control';
+    const confirmed = window.confirm(`Delete "${code}" permanently? This cannot be undone.`);
+    if (!confirmed) return;
+
+    this.error = '';
+    this.deletingControlId = control.id;
+    this.api.deleteControlDefinition(control.id).subscribe({
+      next: () => {
+        if (this.controls.length === 1 && this.page > 1) {
+          this.page -= 1;
+        }
+        this.deletingControlId = null;
+        this.loadControls();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        const message = String(err?.error?.message || '').trim();
+        this.error = message || 'Unable to delete control.';
+        this.deletingControlId = null;
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   private getControlStatusValue(control: ControlDefinitionRecord) {

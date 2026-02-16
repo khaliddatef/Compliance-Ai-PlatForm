@@ -113,7 +113,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 2.2fr 0.9fr 0.7fr 0.8fr 1.6fr;
+  grid-template-columns: minmax(0, 2.5fr) minmax(110px, 0.9fr) minmax(68px, 0.7fr) minmax(76px, 0.8fr) minmax(210px, 1.6fr);
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -122,6 +122,10 @@
   color: var(--ink-strong);
   align-items: center;
   min-height: var(--table-row-height);
+}
+
+.row > * {
+  min-width: 0;
 }
 
 .row.header {
@@ -151,12 +155,20 @@
 
 .framework-name {
   font-weight: 600;
+  display: block;
+  width: 100%;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .framework-id {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--ink-muted);
 }
@@ -363,6 +375,10 @@
 }
 
 @media (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 2.1fr) minmax(92px, 0.9fr) minmax(60px, 0.7fr) minmax(68px, 0.8fr) minmax(150px, 1.2fr);
+  }
+
   .pagination {
     flex-direction: column;
     align-items: stretch;

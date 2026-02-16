@@ -248,15 +248,20 @@
 
 .row.item {
   border: 1px solid var(--border-subtle);
-  cursor: default;
+  cursor: pointer;
   text-align: left;
   width: 100%;
   appearance: none;
 }
 
 .row.item:hover {
-  border-color: var(--border-subtle);
-  background: var(--surface-2);
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+}
+
+.row.item:focus-visible {
+  outline: 2px solid var(--accent-300);
+  outline-offset: 2px;
 }
 
 .control-cell {
@@ -364,13 +369,6 @@
   z-index: 5;
 }
 
-.open-btn {
-  height: 32px;
-  padding: 0 12px;
-  justify-self: start;
-  white-space: nowrap;
-}
-
 .action-group {
   display: flex;
   align-items: center;
@@ -380,9 +378,47 @@
 }
 
 .toggle-btn {
-  height: 32px;
+  height: 34px;
   padding: 0 12px;
   white-space: nowrap;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-1);
+  color: var(--ink-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.icon-btn i {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff1f2;
+  outline: none;
+}
+
+.icon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.delete-btn {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff8f8;
 }
 
 .reference-cell {
