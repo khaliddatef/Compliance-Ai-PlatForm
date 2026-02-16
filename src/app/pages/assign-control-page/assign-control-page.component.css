@@ -32,6 +32,15 @@
 }
 
 .form-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.form-section {
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
@@ -40,16 +49,43 @@
   gap: 10px;
 }
 
-label {
+.section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-strong);
+}
+
+.field-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.field-grid--two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.field--full {
+  grid-column: 1 / -1;
+}
+
+.field > span {
   color: var(--ink-muted);
   font-size: 12px;
 }
 
 select,
 input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   padding: 8px 10px;
@@ -96,7 +132,12 @@ select {
 }
 
 .assign-btn {
-  width: 100%;
+  min-width: 180px;
+}
+
+.actions-row {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .ghost-btn {
@@ -142,7 +183,28 @@ select {
 }
 
 @media (max-width: 900px) {
+  .panel-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panel-header .ghost-btn {
+    width: 100%;
+  }
+
+  .field-grid--two-col {
+    grid-template-columns: 1fr;
+  }
+
   .search-row {
     grid-template-columns: 1fr;
+  }
+
+  .actions-row {
+    justify-content: stretch;
+  }
+
+  .assign-btn {
+    width: 100%;
   }
 }

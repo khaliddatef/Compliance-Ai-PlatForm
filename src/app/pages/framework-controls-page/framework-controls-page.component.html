@@ -47,16 +47,22 @@
     </div>
 
     <div class="topics" *ngIf="!loading">
-      <article class="topic-card" *ngFor="let topic of topics">
+      <article
+        class="topic-card"
+        *ngFor="let topic of topics"
+        role="button"
+        tabindex="0"
+        (click)="onTopicCardClick(topic, $event)"
+        (keydown)="onTopicCardKeydown(topic, $event)"
+      >
         <header class="topic-header">
           <div>
             <h4>{{ topic.title }}</h4>
             <p class="meta">{{ topic.controlCount || 0 }} controls</p>
             <p class="meta" *ngIf="topic.description">{{ topic.description }}</p>
           </div>
-          <div class="topic-actions">
+          <div class="topic-actions" (click)="$event.stopPropagation()">
             <div class="topic-actions-inline">
-              <button class="ghost-btn primary-action" type="button" (click)="openTopicControls(topic)">Open</button>
               <ng-container *ngIf="isAdmin">
                 <button class="ghost-btn" type="button" (click)="startEditTopic(topic)" *ngIf="editingTopicId !== topic.id">Edit</button>
                 <button class="ghost-btn" type="button" (click)="saveTopic(topic)" *ngIf="editingTopicId === topic.id">Save</button>
@@ -74,7 +80,6 @@
             <div class="topic-actions-menu" (click)="$event.stopPropagation()">
               <button class="ghost-btn menu-btn" type="button" (click)="toggleTopicMenu(topic.id, $event)">Actions</button>
               <div class="menu" *ngIf="openTopicMenuId === topic.id">
-                <button class="menu-item" type="button" (click)="openTopicControls(topic); closeTopicMenu()">Open controls</button>
                 <ng-container *ngIf="isAdmin">
                   <button
                     class="menu-item"
@@ -114,7 +119,7 @@
           </div>
         </header>
 
-        <div class="topic-edit" *ngIf="editingTopicId === topic.id && topicEdit">
+        <div class="topic-edit" *ngIf="editingTopicId === topic.id && topicEdit" (click)="$event.stopPropagation()">
           <div class="field">
             <label>Title</label>
             <input type="text" [(ngModel)]="topicEdit.title" />

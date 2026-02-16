@@ -115,6 +115,22 @@ export class FrameworkControlsPageComponent implements OnInit {
     this.router.navigate(['/control-kb'], { queryParams: params });
   }
 
+  onTopicCardClick(topic: TopicView, event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, select, textarea, .menu')) return;
+    if (this.editingTopicId === topic.id) return;
+    this.openTopicControls(topic);
+  }
+
+  onTopicCardKeydown(topic: TopicView, event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, select, textarea, .menu')) return;
+    if (this.editingTopicId === topic.id) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.openTopicControls(topic);
+  }
+
   loadTopicControls(topic: TopicView, reset: boolean) {
     if (topic.loading) return;
     topic.loading = true;

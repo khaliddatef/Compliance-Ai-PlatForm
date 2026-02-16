@@ -161,6 +161,10 @@
         <div
           class="row item"
           *ngFor="let control of controls; let i = index"
+          role="button"
+          tabindex="0"
+          (click)="openControlPage(control)"
+          (keydown)="onControlRowKeydown(control, $event)"
         >
           <span class="index">{{ getControlIndex(i) }}</span>
           <div class="control-cell">
@@ -215,7 +219,6 @@
           <span class="status-pill" [ngClass]="getComplianceStatusClass(control)">{{ getComplianceStatusLabel(control) }}</span>
           <span class="tests">{{ control._count?.testComponents || 0 }}</span>
           <div class="action-group" (click)="$event.stopPropagation()">
-            <button class="ghost-btn open-btn" type="button" (click)="openControlPage(control, $event)">Open</button>
             <button
               class="ghost-btn toggle-btn"
               type="button"
@@ -224,6 +227,17 @@
               (click)="toggleControlStatus(control, $event)"
             >
               {{ isControlEnabled(control) ? 'Deactivate' : 'Activate' }}
+            </button>
+            <button
+              class="icon-btn delete-btn"
+              type="button"
+              *ngIf="canEdit"
+              [disabled]="deletingControlId === control.id"
+              [attr.aria-label]="'Delete control ' + control.controlCode"
+              title="Delete control"
+              (click)="deleteControl(control, $event)"
+            >
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
             </button>
           </div>
         </div>
