@@ -49,6 +49,9 @@
           <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="showNewControl = !showNewControl">
             {{ showNewControl ? 'Close' : 'New control' }}
           </button>
+          <button class="ghost-btn" type="button" *ngIf="canEdit" (click)="openAssignControl()">
+            Assign control
+          </button>
         </div>
         <div class="filter-chips" *ngIf="activeFilterChips.length && !showFilters">
           <span class="chip" *ngFor="let chip of activeFilterChips" [title]="chip.value">

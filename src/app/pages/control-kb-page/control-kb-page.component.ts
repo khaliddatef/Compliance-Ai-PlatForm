@@ -632,6 +632,21 @@ export class ControlKbPageComponent implements OnInit {
     this.router.navigate(['/control-kb', control.id]);
   }
 
+  openAssignControl() {
+    const queryParams: Record<string, string> = {};
+    if (this.frameworkFilter !== 'all') {
+      queryParams['framework'] = this.frameworkFilter;
+      queryParams['sourceFramework'] = this.frameworkFilter;
+    }
+    if (this.topicFilter !== 'all') {
+      queryParams['topicId'] = this.topicFilter;
+    }
+    if (this.searchTerm.trim()) {
+      queryParams['q'] = this.searchTerm.trim();
+    }
+    this.router.navigate(['/control-kb/assign'], { queryParams });
+  }
+
   mapTopicForm(topic: ControlTopic): TopicForm {
     return {
       title: topic.title,
