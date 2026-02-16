@@ -1425,7 +1425,12 @@ export class DashboardService {
         value: `${uploadSummary.distinctMatchedControls}`,
         note: 'Distinct controls with uploads',
         severity: 'low',
-        drilldown: { route: '/control-kb', query: { compliance: 'COMPLIANT' } },
+        drilldown: {
+          route: '/control-kb',
+          query: frameworkScope
+            ? { compliance: 'COMPLIANT', framework: frameworkScope }
+            : { compliance: 'COMPLIANT' },
+        },
       },
     ];
 
