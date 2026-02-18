@@ -434,15 +434,28 @@ export class DashboardService {
       where: controlsWhere,
       select: {
         id: true,
+        topicId: true,
         controlCode: true,
         title: true,
         ownerRole: true,
         topic: { select: { title: true } },
+        topicMappings: { select: { topicId: true } },
         frameworkMappings: { select: { framework: true } },
       },
     });
 
     const allowedControls = controls;
+    const controlUnitsByCode = new Map<string, number>();
+    for (const control of allowedControls) {
+      const topicIds = new Set<string>([
+        String(control.topicId || '').trim(),
+        ...((control.topicMappings || [])
+          .map((mapping) => String(mapping.topicId || '').trim())
+          .filter(Boolean)),
+      ]);
+      controlUnitsByCode.set(control.controlCode, Math.max(1, topicIds.size));
+    }
+    const getControlUnits = (controlCode: string) => controlUnitsByCode.get(controlCode) || 1;
 
     const allowedControlCodes = allowedControls.map((control) => control.controlCode);
     const allowedControlCodeSet = new Set(allowedControlCodes);
@@ -486,7 +499,10 @@ export class DashboardService {
       lastSeenByControl.set(controlCode, evaluation.createdAt);
     }
 
-    const totalControls = allowedControls.length;
+    const totalControls = allowedControls.reduce(
+      (sum, control) => sum + getControlUnits(control.controlCode),
+      0,
+    );
     const partialWeight = 0.6;
 
     let totalDocuments = 0;
@@ -570,7 +586,10 @@ export class DashboardService {
       return 'UNKNOWN';
     };
 
-    const distinctMatchedControls = docsByControl.size;
+    const distinctMatchedControls = Array.from(docsByControl.keys()).reduce(
+      (sum, controlCode) => sum + getControlUnits(controlCode),
+      0,
+    );
     const documentsPerControl = Array.from(docsByControl.entries())
       .map(([controlId, docs]) => ({
         controlId,
@@ -578,13 +597,17 @@ export class DashboardService {
       }))
       .sort((a, b) => b.count - a.count);
 
-    let evaluatedControls = latestEvaluations.length;
+    let evaluatedControls = 0;
     for (const control of allowedControls) {
-      if (statusByControlCode.has(control.controlCode)) continue;
+      const controlUnits = getControlUnits(control.controlCode);
+      if (statusByControlCode.has(control.controlCode)) {
+        evaluatedControls += controlUnits;
+        continue;
+      }
       const docs = docsByControl.get(control.controlCode) || [];
       const docStatus = resolveDocStatus(docs);
       if (docStatus !== 'UNKNOWN') {
-        evaluatedControls += 1;
+        evaluatedControls += controlUnits;
       }
       statusByControlCode.set(control.controlCode, docStatus);
       if (!lastSeenByControl.has(control.controlCode)) {
@@ -597,10 +620,11 @@ export class DashboardService {
 
     for (const control of allowedControls) {
       const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
+      const controlUnits = getControlUnits(control.controlCode);
       if (statusCounts[status as keyof typeof statusCounts] !== undefined) {
-        statusCounts[status as keyof typeof statusCounts] += 1;
+        statusCounts[status as keyof typeof statusCounts] += controlUnits;
       } else {
-        statusCounts.UNKNOWN += 1;
+        statusCounts.UNKNOWN += controlUnits;
       }
     }
 
@@ -620,7 +644,9 @@ export class DashboardService {
 
     let evidenceMissing = 0;
     for (const control of allowedControls) {
-      if (!docsByControl.has(control.controlCode)) evidenceMissing += 1;
+      if (!docsByControl.has(control.controlCode)) {
+        evidenceMissing += getControlUnits(control.controlCode);
+      }
     }
 
     const now = Date.now();
@@ -663,7 +689,7 @@ export class DashboardService {
         }
         if (next === 'medium') level = 'medium';
       }
-      evidenceHealth[level] += 1;
+      evidenceHealth[level] += getControlUnits(control.controlCode);
     }
 
     evidenceHealth.score = totalControls
@@ -699,18 +725,19 @@ export class DashboardService {
     };
 
     for (const control of allowedControls) {
+      const controlUnits = getControlUnits(control.controlCode);
       const latest = latestDocByControl.get(control.controlCode);
       if (!latest) {
-        evidenceHealthVisual.missing += 1;
+        evidenceHealthVisual.missing += controlUnits;
         continue;
       }
       const ageDays = Math.floor((now - latest.createdAt.getTime()) / 86400000);
       if (ageDays > 365) {
-        evidenceHealthVisual.expired += 1;
+        evidenceHealthVisual.expired += controlUnits;
       } else if (ageDays >= 335) {
-        evidenceHealthVisual.expiringSoon += 1;
+        evidenceHealthVisual.expiringSoon += controlUnits;
       } else {
-        evidenceHealthVisual.valid += 1;
+        evidenceHealthVisual.valid += controlUnits;
       }
     }
 
@@ -761,10 +788,14 @@ export class DashboardService {
       if (text.includes('log') || text.includes('record') || text.includes('ticket')) missingLogs += 1;
     }
 
+    const acceptedControlsWeighted = Array.from(acceptedControls).reduce(
+      (sum, controlCode) => sum + getControlUnits(controlCode),
+      0,
+    );
     const auditReadiness: AuditReadiness = {
-      acceptedControls: acceptedControls.size,
+      acceptedControls: acceptedControlsWeighted,
       totalControls,
-      percent: totalControls ? Math.round((acceptedControls.size / totalControls) * 100) : 0,
+      percent: totalControls ? Math.round((acceptedControlsWeighted / totalControls) * 100) : 0,
       missingPolicies,
       missingLogs,
     };
@@ -817,7 +848,10 @@ export class DashboardService {
     for (const control of allowedControls) {
       const gap = resolveGapForControl(control);
       if (!gap) continue;
-      complianceGapCounts.set(gap, (complianceGapCounts.get(gap) || 0) + 1);
+      complianceGapCounts.set(
+        gap,
+        (complianceGapCounts.get(gap) || 0) + getControlUnits(control.controlCode),
+      );
     }
 
     const complianceGaps: ComplianceGapItem[] = Array.from(complianceGapCounts.entries())
@@ -861,7 +895,10 @@ export class DashboardService {
     for (const control of allowedControls) {
       const driver = resolveRiskDriver(control);
       if (!driver) continue;
-      riskDriverCounts.set(driver, (riskDriverCounts.get(driver) || 0) + 1);
+      riskDriverCounts.set(
+        driver,
+        (riskDriverCounts.get(driver) || 0) + getControlUnits(control.controlCode),
+      );
     }
 
     const riskDrivers: RiskDriver[] = Array.from(riskDriverCounts.entries())
@@ -880,7 +917,7 @@ export class DashboardService {
       const status = statusByControlCode.get(control.controlCode) || 'UNKNOWN';
       const impact = this.resolveImpactLevel(status);
       const likelihood = this.resolveLikelihoodLevel(lastSeenByControl.get(control.controlCode) || null);
-      heatmapMatrix[impact - 1][likelihood - 1] += 1;
+      heatmapMatrix[impact - 1][likelihood - 1] += getControlUnits(control.controlCode);
     }
     const riskHeatmap: RiskHeatmap = {
       impactLabels,
@@ -1423,7 +1460,7 @@ export class DashboardService {
         id: 'matched-controls',
         label: 'Matched Controls',
         value: `${uploadSummary.distinctMatchedControls}`,
-        note: 'Distinct controls with uploads',
+        note: 'Control-topic matches with uploads',
         severity: 'low',
         drilldown: {
           route: '/control-kb',

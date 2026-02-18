@@ -33,6 +33,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   private controls: ControlCatalogItem[] = [];
   private controlsLoaded = false;
   private controlsLoading = false;
+  private controlCatalogUnavailable = false;
   private readonly controlContextCache = new Map<string, ControlContext>();
   private readonly controlContextInflight = new Map<string, Promise<ControlContext | null>>();
   private getActionButtons(): MessageAction[] {
@@ -447,7 +448,11 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   }
 
   private loadControlCatalog() {
-    if (this.controlsLoading || this.controlsLoaded) return;
+    if (this.controlsLoading || this.controlsLoaded || this.controlCatalogUnavailable) return;
+    if (!this.auth.user()) return;
+    if (!this.canViewControlCatalog()) {
+      return;
+    }
 
     this.controlsLoading = true;
     this.apiService.listControlCatalog().subscribe({
@@ -458,12 +463,23 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         this.maybePromptAfterCatalogLoad();
       },
       error: (e) => {
+        const status = Number((e as { status?: number } | null)?.status || 0);
+        if (status === 403) {
+          this.controlCatalogUnavailable = true;
+          this.controls = [];
+          this.controlsLoading = false;
+          return;
+        }
         console.error('control catalog error', e);
         this.controls = [];
         this.controlsLoaded = false;
         this.controlsLoading = false;
       },
     });
+  }
+
+  private canViewControlCatalog() {
+    return !!this.auth.user();
   }
 
   private maybePromptAfterCatalogLoad() {

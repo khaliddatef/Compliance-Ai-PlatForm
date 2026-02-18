@@ -18,6 +18,7 @@ type TopicForm = {
 };
 
 type ControlForm = {
+  topicId: string;
   controlCode: string;
   title: string;
   description: string;
@@ -83,6 +84,7 @@ export class ControlKbPageComponent implements OnInit {
   editingTopic = false;
 
   controlDraft: ControlForm = {
+    topicId: '',
     controlCode: '',
     title: '',
     description: '',
@@ -161,6 +163,7 @@ export class ControlKbPageComponent implements OnInit {
         this.applyQueryFilters();
         this.loading = false;
         this.syncSelectedTopic();
+        this.syncControlDraftTopic();
         this.loadFrameworks();
         this.loadControls();
         this.cdr.markForCheck();
@@ -174,6 +177,41 @@ export class ControlKbPageComponent implements OnInit {
   }
 
   private applyQueryFilters() {
+    const hasQueryFilters = Boolean(
+      this.pendingFramework ||
+      this.pendingTopicId ||
+      this.pendingFrameworkRef ||
+      this.pendingGap ||
+      this.pendingCompliance,
+    );
+
+    if (!hasQueryFilters) {
+      // Entering Control KB without query params should reset to full catalog.
+      this.searchTerm = '';
+      this.frameworkFilter = 'all';
+      this.frameworkQuery = '';
+      this.topicFilter = 'all';
+      this.statusFilter = 'all';
+      this.complianceFilter = 'all';
+      this.ownerRoleFilter = '';
+      this.evidenceFilter = '';
+      this.frameworkRefFilter = '';
+      this.gapFilter = '';
+      this.page = 1;
+      this.pendingFramework = '';
+      this.pendingTopicId = '';
+      this.pendingFrameworkRef = '';
+      this.pendingGap = '';
+      this.pendingCompliance = '';
+      return;
+    }
+
+    this.frameworkFilter = 'all';
+    this.topicFilter = 'all';
+    this.frameworkRefFilter = '';
+    this.gapFilter = '';
+    this.complianceFilter = 'all';
+
     if (this.pendingFramework) {
       this.frameworkFilter = this.pendingFramework;
     }
@@ -198,6 +236,8 @@ export class ControlKbPageComponent implements OnInit {
       this.topicFilter = found ? found.id : 'all';
     }
 
+    this.page = 1;
+
     this.pendingFramework = '';
     this.pendingTopicId = '';
     this.pendingFrameworkRef = '';
@@ -208,6 +248,7 @@ export class ControlKbPageComponent implements OnInit {
   selectTopic(topic: ControlTopic) {
     this.selectedTopic = topic;
     this.topicEdit = this.mapTopicForm(topic);
+    this.controlDraft.topicId = topic.id;
     this.editingTopic = false;
     this.topicFilter = topic.id;
     this.page = 1;
@@ -392,14 +433,19 @@ export class ControlKbPageComponent implements OnInit {
 
   createControl() {
     if (!this.canEdit) return;
-    if (!this.selectedTopic) return;
+    const topicId = String(this.controlDraft.topicId || '').trim();
+    if (!topicId) {
+      this.error = 'Please select a topic for this control.';
+      this.cdr.markForCheck();
+      return;
+    }
     const title = this.controlDraft.title.trim();
     const controlCode = this.controlDraft.controlCode.trim();
     if (!title || !controlCode) return;
 
     this.api
       .createControlDefinition({
-        topicId: this.selectedTopic.id,
+        topicId,
         controlCode,
         title,
         description: this.controlDraft.description.trim(),
@@ -412,6 +458,7 @@ export class ControlKbPageComponent implements OnInit {
       .subscribe({
         next: () => {
           this.controlDraft = {
+            topicId: this.getDefaultControlTopicId(),
             controlCode: '',
             title: '',
             description: '',
@@ -665,7 +712,12 @@ export class ControlKbPageComponent implements OnInit {
 
   openControlPage(control: ControlDefinitionRecord, event?: Event) {
     event?.stopPropagation();
-    this.router.navigate(['/control-kb', control.id]);
+    const topicId =
+      this.topicFilter !== 'all'
+        ? this.topicFilter
+        : String(this.selectedTopic?.id || '').trim();
+    const queryParams = topicId ? { topicId } : undefined;
+    this.router.navigate(['/control-kb', control.id], { queryParams });
   }
 
   openAssignControl() {
@@ -699,6 +751,10 @@ export class ControlKbPageComponent implements OnInit {
     return this.frameworkOptions.filter((name) => name.toLowerCase().includes(query));
   }
 
+  get controlDraftTopicOptions() {
+    return this.topics;
+  }
+
   private syncSelectedTopic() {
     if (this.topicFilter === 'all') {
       this.selectedTopic = undefined;
@@ -711,12 +767,38 @@ export class ControlKbPageComponent implements OnInit {
     if (found) {
       this.selectedTopic = found;
       this.topicEdit = this.mapTopicForm(found);
+      this.syncControlDraftTopic();
       this.editingTopic = false;
     } else {
       this.selectedTopic = undefined;
       this.topicEdit = null;
       this.topicFilter = 'all';
+      this.syncControlDraftTopic();
       this.editingTopic = false;
     }
+  }
+
+  private syncControlDraftTopic() {
+    const currentTopicId = String(this.controlDraft.topicId || '').trim();
+    const currentExists =
+      currentTopicId && this.controlDraftTopicOptions.some((topic) => topic.id === currentTopicId);
+    if (currentExists) return;
+    this.controlDraft.topicId = this.getDefaultControlTopicId();
+  }
+
+  private getDefaultControlTopicId() {
+    if (
+      this.selectedTopic?.id &&
+      this.controlDraftTopicOptions.some((topic) => topic.id === this.selectedTopic?.id)
+    ) {
+      return this.selectedTopic.id;
+    }
+    if (
+      this.topicFilter !== 'all' &&
+      this.controlDraftTopicOptions.some((topic) => topic.id === this.topicFilter)
+    ) {
+      return this.topicFilter;
+    }
+    return this.controlDraftTopicOptions[0]?.id || '';
   }
 }

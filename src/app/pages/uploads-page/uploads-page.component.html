@@ -46,11 +46,12 @@
           type="search"
           placeholder="Search uploads..."
           [(ngModel)]="searchTerm"
+          (ngModelChange)="onFiltersChanged()"
         />
         <div class="filter-group">
           <label>
             Framework
-            <select [(ngModel)]="frameworkFilter">
+            <select [(ngModel)]="frameworkFilter" (ngModelChange)="onFiltersChanged()">
               <option *ngFor="let option of frameworkOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
                 {{ option }}
               </option>
@@ -58,7 +59,7 @@
           </label>
           <label>
             Status
-            <select [(ngModel)]="statusFilter">
+            <select [(ngModel)]="statusFilter" (ngModelChange)="onFiltersChanged()">
               <option *ngFor="let option of statusOptions" [value]="option.toLowerCase() === 'all' ? 'all' : option">
                 {{ option }}
               </option>
@@ -66,7 +67,7 @@
           </label>
           <label>
             Sort
-            <select [(ngModel)]="sortMode">
+            <select [(ngModel)]="sortMode" (ngModelChange)="onFiltersChanged()">
               <option value="recent">Newest</option>
               <option value="oldest">Oldest</option>
               <option value="name-asc">Name A-Z</option>
@@ -92,7 +93,7 @@
       </div>
     </div>
 
-    <div class="table" *ngIf="!loading && visibleFiles.length">
+    <div class="table" *ngIf="!loading && pagedVisibleFiles.length">
       <div class="row header">
         <span>#</span>
         <span>File</span>
@@ -106,13 +107,13 @@
       </div>
       <div
         class="row item-row"
-        *ngFor="let file of visibleFiles; let i = index; trackBy: trackByFileId"
+        *ngFor="let file of pagedVisibleFiles; let i = index; trackBy: trackByFileId"
         role="button"
         tabindex="0"
         (click)="openUploadDetails(file)"
         (keydown)="onRowKeydown(file, $event)"
       >
-        <span class="row-number" data-label="#">{{ i + 1 }}</span>
+        <span class="row-number" data-label="#">{{ getRowNumber(i) }}</span>
         <div class="file-cell" data-label="File">
           <span class="file-name" [title]="file.name">{{ file.name }}</span>
           <span class="file-meta" *ngIf="file.chatTitle">Chat: {{ file.chatTitle }}</span>
@@ -183,6 +184,32 @@
             <button class="menu-item danger" type="button" (click)="deleteFile(file); closeMenu()">Delete</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="pagination" *ngIf="!loading && totalVisibleFiles">
+      <div class="pagination-left">
+        <button class="page-btn" type="button" (click)="prevPage()" [disabled]="currentPage === 1">Prev</button>
+        <button
+          class="page-btn"
+          type="button"
+          *ngFor="let page of pageNumbers"
+          [class.page-btn--active]="page === currentPage"
+          (click)="goToPage(page)"
+        >
+          {{ page }}
+        </button>
+        <button class="page-btn" type="button" (click)="nextPage()" [disabled]="currentPage === totalPages">Next</button>
+      </div>
+
+      <div class="pagination-right">
+        <label class="rows-label">
+          Rows
+          <select [ngModel]="pageSize" (ngModelChange)="updatePageSize($event)">
+            <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{ size }}</option>
+          </select>
+        </label>
+        <span class="sub">Showing {{ showingFrom }} to {{ showingTo }} of {{ totalVisibleFiles }}</span>
       </div>
     </div>
 

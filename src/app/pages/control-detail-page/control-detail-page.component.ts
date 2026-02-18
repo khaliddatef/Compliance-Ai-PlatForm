@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, Location } from '@angular/common';
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -32,6 +32,7 @@ export class ControlDetailPageComponent implements OnInit {
   control?: ControlDefinitionRecord;
   controlEdit: ControlForm | null = null;
   activeFramework?: FrameworkSummary | null;
+  backQueryParams: Record<string, string> = {};
   private activeReferenceCodes = new Set<string>();
   loading = true;
   error = '';
@@ -42,11 +43,17 @@ export class ControlDetailPageComponent implements OnInit {
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
+    private readonly location: Location,
     private readonly cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit() {
     this.loadActiveFramework();
+    this.route.queryParamMap.subscribe((params) => {
+      const topicId = String(params.get('topicId') || '').trim();
+      this.backQueryParams = topicId ? { topicId } : {};
+      this.cdr.markForCheck();
+    });
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (!id) return;
@@ -161,13 +168,23 @@ export class ControlDetailPageComponent implements OnInit {
     if (!confirm(`Delete control ${this.control.controlCode}?`)) return;
     this.api.deleteControlDefinition(this.control.id).subscribe({
       next: () => {
-        this.router.navigate(['/control-kb']);
+        this.router.navigate(['/control-kb'], {
+          queryParams: this.backQueryParams,
+        });
       },
       error: () => {
         this.error = 'Unable to delete control.';
         this.cdr.markForCheck();
       },
     });
+  }
+
+  goBack() {
+    if (window.history.length > 1) {
+      this.location.back();
+      return;
+    }
+    this.router.navigate(['/control-kb'], { queryParams: this.backQueryParams });
   }
 
   private getTopicMappings() {

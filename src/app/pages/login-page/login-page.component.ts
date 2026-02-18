@@ -22,7 +22,10 @@ export class LoginPageComponent {
     { name: 'Omar', email: 'wasamy.omar@tekronyx.com', role: 'Manager' },
     { name: 'Khaled', email: 'khaled@tekronyx.com', role: 'Admin' },
   ];
-  selectedTestEmail = this.testAccounts[0]?.email || '';
+  selectedTestEmail =
+    this.testAccounts.find((account) => account.role.toLowerCase() === 'admin')?.email ||
+    this.testAccounts[0]?.email ||
+    '';
 
   constructor(private readonly auth: AuthService, private readonly router: Router) {}
 

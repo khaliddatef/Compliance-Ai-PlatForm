@@ -76,7 +76,9 @@ export class ControlKbController {
 
   @Get('catalog')
   async listCatalog(@CurrentUser() user: AuthUser) {
-    this.assertViewAccess(user);
+    if (!user) {
+      throw new ForbiddenException('Authentication required');
+    }
     return this.service.listControlCatalog();
   }
 

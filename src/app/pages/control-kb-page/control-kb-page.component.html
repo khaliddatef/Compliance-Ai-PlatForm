@@ -127,8 +127,17 @@
 
       <div class="draft-card" *ngIf="showNewControl && canEdit">
         <h5>New control</h5>
-        <p class="empty" *ngIf="!selectedTopic">Select a topic to add a control.</p>
-        <ng-container *ngIf="selectedTopic">
+        <p class="empty" *ngIf="!controlDraftTopicOptions.length">
+          Create a topic first to add controls.
+        </p>
+        <ng-container *ngIf="controlDraftTopicOptions.length">
+          <div class="field">
+            <label>Topic</label>
+            <select [(ngModel)]="controlDraft.topicId">
+              <option value="" disabled>Select topic</option>
+              <option *ngFor="let topic of controlDraftTopicOptions" [value]="topic.id">{{ topic.title }}</option>
+            </select>
+          </div>
           <div class="field">
             <label>Control code</label>
             <input type="text" [(ngModel)]="controlDraft.controlCode" placeholder="GOV-01" />

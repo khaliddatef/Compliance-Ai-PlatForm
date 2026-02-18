@@ -213,6 +213,10 @@ export class FrameworksPageComponent implements OnInit {
     this.router.navigate(['/framework-controls'], { queryParams: { framework: target } });
   }
 
+  getFrameworkIndex(index: number) {
+    return (this.currentPage - 1) * this.pageSize + index + 1;
+  }
+
   private ensureValidPage() {
     const total = this.totalPages;
     if (this.currentPage > total) {
