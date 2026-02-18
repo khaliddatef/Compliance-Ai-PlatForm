@@ -66,6 +66,14 @@ export class UploadController {
     return { ok: true, conversationId, documents: docs, activeFramework, activeFrameworkVersion };
   }
 
+  @Get(':id')
+  async getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const doc = await this.uploadService.getDocumentDetails(id);
+    if (!doc) throw new NotFoundException('Document not found');
+    this.assertDocAccess(doc, user);
+    return { ok: true, document: doc };
+  }
+
   @Get(':id/download')
   async download(@Param('id') id: string, @Res() res: Response, @CurrentUser() user: AuthUser) {
     const doc = await this.uploadService.getDocumentWithOwner(id);

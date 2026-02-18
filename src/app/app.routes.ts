@@ -28,6 +28,12 @@ export const routes: Routes = [
       { path: 'history', component: ChatHistoryPageComponent, data: { title: 'Chat History' } },
       { path: 'history/:conversationId', component: ChatViewerPageComponent, data: { title: 'Chat View' } },
       { path: 'dashboard', component: DashboardPageComponent, data: { title: 'Dashboard' } },
+      {
+        path: 'uploads/:id',
+        loadComponent: () =>
+          import('./pages/upload-detail-page/upload-detail-page.component').then((m) => m.UploadDetailPageComponent),
+        data: { title: 'File Details' },
+      },
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
       { path: 'frameworks', component: FrameworksPageComponent, canActivate: [requireKbGuard], data: { title: 'Frameworks' } },
       { path: 'framework-controls', component: FrameworkControlsPageComponent, canActivate: [requireKbGuard], data: { title: 'Topics' } },

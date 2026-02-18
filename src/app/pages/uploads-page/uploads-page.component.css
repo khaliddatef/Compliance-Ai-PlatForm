@@ -230,6 +230,22 @@
   letter-spacing: 0.08em;
 }
 
+.row.item-row {
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.row.item-row:hover {
+  border-color: var(--accent-200);
+  background: var(--accent-050);
+}
+
+.row.item-row:focus-visible {
+  outline: 2px solid var(--accent-300);
+  outline-offset: 2px;
+}
+
 .row-number {
   font-weight: 700;
   color: var(--ink-muted);

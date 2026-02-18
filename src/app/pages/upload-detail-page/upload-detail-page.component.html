@@ -1,0 +1,312 @@
+<section class="page">
+  <div class="panel">
+    <div class="loading-skeleton" *ngIf="loading" aria-hidden="true">
+      <div class="skeleton skeleton-line skeleton-line-lg"></div>
+      <div class="skeleton skeleton-line skeleton-line-md"></div>
+      <div class="skeleton-row">
+        <div class="skeleton skeleton-pill" *ngFor="let _ of skeletonRows; trackBy: trackByIndex"></div>
+      </div>
+      <div class="skeleton-grid">
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+      </div>
+    </div>
+    <p class="state error" *ngIf="!loading && error">{{ error }}</p>
+
+    <ng-container *ngIf="!loading && detail as file">
+      <div class="top-bar">
+        <button class="ghost-btn" type="button" (click)="backToUploads()">
+          <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+          Back
+        </button>
+        <div class="breadcrumbs">
+          <span>Compliance</span>
+          <i class="fa-solid fa-angle-right" aria-hidden="true"></i>
+          <span>Uploaded Files</span>
+          <i class="fa-solid fa-angle-right" aria-hidden="true"></i>
+          <span class="current" [title]="file.name">{{ file.name }}</span>
+        </div>
+      </div>
+
+      <div class="header-block">
+        <div class="title-wrap">
+          <h2 class="file-title" [title]="file.name">{{ file.name }}</h2>
+          <p class="sub">Ref No: {{ file.id }} · Chat: {{ file.chatTitle }}</p>
+        </div>
+
+        <div class="header-stats">
+          <div class="stat-pill">
+            <span class="label">Severity</span>
+            <span class="value" [ngClass]="file.riskClass">{{ file.riskLabel }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="label">Uploaded</span>
+            <span class="value">{{ file.uploadedAt | date: 'dd MMM yy' }}</span>
+          </div>
+          <div class="stat-pill">
+            <span class="label">Status</span>
+            <span class="value status" [ngClass]="file.statusClass">{{ file.statusLabel }}</span>
+          </div>
+
+          <div class="count-card">
+            <span>Questions</span>
+            <strong>{{ file.quickQuestions }}</strong>
+          </div>
+          <div class="count-card">
+            <span>Risks</span>
+            <strong>{{ file.quickRisks }}</strong>
+          </div>
+          <div class="count-card">
+            <span>Incidents</span>
+            <strong>{{ file.quickIncidents | number: '2.0' }}</strong>
+          </div>
+
+          <div class="actions-wrap" (click)="$event.stopPropagation()">
+            <button class="primary-btn" type="button" (click)="toggleMenu($event)">
+              Actions
+              <i class="fa-solid" [ngClass]="menuOpen ? 'fa-angle-up' : 'fa-angle-down'" aria-hidden="true"></i>
+            </button>
+
+            <div class="action-menu" *ngIf="menuOpen">
+              <button class="menu-item" type="button" (click)="downloadDocument()">
+                <i class="fa-solid fa-download" aria-hidden="true"></i>
+                Download file
+              </button>
+              <button class="menu-item" type="button" (click)="openControlKb()">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                Open in Control KB
+              </button>
+              <button class="menu-item" type="button" (click)="reevaluateDocument()">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                Re-evaluate
+              </button>
+
+              <ng-container *ngIf="canManageStatus">
+                <div class="menu-divider"></div>
+                <button class="menu-item" type="button" (click)="markReviewed()">
+                  <i class="fa-solid fa-check" aria-hidden="true"></i>
+                  Mark reviewed
+                </button>
+                <button class="menu-item" type="button" (click)="markSubmitted()">
+                  <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                  Submit evidence
+                </button>
+
+                <div class="menu-title">Compliance</div>
+                <button
+                  class="menu-item"
+                  type="button"
+                  *ngFor="let option of complianceOptionItems; trackBy: trackByComplianceOption"
+                  (click)="updateCompliance(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+
+                <div class="menu-divider"></div>
+                <button class="menu-item danger" type="button" (click)="deleteDocument()">
+                  <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                  Delete file
+                </button>
+              </ng-container>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Upload detail tabs">
+        <button
+          *ngFor="let tab of tabs; trackBy: trackByTab"
+          type="button"
+          role="tab"
+          class="tab-btn"
+          [class.active]="activeTab === tab.id"
+          [attr.aria-selected]="activeTab === tab.id"
+          (click)="selectTab(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <ng-container [ngSwitch]="activeTab">
+        <div class="overview-grid" *ngSwitchCase="'overview'">
+          <article class="card details-card">
+            <h4>SLA & Contract Details</h4>
+            <div class="meta-grid">
+              <div>
+                <div class="meta-label">Document type</div>
+                <div class="meta-value">{{ file.docType }}</div>
+              </div>
+              <div>
+                <div class="meta-label">MIME type</div>
+                <div class="meta-value mono-value">{{ file.mimeType }}</div>
+              </div>
+              <div>
+                <div class="meta-label">File size</div>
+                <div class="meta-value">{{ file.sizeLabel }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Framework</div>
+                <div class="meta-value">{{ file.framework }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Uploader</div>
+                <div class="meta-value">{{ file.uploaderLabel }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Chunks extracted</div>
+                <div class="meta-value">{{ file.chunks }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Reviewed at</div>
+                <div class="meta-value">{{ file.reviewedAt ? (file.reviewedAt | date: 'dd MMM y, hh:mm a') : 'Not reviewed yet' }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Submitted at</div>
+                <div class="meta-value">{{ file.submittedAt ? (file.submittedAt | date: 'dd MMM y, hh:mm a') : 'Not submitted yet' }}</div>
+              </div>
+              <div>
+                <div class="meta-label">Linked control</div>
+                <div class="meta-value">{{ file.controlCode || 'Not mapped yet' }}</div>
+              </div>
+            </div>
+
+            <div class="summary-block">
+              <div class="meta-label">Assessment summary</div>
+              <p>{{ file.note }}</p>
+            </div>
+
+            <div class="references" *ngIf="file.frameworkReferences.length">
+              <div class="meta-label">Reference mapping</div>
+              <div class="reference-list">
+                <button
+                  class="reference-link"
+                  type="button"
+                  *ngFor="let ref of file.frameworkReferences; trackBy: trackByText"
+                  (click)="openFrameworkReference(ref)"
+                >
+                  {{ ref }}
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article class="card score-card">
+            <h4>Action Plan Summary</h4>
+            <div class="score-layout">
+              <div class="score-ring" [style.background]="scoreGradient">
+                <div class="score-center">
+                  <span>Total</span>
+                  <strong>{{ file.readinessScore }}%</strong>
+                </div>
+              </div>
+              <ul class="score-legend">
+                <li><span class="dot dot-new"></span> New</li>
+                <li><span class="dot dot-progress"></span> In-progress</li>
+                <li><span class="dot dot-hold"></span> Hold</li>
+                <li><span class="dot dot-risk"></span> Risk</li>
+                <li><span class="dot dot-done"></span> Completed</li>
+              </ul>
+            </div>
+
+            <div class="compliance-status">
+              <div class="meta-label">Compliance status</div>
+              <div class="status-inline">
+                <span class="compliance-pill" [ngClass]="file.complianceClass">{{ file.complianceLabel }}</span>
+                <span class="status-pill" [ngClass]="file.statusClass">{{ file.statusLabel }}</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card heatmap-card">
+            <h4>Risk Heatmap</h4>
+            <table class="heatmap-table">
+              <thead>
+                <tr>
+                  <th>Impact \ Likelihood</th>
+                  <th>Improbable</th>
+                  <th>Remote</th>
+                  <th>Occasional</th>
+                  <th>Probable</th>
+                  <th>Frequent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of file.heatRows; trackBy: trackByHeatRow">
+                  <th>{{ row.label }}</th>
+                  <td *ngFor="let cell of row.cells; trackBy: trackByIndex" [class]="'tone-' + cell.tone" [class.active]="cell.active">
+                    {{ cell.value }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+        </div>
+
+        <div class="analysis-grid" *ngSwitchCase="'analysis'">
+          <article class="card">
+            <h4>AI Assessment</h4>
+            <p class="analysis-note">{{ file.note }}</p>
+
+            <div class="recommendations" *ngIf="file.recommendations.length; else noRecommendations">
+              <h5>Recommendations</h5>
+              <ul>
+                <li *ngFor="let recommendation of file.recommendations; trackBy: trackByIndex">{{ recommendation }}</li>
+              </ul>
+            </div>
+            <ng-template #noRecommendations>
+              <p class="muted">No recommendations were generated for this file.</p>
+            </ng-template>
+          </article>
+
+          <article class="card">
+            <h4>Reference & Mapping</h4>
+            <div class="mapping-item">
+              <span>Linked control</span>
+              <strong>{{ file.controlCode || 'Not linked yet' }}</strong>
+            </div>
+            <div class="mapping-item">
+              <span>Framework references</span>
+              <strong>{{ file.frameworkReferences.length || 0 }}</strong>
+            </div>
+            <div class="mapping-item">
+              <span>Conversation</span>
+              <strong>{{ file.chatTitle }}</strong>
+            </div>
+            <button class="ghost-btn" type="button" (click)="openControlKb()">Open Control KB view</button>
+          </article>
+        </div>
+
+        <div class="activity-grid" *ngSwitchCase="'activity'">
+          <article class="card">
+            <h4>Document Activity Timeline</h4>
+            <div class="timeline">
+              <div class="timeline-item done">
+                <span class="timeline-dot"></span>
+                <div>
+                  <h5>File uploaded</h5>
+                  <p>{{ file.uploadedAt | date: 'dd MMM y, hh:mm a' }}</p>
+                </div>
+              </div>
+
+              <div class="timeline-item" [class.done]="!!file.reviewedAt" [class.pending]="!file.reviewedAt">
+                <span class="timeline-dot"></span>
+                <div>
+                  <h5>Review status</h5>
+                  <p>{{ file.reviewedAt ? (file.reviewedAt | date: 'dd MMM y, hh:mm a') : 'Pending review' }}</p>
+                </div>
+              </div>
+
+              <div class="timeline-item" [class.done]="!!file.submittedAt" [class.pending]="!file.submittedAt">
+                <span class="timeline-dot"></span>
+                <div>
+                  <h5>Submission status</h5>
+                  <p>{{ file.submittedAt ? (file.submittedAt | date: 'dd MMM y, hh:mm a') : 'Not submitted' }}</p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </ng-container>
+    </ng-container>
+  </div>
+</section>

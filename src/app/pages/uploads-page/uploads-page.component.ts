@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService, UploadDocumentRecord } from '../../services/api.service';
@@ -29,7 +29,8 @@ type ComplianceStatus = 'COMPLIANT' | 'PARTIAL' | 'NOT_COMPLIANT' | 'UNKNOWN';
   standalone: true,
   imports: [CommonModule, FormsModule, UploadDropzoneComponent],
   templateUrl: './uploads-page.component.html',
-  styleUrl: './uploads-page.component.css'
+  styleUrl: './uploads-page.component.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class UploadsPageComponent implements OnInit {
   files: UploadRow[] = [];
@@ -300,7 +301,25 @@ export class UploadsPageComponent implements OnInit {
     });
   }
 
-  openFrameworkReference(reference: string) {
+  openUploadDetails(file: UploadRow, event?: Event) {
+    event?.stopPropagation();
+    this.router.navigate(['/uploads', file.id]);
+  }
+
+  trackByFileId(_index: number, file: UploadRow) {
+    return file.id;
+  }
+
+  onRowKeydown(file: UploadRow, event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, a, input, select, textarea')) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    this.openUploadDetails(file);
+  }
+
+  openFrameworkReference(reference: string, event?: Event) {
+    event?.stopPropagation();
     const trimmed = String(reference || '').trim();
     if (!trimmed) return;
     this.router.navigate(['/control-kb'], {

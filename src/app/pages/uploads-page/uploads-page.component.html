@@ -104,7 +104,14 @@
         <span>Size</span>
         <span>Action</span>
       </div>
-      <div class="row" *ngFor="let file of visibleFiles; let i = index">
+      <div
+        class="row item-row"
+        *ngFor="let file of visibleFiles; let i = index; trackBy: trackByFileId"
+        role="button"
+        tabindex="0"
+        (click)="openUploadDetails(file)"
+        (keydown)="onRowKeydown(file, $event)"
+      >
         <span class="row-number" data-label="#">{{ i + 1 }}</span>
         <div class="file-cell" data-label="File">
           <span class="file-name" [title]="file.name">{{ file.name }}</span>
@@ -121,7 +128,7 @@
               type="button"
               *ngFor="let reference of file.frameworkReferences"
               [title]="reference"
-              (click)="openFrameworkReference(reference)"
+              (click)="openFrameworkReference(reference, $event)"
             >
               {{ reference }}
             </button>

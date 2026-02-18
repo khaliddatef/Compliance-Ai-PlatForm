@@ -104,7 +104,7 @@ export type UploadDocumentRecord = {
   sizeBytes: number;
   createdAt: string;
   docType?: string | null;
-  conversation?: { title: string; user?: { name: string; email: string } | null };
+  conversation?: { userId?: string | null; title: string; user?: { name: string; email: string } | null };
   _count?: { chunks: number };
   matchControlId?: string | null;
   matchStatus?: string;
@@ -121,6 +121,11 @@ export type UploadListResponse = {
   activeFramework?: string | null;
   activeFrameworkVersion?: string | null;
   documents: UploadDocumentRecord[];
+};
+
+export type UploadDetailResponse = {
+  ok: boolean;
+  document: UploadDocumentRecord;
 };
 
 export type UploadSaveResponse = {
@@ -545,6 +550,10 @@ export class ApiService {
   listAllUploads() {
     const params = new HttpParams().set('all', 'true');
     return this.http.get<UploadListResponse>('/api/uploads', { params });
+  }
+
+  getUpload(id: string) {
+    return this.http.get<UploadDetailResponse>(`/api/uploads/${id}`);
   }
 
   deleteUpload(id: string) {

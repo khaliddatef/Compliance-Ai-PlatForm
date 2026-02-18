@@ -510,6 +510,21 @@ export class UploadService {
     return this.prisma.document.findUnique({ where: { id } });
   }
 
+  async getDocumentDetails(id: string) {
+    const doc = await this.prisma.document.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { chunks: true } },
+        conversation: { select: { userId: true, title: true, user: { select: { name: true, email: true } } } },
+      },
+    });
+    if (!doc) return null;
+
+    const withHints = await this.attachEvaluationHints([doc]);
+    const withRefs = await this.attachFrameworkReferences(withHints);
+    return withRefs[0] || withHints[0] || doc;
+  }
+
   getDocumentWithOwner(id: string) {
     return this.prisma.document.findUnique({
       where: { id },
