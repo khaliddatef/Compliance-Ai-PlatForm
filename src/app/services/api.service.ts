@@ -126,6 +126,8 @@ export type UploadListResponse = {
 export type UploadDetailResponse = {
   ok: boolean;
   document: UploadDocumentRecord;
+  activeFramework?: string | null;
+  activeFrameworkVersion?: string | null;
 };
 
 export type UploadSaveResponse = {

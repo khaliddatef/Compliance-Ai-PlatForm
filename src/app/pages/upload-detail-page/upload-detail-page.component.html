@@ -130,7 +130,7 @@
       <ng-container [ngSwitch]="activeTab">
         <div class="overview-grid" *ngSwitchCase="'overview'">
           <article class="card details-card">
-            <h4>SLA & Contract Details</h4>
+            <h4>{{ file.detailsTitle }}</h4>
             <div class="meta-grid">
               <div>
                 <div class="meta-label">Document type</div>
@@ -145,7 +145,7 @@
                 <div class="meta-value">{{ file.sizeLabel }}</div>
               </div>
               <div>
-                <div class="meta-label">Framework</div>
+                <div class="meta-label">Active framework</div>
                 <div class="meta-value">{{ file.framework }}</div>
               </div>
               <div>

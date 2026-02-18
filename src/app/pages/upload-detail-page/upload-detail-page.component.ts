@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ApiService, UploadDocumentRecord } from '../../services/api.service';
+import { ApiService, ControlDefinitionRecord, UploadDocumentRecord } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 
 type DetailTab = 'overview' | 'analysis' | 'activity';
@@ -24,6 +24,7 @@ type UploadDetailView = {
   id: string;
   conversationId: string;
   name: string;
+  detailsTitle: string;
   mimeType: string;
   sizeLabel: string;
   sizeBytes: number;
@@ -70,6 +71,7 @@ export class UploadDetailPageComponent implements OnInit {
   activeTab: DetailTab = 'overview';
   uploadId = '';
   detail: UploadDetailView | null = null;
+  private activeFrameworkLabel = '';
 
   readonly tabs: Array<{ id: DetailTab; label: string }> = [
     { id: 'overview', label: 'Overview' },
@@ -275,6 +277,41 @@ export class UploadDetailPageComponent implements OnInit {
 
   openControlKb() {
     if (!this.detail) return;
+    const controlCode = String(this.detail.controlCode || '').trim();
+    if (!controlCode) {
+      this.navigateToControlKbList();
+      return;
+    }
+
+    this.api
+      .listControlDefinitions({
+        query: controlCode,
+        page: 1,
+        pageSize: 50,
+      })
+      .subscribe({
+        next: (res) => {
+          const items = Array.isArray(res?.items) ? res.items : [];
+          const matched = this.findBestControlMatch(
+            items,
+            controlCode,
+            this.detail?.frameworkReferences || [],
+            this.detail?.framework || '',
+          );
+          if (matched?.id) {
+            this.router.navigate(['/control-kb', matched.id]);
+            return;
+          }
+          this.navigateToControlKbList();
+        },
+        error: () => {
+          this.navigateToControlKbList();
+        },
+      });
+  }
+
+  private navigateToControlKbList() {
+    if (!this.detail) return;
     const params: Record<string, string> = {};
     if (this.detail.controlCode) {
       params['q'] = this.detail.controlCode;
@@ -305,6 +342,10 @@ export class UploadDetailPageComponent implements OnInit {
 
     this.api.getUpload(this.uploadId).subscribe({
       next: (res) => {
+        this.activeFrameworkLabel = this.formatFrameworkLabel(
+          res?.activeFramework,
+          res?.activeFrameworkVersion,
+        );
         this.setDocument(res?.document || null);
         this.loading = false;
         this.cdr.markForCheck();
@@ -352,10 +393,11 @@ export class UploadDetailPageComponent implements OnInit {
       id: doc.id,
       conversationId: String(doc.conversationId || ''),
       name: String(doc.originalName || 'Document'),
+      detailsTitle: this.resolveDetailsTitle(doc, references),
       mimeType: String(doc.mimeType || 'Unknown'),
       sizeLabel: this.formatSize(doc.sizeBytes ?? 0),
       sizeBytes: Number(doc.sizeBytes ?? 0),
-      framework: this.resolveFrameworkLabel(doc),
+      framework: this.resolveFrameworkLabel(doc, this.activeFrameworkLabel),
       frameworkReferences: references,
       statusLabel: statusMeta.label,
       statusCode: statusMeta.code,
@@ -493,10 +535,77 @@ export class UploadDetailPageComponent implements OnInit {
     return 'Additional review is required to determine compliance confidence.';
   }
 
-  private resolveFrameworkLabel(doc: UploadDocumentRecord) {
+  private resolveFrameworkLabel(doc: UploadDocumentRecord, activeFrameworkLabel: string) {
+    const normalizedFramework = String(activeFrameworkLabel || '').trim();
+    if (normalizedFramework) return normalizedFramework;
     const firstRef = Array.isArray(doc.frameworkReferences) ? doc.frameworkReferences[0] : '';
-    if (String(firstRef || '').trim()) return 'Mapped framework';
-    return 'Active framework';
+    if (String(firstRef || '').trim()) return `Ref ${firstRef}`;
+    return '—';
+  }
+
+  private resolveDetailsTitle(doc: UploadDocumentRecord, references: string[]) {
+    const hasControl = String(doc.matchControlId || '').trim().length > 0;
+    if (hasControl || references.length) return 'Control & Reference Details';
+    const docType = String(doc.docType || '').trim();
+    if (docType && docType.toLowerCase() !== 'uncategorized') return `${docType} Details`;
+    return 'File Details';
+  }
+
+  private formatFrameworkLabel(name?: string | null, version?: string | null) {
+    const frameworkName = String(name || '').trim();
+    const frameworkVersion = String(version || '').trim();
+    if (!frameworkName && !frameworkVersion) return '';
+    if (!frameworkVersion) return frameworkName;
+    if (!frameworkName) return frameworkVersion;
+    if (frameworkName.toLowerCase().includes(frameworkVersion.toLowerCase())) return frameworkName;
+    return `${frameworkName} ${frameworkVersion}`.trim();
+  }
+
+  private findBestControlMatch(
+    controls: ControlDefinitionRecord[],
+    controlCode: string,
+    frameworkReferences: string[],
+    frameworkLabel: string,
+  ) {
+    const targetCode = this.normalizeToken(controlCode);
+    const exactMatches = controls.filter(
+      (control) => this.normalizeToken(String(control?.controlCode || '')) === targetCode,
+    );
+    if (!exactMatches.length) return null;
+    if (exactMatches.length === 1) return exactMatches[0];
+
+    const normalizedRefs = new Set(
+      frameworkReferences
+        .map((value) => this.normalizeToken(value))
+        .filter(Boolean),
+    );
+    if (normalizedRefs.size) {
+      const byReference = exactMatches.find((control) =>
+        (control.frameworkMappings || []).some((mapping) =>
+          normalizedRefs.has(this.normalizeToken(String(mapping.frameworkCode || ''))),
+        ),
+      );
+      if (byReference) return byReference;
+    }
+
+    const normalizedFramework = this.normalizeToken(frameworkLabel);
+    if (normalizedFramework) {
+      const byFramework = exactMatches.find((control) =>
+        (control.frameworkMappings || []).some((mapping) => {
+          const token = this.normalizeToken(String(mapping.framework || ''));
+          return !!token && (token.includes(normalizedFramework) || normalizedFramework.includes(token));
+        }),
+      );
+      if (byFramework) return byFramework;
+    }
+
+    return exactMatches[0];
+  }
+
+  private normalizeToken(value?: string | null) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
   }
 
   private formatUploader(doc: UploadDocumentRecord) {
