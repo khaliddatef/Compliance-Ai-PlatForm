@@ -43,6 +43,9 @@ export class UploadsPageComponent implements OnInit {
   frameworkFilter = 'all';
   statusFilter = 'all';
   sortMode = 'recent';
+  currentPage = 1;
+  pageSize = 10;
+  readonly pageSizeOptions = [10, 25, 50, 100];
   activeFramework = '';
   openMenuId: string | null = null;
   openComplianceMenuId: string | null = null;
@@ -89,6 +92,7 @@ export class UploadsPageComponent implements OnInit {
         this.files = docs
           .map((doc) => this.mapDoc(doc, this.activeFramework))
           .sort((a, b) => b.uploadedAt - a.uploadedAt);
+        this.ensureValidPage();
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -137,6 +141,7 @@ export class UploadsPageComponent implements OnInit {
     this.api.deleteUpload(file.id).subscribe({
       next: () => {
         this.files = this.files.filter((item) => item.id !== file.id);
+        this.ensureValidPage();
         this.cdr.markForCheck();
       },
       error: () => {
@@ -266,6 +271,72 @@ export class UploadsPageComponent implements OnInit {
     return this.sortFiles(list);
   }
 
+  get totalVisibleFiles() {
+    return this.visibleFiles.length;
+  }
+
+  get totalPages() {
+    return Math.max(1, Math.ceil(this.totalVisibleFiles / this.pageSize));
+  }
+
+  get pagedVisibleFiles() {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.visibleFiles.slice(start, start + this.pageSize);
+  }
+
+  get showingFrom() {
+    if (!this.totalVisibleFiles) return 0;
+    return (this.currentPage - 1) * this.pageSize + 1;
+  }
+
+  get showingTo() {
+    if (!this.totalVisibleFiles) return 0;
+    return Math.min(this.currentPage * this.pageSize, this.totalVisibleFiles);
+  }
+
+  get pageNumbers() {
+    const total = this.totalPages;
+    const current = this.currentPage;
+    if (total <= 7) return Array.from({ length: total }, (_, idx) => idx + 1);
+
+    const start = Math.max(1, current - 2);
+    const end = Math.min(total, start + 4);
+    const normalizedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - normalizedStart + 1 }, (_, idx) => normalizedStart + idx);
+  }
+
+  onFiltersChanged() {
+    this.currentPage = 1;
+    this.closeMenu();
+    this.closeComplianceMenu();
+  }
+
+  prevPage() {
+    if (this.currentPage <= 1) return;
+    this.currentPage -= 1;
+  }
+
+  nextPage() {
+    if (this.currentPage >= this.totalPages) return;
+    this.currentPage += 1;
+  }
+
+  goToPage(page: number) {
+    if (page < 1 || page > this.totalPages) return;
+    this.currentPage = page;
+  }
+
+  updatePageSize(value: number | string) {
+    const next = Number(value) || 10;
+    if (this.pageSize === next) return;
+    this.pageSize = next;
+    this.currentPage = 1;
+  }
+
+  getRowNumber(index: number) {
+    return (this.currentPage - 1) * this.pageSize + index + 1;
+  }
+
   getComplianceLabel(status?: string | null) {
     const normalized = String(status || '').toUpperCase();
     if (normalized === 'COMPLIANT') return 'Compliant';
@@ -390,6 +461,7 @@ export class UploadsPageComponent implements OnInit {
   private replaceFile(doc: UploadDocumentRecord) {
     const next = this.mapDoc(doc, this.activeFramework);
     this.files = this.files.map((file) => (file.id === next.id ? next : file));
+    this.ensureValidPage();
   }
 
   private formatUploader(doc: UploadDocumentRecord) {
@@ -426,5 +498,11 @@ export class UploadsPageComponent implements OnInit {
     if (typeof navigator === 'undefined') return 'en';
     const lang = String(navigator.language || '').toLowerCase();
     return lang.startsWith('ar') ? 'ar' : 'en';
+  }
+
+  private ensureValidPage() {
+    const total = this.totalPages;
+    if (this.currentPage > total) this.currentPage = total;
+    if (this.currentPage < 1) this.currentPage = 1;
   }
 }

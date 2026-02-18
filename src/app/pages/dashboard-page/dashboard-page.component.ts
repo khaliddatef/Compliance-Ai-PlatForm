@@ -361,6 +361,10 @@ export class DashboardPageComponent implements OnInit {
     this.router.navigate(['/uploads']);
   }
 
+  openFrameworkProgress() {
+    this.router.navigate(['/frameworks']);
+  }
+
   openFrameworkComparison(row: FrameworkComparisonV2) {
     if (!row?.framework) return;
     this.router.navigate(['/control-kb'], { queryParams: { framework: row.framework } });
@@ -448,6 +452,23 @@ export class DashboardPageComponent implements OnInit {
     return this.trendsV2.find((series) => series.id === id);
   }
 
+  get trendSeriesCards() {
+    return this.trendsV2.filter((series) => series.id !== 'mttr');
+  }
+
+  get hasFrameworkProgress() {
+    return this.frameworkProgress.some((item) => Array.isArray(item.series) && item.series.length > 0);
+  }
+
+  get frameworkProgressDates() {
+    if (this.frameworkMonths?.length) return this.frameworkMonths;
+    const first = this.frameworkProgress.find(
+      (item) => Array.isArray(item.series) && item.series.length > 0,
+    );
+    if (!first) return [];
+    return first.series.map((_, index) => `P${index + 1}`);
+  }
+
   getTrendLatest(series?: TrendSeriesV2) {
     if (!series?.points?.length) return 0;
     return series.points[series.points.length - 1] ?? 0;
@@ -480,6 +501,25 @@ export class DashboardPageComponent implements OnInit {
       return 'MTTR is the mean time to remediate failed controls.';
     }
     return 'Compliance improvement trend over time.';
+  }
+
+  getTrendStroke(series: TrendSeriesV2) {
+    if (series.id === 'riskScore') return '#2563eb';
+    if (series.id === 'compliance') return '#16a34a';
+    return '#7c3aed';
+  }
+
+  buildFrameworkLinePoints(series: number[]) {
+    return this.buildLinePoints(series, 100);
+  }
+
+  getFrameworkProgressTooltip() {
+    return this.frameworkProgress
+      .map((item) => {
+        const latest = item.series?.length ? item.series[item.series.length - 1] : 0;
+        return `${item.framework}: ${latest}%`;
+      })
+      .join('  |  ');
   }
 
   getGapWidth(item: ComplianceGapItem) {
@@ -972,11 +1012,13 @@ export class DashboardPageComponent implements OnInit {
 
   private mapFrameworkProgress(rows: { framework: string; series: number[] }[]) {
     const palette = ['#7c3aed', '#f59e0b', '#ef4444', '#0ea5e9', '#22c55e', '#a855f7'];
-    return (rows || []).map((row, index) => ({
+    return (rows || [])
+      .filter((row) => Array.isArray(row.series) && row.series.length > 0)
+      .map((row, index) => ({
       framework: row.framework,
       series: row.series || [],
       color: palette[index % palette.length],
-    }));
+      }));
   }
 
   private buildDonutStyle(breakdown: {

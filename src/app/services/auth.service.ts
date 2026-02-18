@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { catchError, map, of, tap, throwError } from 'rxjs';
+import { Observable, catchError, finalize, map, of, shareReplay, tap, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
 
@@ -14,6 +14,7 @@ export type AuthUser = {
 export class AuthService {
   private readonly userSignal = signal<AuthUser | null>(null);
   private sessionChecked = false;
+  private sessionCheckRequest?: Observable<boolean>;
 
   constructor(
     private readonly api: ApiService,
@@ -29,10 +30,12 @@ export class AuthService {
   }
 
   ensureSession() {
+    if (typeof window === 'undefined') return of(false);
     if (this.userSignal()) return of(true);
     if (this.sessionChecked) return of(false);
+    if (this.sessionCheckRequest) return this.sessionCheckRequest;
 
-    return this.api.me().pipe(
+    this.sessionCheckRequest = this.api.me().pipe(
       tap((res) => {
         const user = res?.user;
         if (user?.email) {
@@ -53,7 +56,13 @@ export class AuthService {
         this.sessionChecked = true;
         return of(false);
       }),
+      finalize(() => {
+        this.sessionCheckRequest = undefined;
+      }),
+      shareReplay(1),
     );
+
+    return this.sessionCheckRequest;
   }
 
   login(email: string, password: string) {
@@ -75,6 +84,7 @@ export class AuthService {
           role: user.role,
         });
         this.sessionChecked = true;
+        this.sessionCheckRequest = undefined;
         this.chatService.resetForUser();
       }),
       map(() => true),
@@ -84,6 +94,7 @@ export class AuthService {
   logout() {
     this.userSignal.set(null);
     this.sessionChecked = true;
+    this.sessionCheckRequest = undefined;
     this.chatService.resetForUser();
     this.api.logout().subscribe({
       next: () => {},

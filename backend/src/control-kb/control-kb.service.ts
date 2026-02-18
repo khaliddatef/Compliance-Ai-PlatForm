@@ -54,15 +54,40 @@ export class ControlKbService {
       ? { AND: [frameworkFilter, activeFilter] }
       : frameworkFilter || activeFilter || undefined;
 
-    const grouped = await this.prisma.controlDefinition.groupBy({
-      by: ['topicId'],
+    const controls = await this.prisma.controlDefinition.findMany({
       where: controlWhere,
-      _count: { _all: true },
+      select: {
+        id: true,
+        topicId: true,
+        topicMappings: {
+          select: { topicId: true },
+        },
+      },
     });
-    const controlCountByTopic = new Map(
-      grouped.map((row) => [row.topicId, (row as { _count?: { _all?: number } })._count?._all ?? 0]),
-    );
-    const relevantTopicIds = new Set(grouped.map((row) => row.topicId));
+
+    const controlIdsByTopic = new Map<string, Set<string>>();
+    for (const control of controls) {
+      const topicIds = new Set<string>([
+        String(control.topicId || '').trim(),
+        ...((control.topicMappings || [])
+          .map((mapping) => String(mapping.topicId || '').trim())
+          .filter(Boolean)),
+      ]);
+
+      for (const topicId of topicIds) {
+        if (!topicId) continue;
+        const bucket = controlIdsByTopic.get(topicId) || new Set<string>();
+        bucket.add(control.id);
+        controlIdsByTopic.set(topicId, bucket);
+      }
+    }
+
+    const controlCountByTopic = new Map<string, number>();
+    for (const [topicId, ids] of controlIdsByTopic.entries()) {
+      controlCountByTopic.set(topicId, ids.size);
+    }
+
+    const relevantTopicIds = new Set(controlCountByTopic.keys());
 
     const topicFrameworkWhere = frameworkName
       ? { framework: frameworkName }
@@ -564,7 +589,14 @@ export class ControlKbService {
       select: {
         framework: true,
         controlId: true,
-        control: { select: { topicId: true } },
+        control: {
+          select: {
+            topicId: true,
+            topicMappings: {
+              select: { topicId: true },
+            },
+          },
+        },
       },
     });
     const topicMappings = await this.prisma.topicFrameworkMapping.findMany({
@@ -589,18 +621,27 @@ export class ControlKbService {
     const refreshed = missing.length ? await this.prisma.framework.findMany() : frameworks;
     const visible = includeDisabled ? refreshed : refreshed.filter((item) => item.status === 'enabled');
 
-    const summary = new Map<string, { controlIds: Set<string>; topicIds: Set<string> }>();
+    const summary = new Map<string, { controlTopicPairs: Set<string>; topicIds: Set<string> }>();
     for (const mapping of mappings) {
       const label = String(mapping.framework || '').trim();
       if (!label) continue;
       let entry = summary.get(label);
       if (!entry) {
-        entry = { controlIds: new Set(), topicIds: new Set() };
+        entry = { controlTopicPairs: new Set(), topicIds: new Set() };
         summary.set(label, entry);
       }
-      entry.controlIds.add(mapping.controlId);
-      if (mapping.control?.topicId) {
-        entry.topicIds.add(mapping.control.topicId);
+      const topicIds = new Set<string>([
+        String(mapping.control?.topicId || '').trim(),
+        ...((mapping.control?.topicMappings || [])
+          .map((item) => String(item.topicId || '').trim())
+          .filter(Boolean)),
+      ]);
+      if (!topicIds.size) {
+        entry.controlTopicPairs.add(`${mapping.controlId}::__UNASSIGNED_TOPIC__`);
+      }
+      for (const topicId of topicIds) {
+        entry.controlTopicPairs.add(`${mapping.controlId}::${topicId}`);
+        entry.topicIds.add(topicId);
       }
     }
     for (const mapping of topicMappings) {
@@ -608,7 +649,7 @@ export class ControlKbService {
       if (!label) continue;
       let entry = summary.get(label);
       if (!entry) {
-        entry = { controlIds: new Set(), topicIds: new Set() };
+        entry = { controlTopicPairs: new Set(), topicIds: new Set() };
         summary.set(label, entry);
       }
       entry.topicIds.add(mapping.topicId);
@@ -623,7 +664,7 @@ export class ControlKbService {
           frameworkId,
           framework: framework.name,
           status: framework.status,
-          controlCount: stats?.controlIds.size || 0,
+          controlCount: stats?.controlTopicPairs.size || 0,
           topicCount: stats?.topicIds.size || 0,
         };
       })
@@ -780,7 +821,14 @@ export class ControlKbService {
         },
         select: {
           controlId: true,
-          control: { select: { topicId: true } },
+          control: {
+            select: {
+              topicId: true,
+              topicMappings: {
+                select: { topicId: true },
+              },
+            },
+          },
         },
       }),
       this.prisma.topicFrameworkMapping.findMany({
@@ -789,18 +837,27 @@ export class ControlKbService {
       }),
     ]);
 
-    const controlIds = new Set<string>();
+    const controlTopicPairs = new Set<string>();
     const topicIds = new Set<string>();
     for (const mapping of mappings) {
-      controlIds.add(mapping.controlId);
-      if (mapping.control?.topicId) {
-        topicIds.add(mapping.control.topicId);
+      const mappedTopicIds = new Set<string>([
+        String(mapping.control?.topicId || '').trim(),
+        ...((mapping.control?.topicMappings || [])
+          .map((item) => String(item.topicId || '').trim())
+          .filter(Boolean)),
+      ]);
+      if (!mappedTopicIds.size) {
+        controlTopicPairs.add(`${mapping.controlId}::__UNASSIGNED_TOPIC__`);
+      }
+      for (const topicId of mappedTopicIds) {
+        controlTopicPairs.add(`${mapping.controlId}::${topicId}`);
+        topicIds.add(topicId);
       }
     }
     for (const mapping of topicMappings) {
       topicIds.add(mapping.topicId);
     }
-    return { controlCount: controlIds.size, topicCount: topicIds.size };
+    return { controlCount: controlTopicPairs.size, topicCount: topicIds.size };
   }
 
   private async getActiveFrameworkSet() {

@@ -1121,8 +1121,19 @@
 
 .trend-chart polyline {
   fill: none;
-  stroke: var(--accent-600);
   stroke-width: 3;
+}
+
+.trend-chart polyline.framework-line {
+  stroke-width: 2.5;
+}
+
+.framework-progress-panel {
+  cursor: pointer;
+}
+
+.framework-progress-chart {
+  gap: 10px;
 }
 
 .stacked-bar {

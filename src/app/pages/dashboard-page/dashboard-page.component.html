@@ -215,8 +215,8 @@
         <button class="ghost" type="button" [class.active]="rangeDays === 90" (click)="setTrendRange(90)">90d</button>
       </div>
     </div>
-    <div class="trend-grid" *ngIf="trendsV2.length; else emptyTrends">
-      <section class="panel trend-panel clickable" *ngFor="let series of trendsV2" (click)="openTrend(series)" role="button" tabindex="0">
+    <div class="trend-grid" *ngIf="trendSeriesCards.length || hasFrameworkProgress; else emptyTrends">
+      <section class="panel trend-panel clickable" *ngFor="let series of trendSeriesCards" (click)="openTrend(series)" role="button" tabindex="0">
         <div class="trend-title">{{ series.label }}</div>
         <div class="trend-chart" [title]="getTrendTooltip(series)">
           <svg viewBox="0 0 540 200" preserveAspectRatio="none">
@@ -225,12 +225,62 @@
             <line x1="0" y1="100" x2="540" y2="100"></line>
             <line x1="0" y1="150" x2="540" y2="150"></line>
             <line x1="0" y1="200" x2="540" y2="200"></line>
-            <polyline [attr.points]="buildLinePoints(series.points, series.unit === 'days' ? getTrendMax(series) : 100)">
+            <polyline
+              class="trend-line"
+              [attr.stroke]="getTrendStroke(series)"
+              [attr.points]="buildLinePoints(series.points, series.unit === 'days' ? getTrendMax(series) : 100)"
+            >
               <title>{{ series.label }} latest {{ formatTrendValue(series, getTrendLatest(series)) }}</title>
             </polyline>
           </svg>
           <div class="chart-x">
             <span *ngFor="let label of series.dates.slice(-6)">{{ label }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="panel trend-panel framework-progress-panel clickable"
+        *ngIf="hasFrameworkProgress"
+        (click)="openFrameworkProgress()"
+        role="button"
+        tabindex="0"
+      >
+        <div class="trend-title">Frameworks Progress</div>
+        <div class="trend-chart framework-progress-chart" [title]="getFrameworkProgressTooltip()">
+          <div class="chart-grid">
+            <div class="chart-y">
+              <span>100%</span>
+              <span>75%</span>
+              <span>50%</span>
+              <span>25%</span>
+              <span>0%</span>
+            </div>
+            <div class="chart-canvas">
+              <svg viewBox="0 0 540 200" preserveAspectRatio="none">
+                <line x1="0" y1="0" x2="540" y2="0"></line>
+                <line x1="0" y1="50" x2="540" y2="50"></line>
+                <line x1="0" y1="100" x2="540" y2="100"></line>
+                <line x1="0" y1="150" x2="540" y2="150"></line>
+                <line x1="0" y1="200" x2="540" y2="200"></line>
+                <polyline
+                  class="framework-line"
+                  *ngFor="let item of frameworkProgress"
+                  [style.stroke]="item.color"
+                  [attr.points]="buildFrameworkLinePoints(item.series)"
+                >
+                  <title>{{ item.framework }}</title>
+                </polyline>
+              </svg>
+              <div class="chart-x">
+                <span *ngFor="let label of frameworkProgressDates.slice(-6)">{{ label }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="chart-legend">
+            <span class="legend-item" *ngFor="let item of frameworkProgress">
+              <span class="legend-dot" [style.background]="item.color"></span>{{ item.framework }}
+            </span>
           </div>
         </div>
       </section>

@@ -36,6 +36,7 @@
     <p class="sub error" *ngIf="error">{{ error }}</p>
     <div class="table" *ngIf="loading">
       <div class="row header">
+        <span>#</span>
         <span>Framework</span>
         <span>Status</span>
         <span>Topics</span>
@@ -48,18 +49,21 @@
         <span class="skeleton skeleton-line"></span>
         <span class="skeleton skeleton-line"></span>
         <span class="skeleton skeleton-line"></span>
+        <span class="skeleton skeleton-line"></span>
       </div>
     </div>
     <ng-container *ngIf="!loading">
       <div class="table" *ngIf="frameworks.length; else emptyState">
       <div class="row header">
+          <span>#</span>
           <span>Framework</span>
           <span>Status</span>
           <span>Topics</span>
           <span>Controls</span>
           <span class="actions-header">Actions</span>
         </div>
-        <div class="row item" *ngFor="let fw of pagedFrameworks" (click)="openFramework(fw)">
+        <div class="row item" *ngFor="let fw of pagedFrameworks; let i = index" (click)="openFramework(fw)">
+          <span class="index">{{ getFrameworkIndex(i) }}</span>
           <div class="framework-cell">
             <span class="framework-name" [title]="fw.framework">{{ fw.framework }}</span>
             <span class="framework-id" *ngIf="fw.frameworkId && fw.frameworkId !== fw.framework">ID: {{ fw.frameworkId }}</span>

@@ -27,7 +27,7 @@ export const routes: Routes = [
       { path: 'home', component: ChatPageComponent, data: { title: 'Home' } },
       { path: 'history', component: ChatHistoryPageComponent, data: { title: 'Chat History' } },
       { path: 'history/:conversationId', component: ChatViewerPageComponent, data: { title: 'Chat View' } },
-      { path: 'dashboard', component: DashboardPageComponent, data: { title: 'Dashboard' } },
+      { path: 'dashboard', component: DashboardPageComponent, canActivate: [requireKbGuard], data: { title: 'Dashboard' } },
       {
         path: 'uploads/:id',
         loadComponent: () =>
