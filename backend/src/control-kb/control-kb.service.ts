@@ -1163,9 +1163,11 @@ export class ControlKbService {
           data: { topicId: topic.id },
         });
 
-        await tx.controlTopicMapping.updateMany({
-          where: { controlId: control.id, relationshipType: 'PRIMARY' },
-          data: { relationshipType: 'RELATED' },
+        await tx.controlTopicMapping.deleteMany({
+          where: {
+            controlId: control.id,
+            topicId: { not: topic.id },
+          },
         });
 
         await tx.controlTopicMapping.upsert({
