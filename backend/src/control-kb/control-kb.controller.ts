@@ -263,6 +263,31 @@ export class ControlKbController {
     });
   }
 
+  @Post('topics/:id/assign')
+  async assignTopicToFramework(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: {
+      framework?: string;
+      sourceFramework?: string;
+    },
+  ) {
+    this.assertAdmin(user);
+    const framework = String(body.framework || '').trim();
+    const sourceFramework = String(body.sourceFramework || '').trim() || null;
+
+    if (!framework || !sourceFramework) {
+      throw new BadRequestException('framework and sourceFramework are required');
+    }
+
+    return this.service.assignTopicToFramework({
+      topicId: id,
+      framework,
+      sourceFramework,
+    });
+  }
+
   @Post('controls/:id/topics')
   async addControlTopicMapping(
     @CurrentUser() user: AuthUser,

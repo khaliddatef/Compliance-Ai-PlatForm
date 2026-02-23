@@ -5,9 +5,15 @@
         <h3>{{ frameworkLabel }} Topics</h3>
         <p class="sub">Topics sourced from the Knowledge Base.</p>
       </div>
-      <button class="ghost-btn" type="button" *ngIf="isAdmin" (click)="showNewTopic = !showNewTopic">
-        {{ showNewTopic ? 'Close' : 'New topic' }}
-      </button>
+      <div class="header-actions">
+        <button class="ghost-btn" type="button" (click)="goBackToFrameworks()">Back to Frameworks</button>
+        <button class="ghost-btn" type="button" *ngIf="isAdmin" (click)="openAssignTopic()">
+          Assign topic
+        </button>
+        <button class="ghost-btn" type="button" *ngIf="isAdmin" (click)="showNewTopic = !showNewTopic">
+          {{ showNewTopic ? 'Close' : 'New topic' }}
+        </button>
+      </div>
     </div>
 
     <div class="draft-card" *ngIf="showNewTopic && isAdmin">

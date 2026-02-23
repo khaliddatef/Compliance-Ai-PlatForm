@@ -11,6 +11,9 @@ type UploadRow = {
   name: string;
   framework: string;
   frameworkReferences: string[];
+  referencePreview: string[];
+  referenceOverflow: number;
+  referenceOverflowLabel: string;
   status: string;
   statusCode: 'UPLOADED' | 'REVIEWED' | 'READY' | 'SUBMITTED';
   size: string;
@@ -407,9 +410,20 @@ export class UploadsPageComponent implements OnInit {
     const size = this.formatSize(doc.sizeBytes ?? 0);
     const sizeBytes = Number(doc.sizeBytes ?? 0);
     const rawReferences = Array.isArray(doc.frameworkReferences)
-      ? doc.frameworkReferences.filter((ref) => Boolean(ref))
+      ? doc.frameworkReferences
       : [];
-    const frameworkReferences = rawReferences;
+    const frameworkReferences = Array.from(
+      new Set(
+        rawReferences
+          .map((ref) => String(ref || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const referencePreview = frameworkReferences.slice(0, 2);
+    const referenceOverflow = Math.max(0, frameworkReferences.length - referencePreview.length);
+    const referenceOverflowLabel = referenceOverflow
+      ? frameworkReferences.slice(referencePreview.length).join(', ')
+      : '';
     const framework = activeFramework || 'Unknown';
     const uploaderLabel = this.formatUploader(doc);
     const uploadedAt = doc?.createdAt ? new Date(doc.createdAt).getTime() : Date.now();
@@ -420,6 +434,9 @@ export class UploadsPageComponent implements OnInit {
       name: doc.originalName || 'Document',
       framework,
       frameworkReferences,
+      referencePreview,
+      referenceOverflow,
+      referenceOverflowLabel,
       status: statusMeta.label,
       statusCode: statusMeta.code,
       size,

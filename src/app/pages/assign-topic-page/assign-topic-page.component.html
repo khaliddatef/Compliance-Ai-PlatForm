@@ -1,0 +1,88 @@
+<section class="page">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h3>Assign topic</h3>
+        <p class="sub">Assign a topic and all its controls to another framework.</p>
+      </div>
+      <button class="ghost-btn" type="button" (click)="backToTopics()">Back to Topics</button>
+    </div>
+
+    <div class="form-card" *ngIf="!loading; else loadingState">
+      <div class="form-section">
+        <h4 class="section-title">Target setup</h4>
+        <div class="field-grid field-grid--two-col">
+          <label class="field">
+            <span>Target framework</span>
+            <select [(ngModel)]="targetFramework" (change)="onTargetFrameworkChange()">
+              <option value="" disabled>Select framework</option>
+              <option *ngFor="let framework of frameworks" [value]="framework.framework">
+                {{ framework.framework }}
+              </option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Source framework</span>
+            <select [(ngModel)]="sourceFramework" (change)="onSourceFrameworkChange()">
+              <option value="" disabled>Select source framework</option>
+              <option *ngFor="let framework of sourceFrameworkOptions" [value]="framework">
+                {{ framework }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4 class="section-title">Topic selection</h4>
+        <div class="field-grid field-grid--two-col">
+          <div class="field field--search">
+            <span>Search topics</span>
+            <div class="search-row">
+              <input
+                type="search"
+                [(ngModel)]="topicQuery"
+                placeholder="Type topic name"
+              />
+              <button class="ghost-btn" type="button" (click)="refreshTopics()" [disabled]="loadingTopics">
+                {{ loadingTopics ? 'Refreshing...' : 'Refresh' }}
+              </button>
+            </div>
+          </div>
+
+          <label class="field">
+            <span>Topic</span>
+            <select [(ngModel)]="topicId" (change)="onTopicChange()">
+              <option value="" disabled>Select topic</option>
+              <option *ngFor="let topic of filteredTopics" [value]="topic.id">
+                {{ topic.title }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" *ngIf="selectedTopicLabel">
+          Selected topic:
+          <strong>{{ selectedTopicLabel }}</strong>
+        </p>
+        <p class="hint">
+          Controls to assign with topic:
+          <strong>{{ loadedControls }}</strong>
+        </p>
+      </div>
+
+      <div class="actions-row">
+        <button class="primary-btn assign-btn" type="button" (click)="assignTopic()" [disabled]="!canAssign">
+          {{ saving ? 'Assigning...' : 'Assign topic' }}
+        </button>
+      </div>
+
+      <p class="notice success" *ngIf="notice">{{ notice }}</p>
+      <p class="notice error" *ngIf="error">{{ error }}</p>
+    </div>
+
+    <ng-template #loadingState>
+      <p class="empty">Loading assign topic page...</p>
+    </ng-template>
+  </div>
+</section>

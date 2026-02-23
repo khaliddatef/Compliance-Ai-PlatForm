@@ -22,7 +22,6 @@
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-line"></div>
-          <div class="skeleton skeleton-line"></div>
           <div class="skeleton skeleton-pill"></div>
           <div class="skeleton skeleton-pill"></div>
           <div class="skeleton skeleton-pill"></div>
@@ -32,6 +31,13 @@
       </div>
     </div>
     <div *ngIf="!loading">
+      <div class="kb-toolbar">
+        <button class="ghost-btn back-btn" type="button" (click)="goBackToTopics()">
+          <span aria-hidden="true">←</span>
+          <span>Back to Topics</span>
+        </button>
+      </div>
+
       <div class="filters">
         <div class="search-row">
           <div class="search">
@@ -158,7 +164,6 @@
         <div class="row header">
           <span>#</span>
           <span>Control</span>
-          <span>Frameworks</span>
           <span>Topic</span>
           <span>References</span>
           <span>Framework status</span>
@@ -181,24 +186,6 @@
               <span class="control-code" [title]="control.controlCode">{{ control.controlCode }}</span>
             </div>
             <span class="control-title" [title]="control.title">{{ control.title }}</span>
-          </div>
-          <div class="framework-cell">
-            <button
-              class="framework-count"
-              type="button"
-              [disabled]="!getControlFrameworkCount(control)"
-              (click)="toggleFrameworkPopover(control, $event)"
-            >
-              {{ getControlFrameworkCount(control) || '—' }}
-            </button>
-            <div class="framework-popover" *ngIf="frameworkPopoverControlId === control.id" (click)="$event.stopPropagation()">
-              <div class="topic-popover-title">Frameworks</div>
-              <div class="topic-popover-list">
-                <div class="topic-popover-item" *ngFor="let framework of getControlFrameworkLabels(control)">
-                  <span>{{ framework }}</span>
-                </div>
-              </div>
-            </div>
           </div>
           <div class="topic-cell">
             <span class="meta truncate" [title]="getPrimaryTopicLabel(control)">{{ getPrimaryTopicLabel(control) }}</span>
