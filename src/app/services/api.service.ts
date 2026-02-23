@@ -524,6 +524,19 @@ export type AssignControlResponse = {
   control?: ControlDefinitionRecord | null;
 };
 
+export type AssignTopicResponse = {
+  ok: boolean;
+  topicId: string;
+  topicTitle: string;
+  framework: string;
+  sourceFramework?: string | null;
+  topicMappingCreated: boolean;
+  controlsProcessed: number;
+  controlsAssigned: number;
+  controlsUpdated: number;
+  controlsRemoved: number;
+};
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   constructor(private http: HttpClient) {}
@@ -736,6 +749,16 @@ export class ApiService {
     },
   ) {
     return this.http.post<AssignControlResponse>(`/api/control-kb/controls/${controlId}/assign`, payload);
+  }
+
+  assignTopicToFramework(
+    topicId: string,
+    payload: {
+      framework: string;
+      sourceFramework?: string | null;
+    },
+  ) {
+    return this.http.post<AssignTopicResponse>(`/api/control-kb/topics/${topicId}/assign`, payload);
   }
 
   addControlTopicMapping(

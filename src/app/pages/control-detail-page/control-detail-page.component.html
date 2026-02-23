@@ -20,6 +20,39 @@
         </div>
       </div>
 
+      <div class="card" *ngIf="controlEdit && editingControl">
+        <div class="card-header">
+          <h5>Control details</h5>
+          <span class="muted" *ngIf="canEdit && editingControl">Editing mode</span>
+          <span class="muted" *ngIf="!canEdit">View only</span>
+        </div>
+        <div class="field-row">
+          <label>
+            Code
+            <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl || !canEdit" />
+          </label>
+          <label>
+            Activation
+            <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl || !canEdit">
+              <option value="enabled">Active</option>
+              <option value="disabled">Inactive</option>
+            </select>
+          </label>
+        </div>
+        <div class="field">
+          <label>Title</label>
+          <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl || !canEdit"></textarea>
+        </div>
+        <div class="field">
+          <label>ISO mappings</label>
+          <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl || !canEdit" />
+        </div>
+        <div class="field">
+          <label>Description</label>
+          <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl || !canEdit"></textarea>
+        </div>
+      </div>
+
       
       <div class="detail-grid">
         <div class="card">
@@ -100,37 +133,5 @@
       <p class="muted">This view is read-only for your role.</p>
     </div>
   </ng-container>
-  <div class="card" *ngIf="controlEdit && editingControl">
-    <div class="card-header">
-      <h5>Control details</h5>
-      <span class="muted" *ngIf="canEdit && editingControl">Editing mode</span>
-      <span class="muted" *ngIf="!canEdit">View only</span>
-    </div>
-    <div class="field-row">
-      <label>
-        Code
-        <input type="text" [(ngModel)]="controlEdit.controlCode" [disabled]="!editingControl || !canEdit" />
-      </label>
-      <label>
-        Activation
-        <select [(ngModel)]="controlEdit.status" [disabled]="!editingControl || !canEdit">
-          <option value="enabled">Active</option>
-          <option value="disabled">Inactive</option>
-        </select>
-      </label>
-    </div>
-    <div class="field">
-      <label>Title</label>
-      <textarea rows="2" [(ngModel)]="controlEdit.title" [disabled]="!editingControl || !canEdit"></textarea>
-    </div>
-    <div class="field">
-      <label>ISO mappings</label>
-      <input type="text" [(ngModel)]="controlEdit.isoMappingsText" [disabled]="!editingControl || !canEdit" />
-    </div>
-    <div class="field">
-      <label>Description</label>
-      <textarea rows="3" [(ngModel)]="controlEdit.description" [disabled]="!editingControl || !canEdit"></textarea>
-    </div>
-  </div>
 </div>
 </section>

@@ -25,6 +25,14 @@
   font-size: 16px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .sub {
   margin: 2px 0 0;
   color: var(--ink-muted);
@@ -347,6 +355,11 @@
 
   .panel-header .ghost-btn {
     width: 100%;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: stretch;
   }
 
   .topic-header {

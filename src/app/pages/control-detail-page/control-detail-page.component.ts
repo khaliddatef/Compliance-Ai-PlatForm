@@ -138,6 +138,7 @@ export class ControlDetailPageComponent implements OnInit {
 
   saveControl() {
     if (!this.canEdit || !this.control || !this.controlEdit) return;
+    const controlId = this.control.id;
     const payload = {
       controlCode: this.controlEdit.controlCode.trim(),
       title: this.controlEdit.title.trim(),
@@ -148,13 +149,11 @@ export class ControlDetailPageComponent implements OnInit {
       sortOrder: this.controlEdit.sortOrder,
     };
 
-    this.api.updateControlDefinition(this.control.id, payload).subscribe({
-      next: (updated) => {
-        this.control = updated;
-        this.controlEdit = this.mapControlForm(updated);
-        this.editingControl = false;
-        this.rebuildActiveReferenceCodes();
-        this.cdr.markForCheck();
+    this.api.updateControlDefinition(controlId, payload).subscribe({
+      next: () => {
+        // PATCH response does not always include nested relations (testComponents, mappings).
+        // Reload the full control payload so the detail view remains consistent after save.
+        this.fetchControl(controlId);
       },
       error: () => {
         this.error = 'Unable to update control.';

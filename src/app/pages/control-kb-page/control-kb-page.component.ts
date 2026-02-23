@@ -68,6 +68,7 @@ export class ControlKbPageComponent implements OnInit {
   pendingFrameworkRef = '';
   pendingGap = '';
   pendingCompliance = '';
+  backFramework = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -104,6 +105,7 @@ export class ControlKbPageComponent implements OnInit {
 
   ngOnInit() {
     this.route.queryParamMap.subscribe((params) => {
+      this.backFramework = String(params.get('framework') || '').trim();
       this.pendingTopicId = String(params.get('topicId') || '').trim();
       this.pendingFramework = String(params.get('framework') || '').trim();
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
@@ -733,6 +735,14 @@ export class ControlKbPageComponent implements OnInit {
       queryParams['q'] = this.searchTerm.trim();
     }
     this.router.navigate(['/control-kb/assign'], { queryParams });
+  }
+
+  goBackToTopics() {
+    const framework =
+      this.backFramework ||
+      (this.frameworkFilter !== 'all' ? String(this.frameworkFilter || '').trim() : '');
+    const queryParams = framework ? { framework } : undefined;
+    this.router.navigate(['/framework-controls'], { queryParams });
   }
 
   mapTopicForm(topic: ControlTopic): TopicForm {

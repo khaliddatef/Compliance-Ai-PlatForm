@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, Location } from '@angular/common';
 import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -69,6 +69,7 @@ export class FrameworkControlsPageComponent implements OnInit {
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
+    private readonly location: Location,
     private readonly cdr: ChangeDetectorRef,
   ) {}
 
@@ -85,6 +86,20 @@ export class FrameworkControlsPageComponent implements OnInit {
 
   get frameworkLabel() {
     return this.framework || 'Active framework';
+  }
+
+  goBackToFrameworks() {
+    if (window.history.length > 1) {
+      this.location.back();
+      return;
+    }
+    this.router.navigate(['/frameworks']);
+  }
+
+  openAssignTopic() {
+    const queryParams: Record<string, string> = {};
+    if (this.framework) queryParams['framework'] = this.framework;
+    this.router.navigate(['/framework-controls/assign-topic'], { queryParams });
   }
 
   fetchTopics() {
