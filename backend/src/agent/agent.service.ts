@@ -951,8 +951,7 @@ Return STRICT JSON only.
         },
       };
 
-      const excerpt = trimmedContent.slice(0, 6000);
-      body.input = `${baseInput}\n\nDocument content (excerpt):\n${excerpt}`;
+      body.input = `${baseInput}\n\nDocument content:\n${trimmedContent}`;
 
       const resp = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
