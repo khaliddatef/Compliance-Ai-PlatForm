@@ -380,9 +380,9 @@ export class UploadService {
     if (kind === 'CUSTOMER') {
       for (const doc of documents) {
         try {
-          const excerpt = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
-          console.log('[DOC MATCH] excerpt chars=', excerpt.length, 'doc=', doc.id, 'name=', doc.originalName);
-          if (!excerpt) {
+          const extractedText = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+          console.log('[DOC MATCH] document text chars=', extractedText.length, 'doc=', doc.id, 'name=', doc.originalName);
+          if (!extractedText) {
             const noTextNote =
               language === 'ar'
                 ? 'لم يتم استخراج نص قابل للقراءة من هذا الملف.'
@@ -403,12 +403,12 @@ export class UploadService {
             continue;
           }
 
-          const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
+          const candidates = await this.findControlCandidates(doc.originalName || '', extractedText);
           const activeFramework = await this.getActiveFrameworkLabel();
           const analysis = await this.agent.analyzeCustomerDocument({
             framework: activeFramework,
             fileName: doc.originalName,
-            content: excerpt,
+            content: extractedText,
             language,
             controlCandidates: candidates,
           });
@@ -542,8 +542,8 @@ export class UploadService {
     });
     if (!doc) return null;
 
-    const excerpt = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
-    if (!excerpt) {
+    const extractedText = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+    if (!extractedText) {
       const noTextNote =
         language === 'ar'
           ? 'لم يتم استخراج نص قابل للقراءة من هذا الملف.'
@@ -569,13 +569,13 @@ export class UploadService {
       return withRefs[0] || pending;
     }
 
-    const candidates = await this.findControlCandidates(doc.originalName || '', excerpt);
+    const candidates = await this.findControlCandidates(doc.originalName || '', extractedText);
     const activeFramework = await this.getActiveFrameworkLabel();
 
     const analysis = await this.agent.analyzeCustomerDocument({
       framework: activeFramework,
       fileName: doc.originalName,
-      content: excerpt,
+      content: extractedText,
       language,
       controlCandidates: candidates,
     });
@@ -1004,13 +1004,12 @@ export class UploadService {
     const chunks = await this.prisma.documentChunk.findMany({
       where: { documentId },
       orderBy: { chunkIndex: 'asc' },
-      take: 6,
       select: { text: true },
     });
 
     if (!chunks.length) return '';
     const joined = chunks.map((chunk) => chunk.text).join('\n');
-    return joined.slice(0, 6000);
+    return joined;
   }
 
   private normalizeSearchText(value: string) {
