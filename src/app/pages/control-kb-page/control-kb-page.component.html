@@ -32,7 +32,7 @@
     </div>
     <div *ngIf="!loading">
       <div class="kb-toolbar">
-        <button class="ghost-btn back-btn" type="button" (click)="goBackToTopics()">
+        <button class="ghost-btn back-btn" type="button" *ngIf="showBackToTopics" (click)="goBackToTopics()">
           <span aria-hidden="true">←</span>
           <span>Back to Topics</span>
         </button>

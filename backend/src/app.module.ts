@@ -9,6 +9,7 @@ import { IngestModule } from './ingest/ingest.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ControlKbModule } from './control-kb/control-kb.module';
+import { SettingsModule } from './settings/settings.module';
 
 const runtimeRoot = path.resolve(__dirname, '..');
 const envFilePath =
@@ -30,6 +31,7 @@ const envFilePath =
     AuthModule,
     DashboardModule,
     ControlKbModule,
+    SettingsModule,
   ],
   providers: [Logger],
 })

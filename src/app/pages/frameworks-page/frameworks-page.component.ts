@@ -39,8 +39,8 @@ export class FrameworksPageComponent implements OnInit {
     return this.auth.user()?.role === 'ADMIN';
   }
 
-  get isManager() {
-    return this.auth.user()?.role === 'MANAGER';
+  get canManageFrameworks() {
+    return this.isAdmin;
   }
 
   toggleNewFramework() {
@@ -90,6 +90,7 @@ export class FrameworksPageComponent implements OnInit {
 
   toggleActionsMenu(frameworkId: string, event?: MouseEvent) {
     event?.stopPropagation();
+    if (!this.canManageFrameworks) return;
     this.openMenuId = this.openMenuId === frameworkId ? null : frameworkId;
   }
 

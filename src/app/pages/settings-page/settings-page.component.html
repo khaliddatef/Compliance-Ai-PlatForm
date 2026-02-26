@@ -1,19 +1,35 @@
 <section class="page">
   <div class="panel">
-    <div class="panel-header">
-      <h3>Settings</h3>
+    <div class="panel-header" *ngIf="!loading; else loadingBlock">
+      <div>
+        <h3>Settings</h3>
+        <p class="header-note">
+          Personal preferences, AI behavior, and team access controls.
+        </p>
+      </div>
       <span class="chip">Preferences</span>
     </div>
-    <div class="setting account" *ngIf="user; else signedOut">
-      <div>
+
+    <ng-template #loadingBlock>
+      <div class="loading-block" aria-hidden="true">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    </ng-template>
+
+    <p class="state error" *ngIf="error">{{ error }}</p>
+
+    <div class="setting account" *ngIf="!loading && user; else signedOut">
+      <div class="account-meta">
         <div class="title">Signed in as</div>
         <div class="desc">{{ user.name }} · {{ user.email }}</div>
+        <div class="role-chip">{{ user.role || 'USER' }}</div>
       </div>
-      <button class="ghost-btn" type="button" (click)="logout()">Logout</button>
+      <button class="ghost-btn danger" type="button" (click)="logout()">Logout</button>
     </div>
 
     <ng-template #signedOut>
-      <div class="setting account">
+      <div class="setting account" *ngIf="!loading">
         <div>
           <div class="title">Sign in</div>
           <div class="desc">Use your Tekronyx account to access chat history and uploads.</div>
@@ -21,28 +37,257 @@
         <button class="ghost-btn" type="button" (click)="goToLogin()">Go to login</button>
       </div>
     </ng-template>
-    <div class="settings-grid">
+    <div class="settings-grid" *ngIf="!loading">
       <div class="setting">
         <div>
           <div class="title">Notifications</div>
-          <div class="desc">Send alerts for new evidence and gaps.</div>
+          <div class="desc">Control email, in-app alerts, and digest frequency.</div>
         </div>
-        <button class="ghost-btn" type="button">Manage</button>
+        <button class="ghost-btn" type="button" (click)="toggleSection('notifications')">
+          {{ expandedSection === 'notifications' ? 'Close' : 'Manage' }}
+        </button>
       </div>
       <div class="setting">
         <div>
           <div class="title">AI Assistant</div>
-          <div class="desc">Configure model and response settings.</div>
+          <div class="desc">Tune response style, language, and citation behavior.</div>
         </div>
-        <button class="ghost-btn" type="button">Configure</button>
+        <button class="ghost-btn" type="button" (click)="toggleSection('ai')">
+          {{ expandedSection === 'ai' ? 'Close' : 'Configure' }}
+        </button>
       </div>
-      <div class="setting">
+      <div class="setting" [class.locked]="!canManageTeam">
         <div>
           <div class="title">Team Access</div>
-          <div class="desc">Invite reviewers and set permissions.</div>
+          <div class="desc">
+            Invite reviewers and manage team permissions.
+            <span *ngIf="!canManageTeam">Manager/Admin only.</span>
+          </div>
         </div>
-        <button class="ghost-btn" type="button">Invite</button>
+        <button class="ghost-btn" type="button" [disabled]="!canManageTeam" (click)="toggleSection('team')">
+          {{ expandedSection === 'team' ? 'Close' : 'Invite' }}
+        </button>
       </div>
+    </div>
+
+    <div class="section-card" *ngIf="expandedSection === 'notifications' && !loading">
+      <div class="section-header">
+        <h4>Notifications</h4>
+        <p>Choose when and how alerts are sent.</p>
+      </div>
+      <div class="form-grid">
+        <label class="checkbox-row">
+          <input type="checkbox" [(ngModel)]="notifications.emailAlerts" />
+          <span>Email alerts</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" [(ngModel)]="notifications.inAppAlerts" />
+          <span>In-app alerts</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" [(ngModel)]="notifications.evidenceAlerts" />
+          <span>Evidence updates</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" [(ngModel)]="notifications.gapAlerts" />
+          <span>Control gap alerts</span>
+        </label>
+        <label class="field">
+          <span>Digest frequency</span>
+          <select [(ngModel)]="notifications.digestFrequency">
+            <option value="INSTANT">Instant</option>
+            <option value="DAILY">Daily</option>
+            <option value="WEEKLY">Weekly</option>
+          </select>
+        </label>
+      </div>
+      <div class="section-actions">
+        <button class="primary-btn" type="button" [disabled]="savingNotifications" (click)="saveNotifications()">
+          {{ savingNotifications ? 'Saving...' : 'Save notifications' }}
+        </button>
+        <span class="state" [class.error]="notificationsMessage && notificationsMessage.toLowerCase().includes('unable')">
+          {{ notificationsMessage }}
+        </span>
+      </div>
+    </div>
+
+    <div class="section-card" *ngIf="expandedSection === 'ai' && !loading">
+      <div class="section-header">
+        <h4>AI Assistant</h4>
+        <p>Customize answer depth and language defaults.</p>
+      </div>
+      <div class="form-grid">
+        <label class="field">
+          <span>Response style</span>
+          <select [(ngModel)]="ai.responseStyle">
+            <option value="CONCISE">Concise</option>
+            <option value="BALANCED">Balanced</option>
+            <option value="DETAILED">Detailed</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Language</span>
+          <select [(ngModel)]="ai.language">
+            <option value="AUTO">Auto detect</option>
+            <option value="EN">English</option>
+            <option value="AR">Arabic</option>
+          </select>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" [(ngModel)]="ai.includeCitations" />
+          <span>Require citations in AI responses</span>
+        </label>
+        <label class="field">
+          <span>Creativity (temperature)</span>
+          <div class="inline-range">
+            <input type="range" min="0" max="1" step="0.1" [(ngModel)]="ai.temperature" />
+            <strong>{{ ai.temperature | number: '1.1-1' }}</strong>
+          </div>
+        </label>
+      </div>
+      <div class="section-actions">
+        <button class="primary-btn" type="button" [disabled]="savingAi" (click)="saveAiSettings()">
+          {{ savingAi ? 'Saving...' : 'Save AI settings' }}
+        </button>
+        <span class="state" [class.error]="aiMessage && aiMessage.toLowerCase().includes('unable')">
+          {{ aiMessage }}
+        </span>
+      </div>
+    </div>
+
+    <div class="section-card" *ngIf="expandedSection === 'team' && !loading">
+      <div class="section-header">
+        <h4>Team Access</h4>
+        <p>Invite collaborators and control their workspace role.</p>
+      </div>
+
+      <p class="state error" *ngIf="teamError">{{ teamError }}</p>
+
+      <ng-container *ngIf="canManageTeam; else noTeamAccess">
+        <div class="team-grid">
+          <div class="invite-card">
+            <h5>Invite team member</h5>
+            <label class="field">
+              <span>Email</span>
+              <input type="email" [(ngModel)]="inviteDraft.email" placeholder="name@company.com" />
+            </label>
+            <label class="field">
+              <span>Name (optional)</span>
+              <input type="text" [(ngModel)]="inviteDraft.name" placeholder="Display name" />
+            </label>
+            <label class="field">
+              <span>Role</span>
+              <select [(ngModel)]="inviteDraft.role">
+                <option
+                  *ngFor="let option of inviteRoleOptions; trackBy: trackByRoleOption"
+                  [value]="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Message (optional)</span>
+              <textarea rows="3" [(ngModel)]="inviteDraft.message" placeholder="Access purpose..."></textarea>
+            </label>
+            <div class="section-actions">
+              <button class="primary-btn" type="button" [disabled]="inviting" (click)="sendInvite()">
+                {{ inviting ? 'Sending...' : 'Send invite' }}
+              </button>
+              <button class="ghost-btn" type="button" [disabled]="loadingTeam" (click)="refreshTeam()">
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="team-table-wrap">
+            <h5>Team members</h5>
+            <div class="table-scroll">
+              <table class="team-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngIf="loadingTeam">
+                    <td colspan="4" class="muted-cell">Loading team members...</td>
+                  </tr>
+                  <tr *ngIf="!loadingTeam && !teamMembers.length">
+                    <td colspan="4" class="muted-cell">No team members found.</td>
+                  </tr>
+                  <tr *ngFor="let member of teamMembers; trackBy: trackByMember">
+                    <td>
+                      {{ member.name }}
+                      <span class="self-chip" *ngIf="isCurrentUser(member)">You</span>
+                    </td>
+                    <td>{{ member.email }}</td>
+                    <td>
+                      <ng-container *ngIf="canEditRoles; else roleLabel">
+                        <select
+                          [ngModel]="member.role"
+                          [disabled]="updatingRoleUserId === member.id || isCurrentUser(member)"
+                          (ngModelChange)="updateMemberRole(member, $event)"
+                        >
+                          <option *ngFor="let option of memberRoleOptions; trackBy: trackByRoleOption" [value]="option.value">
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </ng-container>
+                      <ng-template #roleLabel>
+                        <span class="role-badge">{{ member.role }}</span>
+                      </ng-template>
+                    </td>
+                    <td>{{ member.updatedAt | date: 'dd MMM y, hh:mm a' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="invite-list">
+          <div class="invite-list-header">
+            <h5>Pending invites</h5>
+            <span class="muted">{{ teamInvites.length }} pending</span>
+          </div>
+          <div class="invite-item" *ngFor="let invite of teamInvites; trackBy: trackByInvite">
+            <div>
+              <div class="invite-email">{{ invite.email }}</div>
+              <div class="invite-meta">
+                {{ invite.role }} · invited by {{ invite.invitedByName || invite.invitedByEmail || 'Unknown' }}
+                · {{ invite.createdAt | date: 'dd MMM y, hh:mm a' }}
+              </div>
+            </div>
+            <button
+              class="ghost-btn danger"
+              type="button"
+              [disabled]="cancelingInviteId === invite.id || !canCancelInvite(invite)"
+              (click)="cancelInvite(invite)"
+            >
+              {{
+                cancelingInviteId === invite.id
+                  ? 'Canceling...'
+                  : canCancelInvite(invite)
+                    ? 'Cancel invite'
+                    : 'No access'
+              }}
+            </button>
+          </div>
+          <p class="muted" *ngIf="!teamInvites.length">No pending invites.</p>
+        </div>
+
+        <p class="state" [class.error]="teamMessage && teamMessage.toLowerCase().includes('unable')">
+          {{ teamMessage }}
+        </p>
+      </ng-container>
+
+      <ng-template #noTeamAccess>
+        <p class="muted">Team access is available for Manager and Admin roles only.</p>
+      </ng-template>
     </div>
   </div>
 </section>

@@ -51,7 +51,11 @@ export class ControlDetailPageComponent implements OnInit {
     this.loadActiveFramework();
     this.route.queryParamMap.subscribe((params) => {
       const topicId = String(params.get('topicId') || '').trim();
-      this.backQueryParams = topicId ? { topicId } : {};
+      const framework = String(params.get('framework') || '').trim();
+      const nextQuery: Record<string, string> = {};
+      if (topicId) nextQuery['topicId'] = topicId;
+      if (framework) nextQuery['framework'] = framework;
+      this.backQueryParams = nextQuery;
       this.cdr.markForCheck();
     });
     this.route.paramMap.subscribe((params) => {
