@@ -3,7 +3,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { Message, MessageAction, MessageReference } from '../../models/message.model';
 
 type RenderLine = {
-  type: 'bullet' | 'text';
+  type: 'header' | 'bullet' | 'text';
   parts: { text: string; citation: boolean }[];
 };
 
@@ -30,8 +30,17 @@ export class MessageBubbleComponent {
       .filter((line) => line.trim().length)
       .map((line) => {
         const trimmed = line.trim();
-        const isBullet = trimmed.startsWith('-') || trimmed.startsWith('*');
-        const text = isBullet ? trimmed.replace(/^[-*]\s*/, '') : trimmed;
+        const headerText = trimmed.replace(/^#{1,6}\s*/, '').trim();
+        if (trimmed.startsWith('#') && headerText) {
+          return {
+            type: 'header' as const,
+            parts: this.parseCitations(headerText),
+          };
+        }
+
+        const isBullet =
+          trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.startsWith('•');
+        const text = isBullet ? trimmed.replace(/^[-*•]\s*/, '') : trimmed;
         return {
           type: isBullet ? 'bullet' : 'text',
           parts: this.parseCitations(text)

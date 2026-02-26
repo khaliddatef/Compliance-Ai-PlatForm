@@ -105,6 +105,17 @@
   width: 100%;
 }
 
+.line.header {
+  gap: 0;
+  margin-top: 6px;
+}
+
+.line.header .text {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .bullet-mark {
   color: var(--accent-600);
   font-weight: 700;

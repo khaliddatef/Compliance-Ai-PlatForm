@@ -350,18 +350,19 @@ export class ChatService {
   private buildUploadAnalysisContent(doc: UploadDocumentRecord, language: 'ar' | 'en') {
     const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
     const fileName = doc?.originalName || fallbackName;
-    const docType = doc?.docType
-      ? language === 'ar'
-        ? `النوع: ${doc.docType}`
-        : `Type: ${doc.docType}`
-      : '';
-    const controlId = doc?.matchControlId
-      ? language === 'ar'
-        ? `الكنترول: ${doc.matchControlId}`
-        : `Control: ${doc.matchControlId}`
-      : language === 'ar'
-        ? 'الكنترول: غير محدد'
-        : 'Control: Not identified';
+    const docType = String(doc?.docType || '').trim();
+    const noCandidateControl = this.isNoCandidateControl(doc);
+    const controlValue = String(doc?.matchControlId || doc?.matchControlTitle || '').trim();
+    const controlLabel = controlValue
+      ? controlValue
+      : noCandidateControl
+        ? language === 'ar'
+          ? 'لم يتم العثور على Candidate Control'
+          : 'No candidate control found'
+        : language === 'ar'
+          ? 'غير محدد'
+          : 'Not identified';
+
     const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
     const statusLabel =
       matchStatus === 'COMPLIANT'
@@ -379,33 +380,78 @@ export class ChatService {
             : language === 'ar'
               ? 'يحتاج مراجعة'
               : 'Needs review';
-    const note = doc?.matchNote
-      ? language === 'ar'
-        ? `ملاحظة: ${doc.matchNote}`
-        : `AI note: ${doc.matchNote}`
-      : '';
-    const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 3) : [];
+
+    const noteLines = String(doc?.matchNote || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 5) : [];
     const frameworkRefs = Array.isArray(doc?.frameworkReferences)
       ? doc.frameworkReferences.filter(Boolean)
       : [];
+
+    const labels =
+      language === 'ar'
+        ? {
+            analysis: 'تحليل الملف',
+            type: 'النوع',
+            control: 'الكنترول',
+            status: 'الحالة',
+            assessment: 'تفاصيل التقييم',
+            noAssessment: 'لا توجد ملاحظات تفصيلية متاحة.',
+            refs: 'مراجع الفريمووركات',
+            next: 'الخطوات المقترحة',
+            noNext: 'لا توجد خطوات إضافية حالياً.',
+          }
+        : {
+            analysis: 'Document analysis',
+            type: 'Type',
+            control: 'Control',
+            status: 'Status',
+            assessment: 'Assessment details',
+            noAssessment: 'No detailed assessment notes are available.',
+            refs: 'Framework references',
+            next: 'Recommended next steps',
+            noNext: 'No additional next steps were provided.',
+          };
+
     const lines = [
       `📎 ${fileName}`,
-      docType,
-      controlId,
-      language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
-      note,
-    ].filter(Boolean);
+      `${labels.analysis}:`,
+      `- ${labels.type}: ${docType || (language === 'ar' ? 'غير محدد' : 'Not identified')}`,
+      `- ${labels.control}: ${controlLabel}`,
+      `- ${labels.status}: ${statusLabel}`,
+      `${labels.assessment}:`,
+    ];
+
+    if (noteLines.length) {
+      lines.push(...noteLines.map((line) => (line.startsWith('-') ? line : `- ${line}`)));
+    } else {
+      lines.push(`- ${labels.noAssessment}`);
+    }
 
     if (frameworkRefs.length) {
-      lines.push(language === 'ar' ? 'مراجع الفريموركات:' : 'Framework references:');
-      lines.push(frameworkRefs.map((ref) => `- ${ref}`).join('\n'));
-    }
-    if (recs.length) {
-      lines.push(language === 'ar' ? 'الخطوات القادمة:' : 'Next steps:');
-      lines.push(recs.map((rec) => `- ${rec}`).join('\n'));
+      lines.push(`${labels.refs}:`);
+      lines.push(...frameworkRefs.map((ref) => `- ${ref}`));
     }
 
-    return lines.filter(Boolean).join('\n');
+    lines.push(`${labels.next}:`);
+    if (recs.length) {
+      lines.push(...recs.map((rec) => `- ${rec}`));
+    } else {
+      lines.push(`- ${labels.noNext}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private isNoCandidateControl(doc: UploadDocumentRecord) {
+    if (String(doc?.matchControlId || '').trim()) return false;
+    const note = String(doc?.matchNote || '').toLowerCase();
+    return (
+      note.includes('no candidate control found') ||
+      note.includes('\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 candidate control')
+    );
   }
 
   private formatTitle(value: string) {

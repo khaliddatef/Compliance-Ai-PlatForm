@@ -107,6 +107,7 @@ export type UploadDocumentRecord = {
   conversation?: { userId?: string | null; title: string; user?: { name: string; email: string } | null };
   _count?: { chunks: number };
   matchControlId?: string | null;
+  matchControlTitle?: string | null;
   matchStatus?: string;
   matchNote?: string;
   matchRecommendations?: string[];

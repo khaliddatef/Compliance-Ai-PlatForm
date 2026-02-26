@@ -43,6 +43,7 @@ type UploadDetailView = {
   submittedAt: Date | null;
   chatTitle: string;
   uploaderLabel: string;
+  controlTitle: string;
   controlCode: string;
   docType: string;
   chunks: number;
@@ -412,6 +413,7 @@ export class UploadDetailPageComponent implements OnInit {
       submittedAt,
       chatTitle: String(doc.conversation?.title || '—'),
       uploaderLabel: this.formatUploader(doc),
+      controlTitle: String(doc.matchControlTitle || '').trim(),
       controlCode: String(doc.matchControlId || ''),
       docType: String(doc.docType || 'Uncategorized'),
       chunks: Number(doc._count?.chunks || 0),
@@ -544,7 +546,7 @@ export class UploadDetailPageComponent implements OnInit {
   }
 
   private resolveDetailsTitle(doc: UploadDocumentRecord, references: string[]) {
-    const hasControl = String(doc.matchControlId || '').trim().length > 0;
+    const hasControl = String(doc.matchControlTitle || doc.matchControlId || '').trim().length > 0;
     if (hasControl || references.length) return 'Control & Reference Details';
     const docType = String(doc.docType || '').trim();
     if (docType && docType.toLowerCase() !== 'uncategorized') return `${docType} Details`;

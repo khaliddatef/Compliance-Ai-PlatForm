@@ -433,11 +433,19 @@ Transparency:
 - If you reference framework requirements, say it is guidance and not a compliance decision.
 
 Return STRICT JSON only.
-Keep answers concise, supportive, and action-oriented.
-Structure:
-1) Short acknowledgement.
-2) Helpful guidance in 3-5 short sentences.
-3) One clear next step or question.
+
+Response depth and format:
+- Give a detailed, well-organized answer (typically 8-14 lines).
+- Use clear section headers in this order:
+  1) Overview
+  2) What the uploaded evidence shows
+  3) Gaps / exceptions
+  4) Recommended actions
+  5) Next step
+- Under each section, use short bullet points starting with "- ".
+- Include concrete details from evidence when available (roles, approvals, frequencies, systems, ownership).
+- If evidence is weak, explicitly say what is missing and why that matters.
+- Keep the tone supportive, practical, and non-judgmental.
 `;
 
     const responseSchema = {
@@ -642,7 +650,7 @@ Language:
 - Do not mix languages in the same response (except file names or control IDs).
 
 Guidance rules:
-- Provide concise compliance guidance and recommended evidence.
+- Provide detailed compliance guidance and recommended evidence.
 - Stay within GRC/cybersecurity compliance.
 - If unclear, ask up to 2 clarifying questions (one at a time) before giving detailed steps.
 - If the user says they don’t understand, rephrase simply and give a short example.
@@ -655,10 +663,16 @@ Transparency:
 - If you reference framework requirements, say it is guidance and not a compliance decision.
 
 Return STRICT JSON only.
-Structure:
-1) Short acknowledgement.
-2) Helpful guidance in 3-5 short sentences.
-3) One clear next step or question.
+
+Response depth and format:
+- Give a detailed, well-organized guidance response (typically 8-12 lines).
+- Use section headers in this order:
+  1) Overview
+  2) What is typically required
+  3) Evidence to prepare
+  4) Practical next step
+- Under each section, use short bullet points starting with "- ".
+- Keep guidance concrete and practical; avoid generic filler.
 `;
 
     const responseSchema = {
@@ -895,9 +909,11 @@ Rules:
 - If candidates are provided, you MUST pick matchControlId from the allowed list only.
 - If multiple candidates fit, choose the FIRST candidate in the provided list.
 - Use the internal control ID when available. ISO codes are references only.
-- Keep matchNote short (1-2 sentences), supportive, and non-judgmental.
+- matchNote must be detailed and structured as 3-6 bullet lines.
+- In matchNote, cover: why this control was selected, evidence observed, and key gaps/risks.
+- Each matchNote line should start with "- ".
 - Avoid mentioning the framework name unless needed for clarity.
-- Provide up to 3 clear, practical recommendations.
+- Provide 4-6 clear, practical recommendations, ordered by impact.
 
 Return STRICT JSON only.
 `;
@@ -1122,7 +1138,15 @@ Rules:
 - If evidence is missing or irrelevant, status MUST be "UNKNOWN".
 - Avoid judgmental/pass-fail language. Be honest and action-oriented.
 - Summary must include a short transparency note (e.g. "Based on your uploaded evidence and our internal control criteria.").
-- Be concise and list which test components are satisfied vs missing.
+- Summary must be detailed and structured with section headers:
+  Overview:
+  Evidence observed:
+  Gap analysis:
+  Priority actions:
+- Under each section, use short bullet points starting with "- ".
+- Explain why the status was chosen using concrete evidence signals.
+- List which test components are satisfied vs missing.
+- Recommendations must be specific and actionable, not generic.
 - Return STRICT JSON only.
 `;
 
@@ -1260,3 +1284,4 @@ Rules:
     }
   }
 }
+

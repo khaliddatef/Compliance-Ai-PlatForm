@@ -9,8 +9,13 @@
   </div>
   <div class="bubble-body">
     <div class="content" *ngIf="message.kind !== 'action'">
-      <div *ngFor="let line of lines" class="line" [class.bullet]="line.type === 'bullet'">
-        <span *ngIf="line.type === 'bullet'" class="bullet-mark">•</span>
+      <div
+        *ngFor="let line of lines"
+        class="line"
+        [class.bullet]="line.type === 'bullet'"
+        [class.header]="line.type === 'header'"
+      >
+        <span *ngIf="line.type === 'bullet'" class="bullet-mark">&bull;</span>
         <span class="text">
           <ng-container *ngFor="let part of line.parts">
             <span [class.citation]="part.citation">{{ part.text }}</span>

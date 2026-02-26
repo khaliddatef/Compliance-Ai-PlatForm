@@ -45,6 +45,142 @@ export class UploadService {
     return this.hasOpenAiConfig() && !this.disableOpenAiStorage;
   }
 
+  private buildNoCandidateControlOutcome(language?: 'ar' | 'en') {
+    const isArabic = language === 'ar';
+    return {
+      matchStatus: 'UNKNOWN' as const,
+      matchControlId: null as string | null,
+      matchNote: isArabic
+        ? 'لم يتم العثور على Candidate Control ضمن جميع الكنترولات المفعلة (enabled controls).'
+        : 'No candidate control found in all enabled controls.',
+      matchRecommendations: isArabic
+        ? [
+            'أضف الكنترول المناسب أو اربطه في Control KB ثم أعد التقييم.',
+            'حسّن اسم الملف أو المحتوى ليعكس سياق الكنترول بشكل أوضح.',
+          ]
+        : [
+            'Add or map the relevant control in Control KB, then re-evaluate this document.',
+            'Refine the file name/content so control context is clearer.',
+          ],
+    };
+  }
+
+  private normalizeControlCode(value: string) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private extractControlCodeHints(fileName: string) {
+    const raw = String(fileName || '')
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, '-')
+      .replace(/\s*([._-])\s*/g, '$1');
+    const matches = raw.match(/\b[A-Za-z]{2,}(?:[-_][A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)+\b/g) || [];
+    return Array.from(
+      new Set(
+        matches
+          .map((value) => value.trim())
+          .map((value) => {
+            const parts = value.split(/[-_]/).filter(Boolean);
+            while (parts.length > 1 && !/\d/.test(parts[parts.length - 1])) {
+              parts.pop();
+            }
+            return parts.join('-');
+          })
+          .filter((value) => /[a-z]/i.test(value) && /\d/.test(value))
+          .filter((value) => !/^v?\d+(?:\.\d+)+$/i.test(value))
+          .map((value) => this.normalizeControlCode(value))
+          .filter((value) => value.length >= 5)
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private controlCodeMatchesHint(controlCode: string, hint: string) {
+    const normalizedControlCode = this.normalizeControlCode(controlCode);
+    if (!normalizedControlCode || !hint) return false;
+    if (normalizedControlCode === hint) return true;
+    if (Math.min(normalizedControlCode.length, hint.length) < 5) return false;
+    return (
+      normalizedControlCode.startsWith(hint) ||
+      normalizedControlCode.endsWith(hint) ||
+      hint.startsWith(normalizedControlCode) ||
+      hint.endsWith(normalizedControlCode)
+    );
+  }
+
+  private async attachControlTitles<T extends { matchControlId?: string | null }>(docs: T[]) {
+    if (!docs?.length) return docs;
+    const controlCodes = Array.from(
+      new Set(
+        docs
+          .map((doc) => String(doc?.matchControlId || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (!controlCodes.length) {
+      return docs.map((doc) => ({ ...doc, matchControlTitle: null }));
+    }
+
+    const controls = await this.prisma.controlDefinition.findMany({
+      where: { controlCode: { in: controlCodes } },
+      select: { controlCode: true, title: true },
+    });
+    const titleByCode = new Map<string, string>();
+    controls.forEach((control) => {
+      const code = String(control.controlCode || '').trim();
+      const title = String(control.title || '').trim();
+      const normalizedCode = this.normalizeControlCode(code);
+      if (!code || !title) return;
+      titleByCode.set(code, title);
+      if (normalizedCode) titleByCode.set(normalizedCode, title);
+    });
+
+    const unresolvedCodes = controlCodes.filter((code) => {
+      const normalized = this.normalizeControlCode(code);
+      return !titleByCode.has(code) && !titleByCode.has(normalized);
+    });
+
+    if (unresolvedCodes.length) {
+      const mappedControls = await this.prisma.controlDefinition.findMany({
+        where: {
+          frameworkMappings: {
+            some: {
+              frameworkCode: { in: unresolvedCodes },
+            },
+          },
+        },
+        select: {
+          title: true,
+          frameworkMappings: { select: { frameworkCode: true } },
+        },
+      });
+
+      mappedControls.forEach((control) => {
+        const title = String(control.title || '').trim();
+        if (!title) return;
+        (control.frameworkMappings || []).forEach((mapping) => {
+          const frameworkCode = String(mapping.frameworkCode || '').trim();
+          if (!frameworkCode) return;
+          const normalizedFrameworkCode = this.normalizeControlCode(frameworkCode);
+          titleByCode.set(frameworkCode, title);
+          if (normalizedFrameworkCode) titleByCode.set(normalizedFrameworkCode, title);
+        });
+      });
+    }
+
+    return docs.map((doc) => {
+      const controlCode = String(doc?.matchControlId || '').trim();
+      const normalizedControlCode = this.normalizeControlCode(controlCode);
+      const title = controlCode
+        ? titleByCode.get(controlCode) || titleByCode.get(normalizedControlCode) || null
+        : null;
+      return { ...doc, matchControlTitle: title };
+    });
+  }
+
   private async ensureUploadsDir(): Promise<string> {
     const dir = path.resolve(process.cwd(), 'uploads');
     await fs.mkdir(dir, { recursive: true });
@@ -404,6 +540,21 @@ export class UploadService {
           }
 
           const candidates = await this.findControlCandidates(doc.originalName || '', extractedText);
+          if (!candidates.length) {
+            const noCandidate = this.buildNoCandidateControlOutcome(language);
+            await this.prisma.document.update({
+              where: { id: doc.id },
+              data: {
+                matchControlId: noCandidate.matchControlId,
+                matchStatus: noCandidate.matchStatus,
+                matchNote: noCandidate.matchNote,
+                matchRecommendations: noCandidate.matchRecommendations,
+                reviewedAt: new Date(),
+              } as any,
+            });
+            continue;
+          }
+
           const activeFramework = await this.getActiveFrameworkLabel();
           const analysis = await this.agent.analyzeCustomerDocument({
             framework: activeFramework,
@@ -436,13 +587,14 @@ export class UploadService {
     }
 
     const documentsWithReferences = await this.attachFrameworkReferences(analyzedDocs);
+    const documentsWithTitles = await this.attachControlTitles(documentsWithReferences);
 
     return {
       ok: true,
       conversationId,
       kind,
       count: documents.length,
-      documents: documentsWithReferences,
+      documents: documentsWithTitles,
       ingestResults,
       customerVectorStoreId,
     };
@@ -486,7 +638,8 @@ export class UploadService {
     });
 
     const withHints = await this.attachEvaluationHints(docs);
-    return this.attachFrameworkReferences(withHints);
+    const withRefs = await this.attachFrameworkReferences(withHints);
+    return this.attachControlTitles(withRefs);
   }
 
   async listAllForUser(user?: { id: string; role: string }) {
@@ -503,7 +656,8 @@ export class UploadService {
     });
 
     const withHints = await this.attachEvaluationHints(docs);
-    return this.attachFrameworkReferences(withHints);
+    const withRefs = await this.attachFrameworkReferences(withHints);
+    return this.attachControlTitles(withRefs);
   }
 
   getDocumentById(id: string) {
@@ -522,7 +676,8 @@ export class UploadService {
 
     const withHints = await this.attachEvaluationHints([doc]);
     const withRefs = await this.attachFrameworkReferences(withHints);
-    return withRefs[0] || withHints[0] || doc;
+    const withTitles = await this.attachControlTitles(withRefs);
+    return withTitles[0] || withRefs[0] || withHints[0] || doc;
   }
 
   getDocumentWithOwner(id: string) {
@@ -566,10 +721,32 @@ export class UploadService {
         },
       });
       const withRefs = await this.attachFrameworkReferences([pending]);
-      return withRefs[0] || pending;
+      const withTitles = await this.attachControlTitles(withRefs);
+      return withTitles[0] || withRefs[0] || pending;
     }
 
     const candidates = await this.findControlCandidates(doc.originalName || '', extractedText);
+    if (!candidates.length) {
+      const noCandidate = this.buildNoCandidateControlOutcome(language);
+      const pending = await this.prisma.document.update({
+        where: { id: doc.id },
+        data: {
+          matchControlId: noCandidate.matchControlId,
+          matchStatus: noCandidate.matchStatus,
+          matchNote: noCandidate.matchNote,
+          matchRecommendations: noCandidate.matchRecommendations,
+          reviewedAt: new Date(),
+        } as any,
+        include: {
+          conversation: { select: { title: true } },
+          _count: { select: { chunks: true } },
+        },
+      });
+      const withRefs = await this.attachFrameworkReferences([pending]);
+      const withTitles = await this.attachControlTitles(withRefs);
+      return withTitles[0] || withRefs[0] || pending;
+    }
+
     const activeFramework = await this.getActiveFrameworkLabel();
 
     const analysis = await this.agent.analyzeCustomerDocument({
@@ -597,7 +774,8 @@ export class UploadService {
     });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
-    return withRefs[0] || updated;
+    const withTitles = await this.attachControlTitles(withRefs);
+    return withTitles[0] || withRefs[0] || updated;
   }
 
   async deleteDocument(id: string) {
@@ -662,7 +840,8 @@ export class UploadService {
     });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
-    return withRefs[0] || updated;
+    const withTitles = await this.attachControlTitles(withRefs);
+    return withTitles[0] || withRefs[0] || updated;
   }
 
   async updateDocumentMatchStatus(
@@ -691,7 +870,8 @@ export class UploadService {
     });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
-    return withRefs[0] || updated;
+    const withTitles = await this.attachControlTitles(withRefs);
+    return withTitles[0] || withRefs[0] || updated;
   }
 
   async cleanupOpenAiResources(params: {
@@ -1047,21 +1227,16 @@ export class UploadService {
   }
 
   private async findControlCandidates(fileName: string, content?: string | null): Promise<ControlCandidate[]> {
-    let tokens = this.extractSearchTokens(fileName);
-    if (!tokens.length && content) {
-      tokens = this.extractSearchTokens(content.slice(0, 180));
-    }
+    const tokens = Array.from(
+      new Set([
+        ...this.extractSearchTokens(fileName),
+        ...(content ? this.extractSearchTokens(content.slice(0, 600)) : []),
+      ]),
+    );
     if (!tokens.length) return [];
 
-    const orFilters = tokens.flatMap((token) => [
-      { title: { contains: token } },
-      { description: { contains: token } },
-      { controlCode: { contains: token } },
-      { topic: { title: { contains: token } } },
-    ]);
-
-    const results = await this.prisma.controlDefinition.findMany({
-      where: { AND: [{ status: 'enabled' }, { OR: orFilters }] },
+    const enabledControls = await this.prisma.controlDefinition.findMany({
+      where: { status: 'enabled' },
       select: {
         controlCode: true,
         title: true,
@@ -1070,15 +1245,21 @@ export class UploadService {
         topic: { select: { title: true } },
         frameworkMappings: { select: { framework: true, frameworkCode: true } },
       },
-      take: 50,
     });
 
-    const activeFrameworks = await this.getActiveFrameworkSet();
-    const filtered = activeFrameworks
-      ? results.filter((control) => this.isControlAllowed(control, activeFrameworks))
-      : results;
+    const codeHints = this.extractControlCodeHints(fileName);
+    let candidatePool = enabledControls;
+    if (codeHints.length) {
+      const codeMatches = enabledControls.filter((control) =>
+        codeHints.some((hint) => this.controlCodeMatchesHint(control.controlCode, hint)),
+      );
+      // If the file carries a control-like code and no enabled control matches it,
+      // treat this as no-candidate instead of forcing semantic matching.
+      if (!codeMatches.length) return [];
+      candidatePool = codeMatches;
+    }
 
-    const scored = filtered
+    const scored = candidatePool
       .map((control) => {
         const haystack = [
           control.controlCode,
@@ -1095,32 +1276,18 @@ export class UploadService {
       .sort((a, b) => b.score - a.score || a.control.title.localeCompare(b.control.title));
 
     return scored.slice(0, 8).map(({ control }) => {
-      const activeMappings = (control.frameworkMappings || [])
-        .filter((mapping) => (activeFrameworks ? activeFrameworks.has(mapping.framework) : true))
+      const mappingCodes = (control.frameworkMappings || [])
         .map((mapping) => String(mapping.frameworkCode || '').trim())
         .filter(Boolean);
-      let isoMappings = activeMappings.length
-        ? activeMappings
+      let isoMappings = mappingCodes.length
+        ? mappingCodes
         : Array.isArray(control.isoMappings)
           ? (control.isoMappings as unknown[]).map((value) => String(value))
           : [];
 
-      if (isoMappings.length) {
-        const activeName = activeFrameworks ? Array.from(activeFrameworks)[0] : '';
-        const normalized = String(activeName || '').toLowerCase();
-        const preferNumeric = normalized.includes('2022');
-        const preferAnnex = normalized.includes('2013');
-        const filtered = isoMappings.filter((value) => {
-          const trimmed = String(value || '').trim();
-          if (!trimmed) return false;
-          if (preferNumeric) return /^[0-9]/.test(trimmed);
-          if (preferAnnex) return /^a\./i.test(trimmed);
-          return true;
-        });
-        if (filtered.length) {
-          isoMappings = filtered;
-        }
-      }
+      isoMappings = Array.from(
+        new Set(isoMappings.map((value) => String(value || '').trim()).filter(Boolean)),
+      );
 
       return {
         controlCode: control.controlCode,
@@ -1166,3 +1333,5 @@ export class UploadService {
     return mappings.some((mapping) => active.has(mapping.framework));
   }
 }
+
+

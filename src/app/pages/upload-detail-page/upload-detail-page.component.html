@@ -166,7 +166,7 @@
               </div>
               <div>
                 <div class="meta-label">Linked control</div>
-                <div class="meta-value">{{ file.controlCode || 'Not mapped yet' }}</div>
+                <div class="meta-value">{{ file.controlCode || file.controlTitle || 'Not mapped yet' }}</div>
               </div>
             </div>
 
@@ -262,7 +262,7 @@
             <h4>Reference & Mapping</h4>
             <div class="mapping-item">
               <span>Linked control</span>
-              <strong>{{ file.controlCode || 'Not linked yet' }}</strong>
+              <strong>{{ file.controlCode || file.controlTitle || 'Not linked yet' }}</strong>
             </div>
             <div class="mapping-item">
               <span>Framework references</span>
