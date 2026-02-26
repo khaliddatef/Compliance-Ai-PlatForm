@@ -25,8 +25,8 @@
           </div>
         </div>
         <div class="history-actions">
-          <button class="action-btn" type="button" (click)="openRemoteConversation(conversation.id)">
-            {{ isPrivileged ? 'View' : 'Open' }}
+          <button class="action-btn" type="button" (click)="openRemoteConversation(conversation)">
+            {{ getConversationActionLabel(conversation) }}
           </button>
           <button
             class="action-btn danger"

@@ -22,7 +22,7 @@ export class ChatController {
     @Param('conversationId') conversationId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    await this.assertConversationAccess(conversationId, user);
+    await this.assertConversationReadAccess(conversationId, user);
     if (user.role === 'MANAGER') {
       return this.chatService.hideConversationForUser(conversationId, user.id);
     }
@@ -31,8 +31,16 @@ export class ChatController {
 
   @Get('conversations')
   async listConversations(@CurrentUser() user: AuthUser) {
-    const isPrivileged = user.role !== 'USER';
-    const baseWhere: any = isPrivileged ? { userId: { not: null } } : { userId: user.id };
+    const role = this.normalizeRole(user.role);
+    const baseWhere: any =
+      role === 'ADMIN'
+        ? { userId: { not: null } }
+        : role === 'MANAGER'
+          ? {
+              userId: { not: null },
+              OR: [{ userId: user.id }, { user: { role: 'USER' } }],
+            }
+          : { userId: user.id };
     const include = {
       user: { select: { id: true, name: true, email: true, role: true } },
       messages: {
@@ -45,7 +53,7 @@ export class ChatController {
     const orderBy = { updatedAt: 'desc' } as const;
 
     const managerWhere =
-      user.role === 'MANAGER'
+      role === 'MANAGER'
         ? { ...baseWhere, hiddenBy: { none: { userId: user.id, hidden: true } } }
         : baseWhere;
 
@@ -57,7 +65,7 @@ export class ChatController {
         orderBy,
       });
     } catch (error) {
-      if (user.role !== 'MANAGER') throw error;
+      if (role !== 'MANAGER') throw error;
       rows = await this.prisma.conversation.findMany({
         where: baseWhere,
         include,
@@ -89,7 +97,7 @@ export class ChatController {
     @Param('conversationId') conversationId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    await this.assertConversationAccess(conversationId, user);
+    await this.assertConversationReadAccess(conversationId, user);
     const messages = await this.chatService.listMessages(conversationId);
     return messages.map((message) => ({
       id: message.id,
@@ -104,7 +112,7 @@ export class ChatController {
     @Param('conversationId') conversationId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    await this.assertConversationAccess(conversationId, user);
+    await this.assertConversationReadAccess(conversationId, user);
 
     const row = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
@@ -162,7 +170,7 @@ export class ChatController {
     }
 
     if (body?.conversationId) {
-      await this.assertConversationAccess(body.conversationId, user);
+      await this.assertConversationWriteAccess(body.conversationId, user);
     }
 
     // 1) Save user message
@@ -235,7 +243,7 @@ export class ChatController {
       };
     }
 
-    await this.assertConversationAccess(conversationId, user);
+    await this.assertConversationWriteAccess(conversationId, user);
 
     await this.prisma.conversation.upsert({
       where: { id: conversationId },
@@ -306,18 +314,35 @@ export class ChatController {
     };
   }
 
-  private async assertConversationAccess(conversationId: string, user: AuthUser) {
+  private async assertConversationReadAccess(conversationId: string, user: AuthUser) {
     if (!conversationId) return;
-    if (user.role !== 'USER') return;
+
+    const role = this.normalizeRole(user.role);
+    if (role === 'ADMIN') return;
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { userId: true },
+      select: {
+        userId: true,
+        user: { select: { role: true } },
+      },
     });
 
     if (!conv) return;
 
-    if (!conv.userId) {
+    const ownerId = String(conv.userId || '').trim();
+    const ownerRole = this.normalizeRole(conv.user?.role);
+
+    if (role === 'MANAGER') {
+      const isOwnConversation = ownerId && ownerId === user.id;
+      const isUserConversation = ownerRole === 'USER';
+      if (!isOwnConversation && !isUserConversation) {
+        throw new ForbiddenException('Not allowed to access this conversation');
+      }
+      return;
+    }
+
+    if (!ownerId) {
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: { userId: user.id },
@@ -325,8 +350,56 @@ export class ChatController {
       return;
     }
 
-    if (conv.userId !== user.id) {
+    if (ownerId !== user.id) {
       throw new ForbiddenException('Not allowed to access this conversation');
     }
+  }
+
+  private async assertConversationWriteAccess(conversationId: string, user: AuthUser) {
+    if (!conversationId) return;
+
+    const role = this.normalizeRole(user.role);
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { userId: true },
+    });
+
+    if (!conv) return;
+
+    const ownerId = String(conv.userId || '').trim();
+
+    if (role === 'USER') {
+      if (!ownerId) {
+        await this.prisma.conversation.update({
+          where: { id: conversationId },
+          data: { userId: user.id },
+        });
+        return;
+      }
+      if (ownerId !== user.id) {
+        throw new ForbiddenException('Not allowed to continue this conversation');
+      }
+      return;
+    }
+
+    if (!ownerId) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: { userId: user.id },
+      });
+      return;
+    }
+
+    if (ownerId !== user.id) {
+      throw new ForbiddenException('Not allowed to continue this conversation');
+    }
+  }
+
+  private normalizeRole(value?: string | null): AuthUser['role'] {
+    const normalized = String(value || 'USER').toUpperCase();
+    if (normalized === 'ADMIN' || normalized === 'MANAGER') {
+      return normalized;
+    }
+    return 'USER';
   }
 }

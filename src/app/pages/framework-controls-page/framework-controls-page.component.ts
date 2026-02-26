@@ -1,4 +1,4 @@
-import { CommonModule, Location } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -69,7 +69,6 @@ export class FrameworkControlsPageComponent implements OnInit {
     private readonly auth: AuthService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
-    private readonly location: Location,
     private readonly cdr: ChangeDetectorRef,
   ) {}
 
@@ -89,10 +88,6 @@ export class FrameworkControlsPageComponent implements OnInit {
   }
 
   goBackToFrameworks() {
-    if (window.history.length > 1) {
-      this.location.back();
-      return;
-    }
     this.router.navigate(['/frameworks']);
   }
 

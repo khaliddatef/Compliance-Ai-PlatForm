@@ -37,6 +37,10 @@ export class ChatHistoryPageComponent implements OnInit {
     return role === 'ADMIN' || role === 'MANAGER';
   }
 
+  private get currentUserId() {
+    return String(this.auth.user()?.id || '').trim();
+  }
+
   get filteredRemoteConversations(): ChatConversationSummary[] {
     const list = [...this.remoteConversations].sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -87,12 +91,22 @@ export class ChatHistoryPageComponent implements OnInit {
     return Array.from({ length: end - normalizedStart + 1 }, (_, idx) => normalizedStart + idx);
   }
 
-  openRemoteConversation(conversationId: string) {
-    if (this.isPrivileged) {
-      this.router.navigate(['/history', conversationId]);
-    } else {
-      this.router.navigate(['/home'], { queryParams: { conversationId } });
+  canOpenConversation(conversation: ChatConversationSummary) {
+    if (!this.isPrivileged) return true;
+    const ownerId = String(conversation.user?.id || '').trim();
+    return !!ownerId && ownerId === this.currentUserId;
+  }
+
+  getConversationActionLabel(conversation: ChatConversationSummary) {
+    return this.canOpenConversation(conversation) ? 'Open' : 'View';
+  }
+
+  openRemoteConversation(conversation: ChatConversationSummary) {
+    if (this.canOpenConversation(conversation)) {
+      this.router.navigate(['/home'], { queryParams: { conversationId: conversation.id } });
+      return;
     }
+    this.router.navigate(['/history', conversation.id]);
   }
 
   getRemoteTitle(conversation: ChatConversationSummary) {

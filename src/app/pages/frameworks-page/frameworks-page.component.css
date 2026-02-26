@@ -113,7 +113,6 @@
 
 .row {
   display: grid;
-  grid-template-columns: minmax(36px, 0.35fr) minmax(0, 2.4fr) minmax(110px, 0.9fr) minmax(68px, 0.7fr) minmax(76px, 0.8fr) minmax(210px, 1.6fr);
   gap: 8px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -122,6 +121,14 @@
   color: var(--ink-strong);
   align-items: center;
   min-height: var(--table-row-height);
+}
+
+.row--with-actions {
+  grid-template-columns: minmax(36px, 0.35fr) minmax(0, 2.4fr) minmax(110px, 0.9fr) minmax(68px, 0.7fr) minmax(76px, 0.8fr) minmax(210px, 1.6fr);
+}
+
+.row--without-actions {
+  grid-template-columns: minmax(36px, 0.35fr) minmax(0, 2.4fr) minmax(110px, 0.9fr) minmax(68px, 0.7fr) minmax(76px, 0.8fr);
 }
 
 .row > * {
@@ -381,8 +388,12 @@
 }
 
 @media (max-width: 900px) {
-  .row {
+  .row--with-actions {
     grid-template-columns: minmax(34px, 0.45fr) minmax(0, 2fr) minmax(92px, 0.9fr) minmax(60px, 0.7fr) minmax(68px, 0.8fr) minmax(150px, 1.2fr);
+  }
+
+  .row--without-actions {
+    grid-template-columns: minmax(34px, 0.45fr) minmax(0, 2fr) minmax(92px, 0.9fr) minmax(60px, 0.7fr) minmax(68px, 0.8fr);
   }
 
   .pagination {

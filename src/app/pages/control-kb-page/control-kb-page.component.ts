@@ -69,6 +69,7 @@ export class ControlKbPageComponent implements OnInit {
   pendingGap = '';
   pendingCompliance = '';
   backFramework = '';
+  backTopicId = '';
 
   frameworkOptions: string[] = [];
   frameworkStatusMap = new Map<string, string>();
@@ -105,9 +106,12 @@ export class ControlKbPageComponent implements OnInit {
 
   ngOnInit() {
     this.route.queryParamMap.subscribe((params) => {
-      this.backFramework = String(params.get('framework') || '').trim();
-      this.pendingTopicId = String(params.get('topicId') || '').trim();
-      this.pendingFramework = String(params.get('framework') || '').trim();
+      const frameworkParam = String(params.get('framework') || '').trim();
+      const topicParam = String(params.get('topicId') || '').trim();
+      this.backFramework = frameworkParam;
+      this.backTopicId = topicParam;
+      this.pendingTopicId = topicParam;
+      this.pendingFramework = frameworkParam;
       this.pendingFrameworkRef = String(params.get('frameworkRef') || '').trim();
       this.pendingGap = String(params.get('gap') || '').trim();
       this.pendingCompliance = String(params.get('compliance') || params.get('complianceStatus') || '').trim();
@@ -129,6 +133,10 @@ export class ControlKbPageComponent implements OnInit {
 
   get canToggleActivation() {
     return this.isAdmin || this.isManager;
+  }
+
+  get showBackToTopics() {
+    return Boolean(this.backFramework && this.backTopicId);
   }
 
   get activeFilterChips() {
@@ -718,7 +726,13 @@ export class ControlKbPageComponent implements OnInit {
       this.topicFilter !== 'all'
         ? this.topicFilter
         : String(this.selectedTopic?.id || '').trim();
-    const queryParams = topicId ? { topicId } : undefined;
+    const queryParams: Record<string, string> = {};
+    if (topicId) {
+      queryParams['topicId'] = topicId;
+    }
+    if (this.backFramework) {
+      queryParams['framework'] = this.backFramework;
+    }
     this.router.navigate(['/control-kb', control.id], { queryParams });
   }
 

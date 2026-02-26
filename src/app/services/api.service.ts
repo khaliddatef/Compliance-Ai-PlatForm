@@ -36,6 +36,65 @@ export type AuthLoginResponse = {
   expiresIn?: string;
 };
 
+export type SettingsNotifications = {
+  emailAlerts: boolean;
+  inAppAlerts: boolean;
+  evidenceAlerts: boolean;
+  gapAlerts: boolean;
+  digestFrequency: 'INSTANT' | 'DAILY' | 'WEEKLY';
+};
+
+export type SettingsAi = {
+  responseStyle: 'CONCISE' | 'BALANCED' | 'DETAILED';
+  language: 'AUTO' | 'EN' | 'AR';
+  includeCitations: boolean;
+  temperature: number;
+};
+
+export type SettingsPermissions = {
+  canManageTeam: boolean;
+  canEditRoles: boolean;
+  canInviteManager: boolean;
+  canInviteAdmin: boolean;
+};
+
+export type TeamMember = {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'USER';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TeamInvite = {
+  id: string;
+  name: string | null;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'USER';
+  status: 'PENDING' | 'CANCELED';
+  invitedByUserId: string;
+  invitedByName: string | null;
+  invitedByEmail: string | null;
+  message: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SettingsMeResponse = {
+  ok: boolean;
+  user: AuthUserResponse;
+  notifications: SettingsNotifications;
+  ai: SettingsAi;
+  permissions: SettingsPermissions;
+};
+
+export type SettingsTeamResponse = {
+  ok: boolean;
+  members: TeamMember[];
+  invites: TeamInvite[];
+};
+
 export type ChatApiResponse = {
   conversationId: string;
   assistantMessage: string;
@@ -833,6 +892,56 @@ export class ApiService {
 
   logout() {
     return this.http.post<{ ok: boolean }>('/api/auth/logout', {});
+  }
+
+  // ===== Settings =====
+
+  getSettingsMe() {
+    return this.http.get<SettingsMeResponse>('/api/settings/me');
+  }
+
+  updateSettingsNotifications(payload: Partial<SettingsNotifications>) {
+    return this.http.patch<{ ok: boolean; notifications: SettingsNotifications }>(
+      '/api/settings/notifications',
+      payload,
+    );
+  }
+
+  updateSettingsAi(payload: Partial<SettingsAi>) {
+    return this.http.patch<{ ok: boolean; ai: SettingsAi }>(
+      '/api/settings/ai',
+      payload,
+    );
+  }
+
+  listTeamAccess() {
+    return this.http.get<SettingsTeamResponse>('/api/settings/team');
+  }
+
+  createTeamInvite(payload: {
+    email: string;
+    name?: string;
+    role?: 'ADMIN' | 'MANAGER' | 'USER';
+    message?: string;
+  }) {
+    return this.http.post<{ ok: boolean; invite: TeamInvite }>(
+      '/api/settings/team/invite',
+      payload,
+    );
+  }
+
+  cancelTeamInvite(id: string) {
+    return this.http.patch<{ ok: boolean }>(
+      `/api/settings/team/invites/${id}/cancel`,
+      {},
+    );
+  }
+
+  updateTeamMemberRole(userId: string, role: 'ADMIN' | 'MANAGER' | 'USER') {
+    return this.http.patch<{ ok: boolean; member: TeamMember }>(
+      `/api/settings/team/${userId}/role`,
+      { role },
+    );
   }
 
   // ✅ DELETE conversation in backend
