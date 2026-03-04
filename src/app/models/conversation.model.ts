@@ -14,6 +14,13 @@ export type ControlState = {
   phase: CompliancePhase;
 };
 
+export type ConversationDocumentRef = {
+  id: string;
+  name: string;
+  mimeType?: string | null;
+  createdAt?: string | null;
+};
+
 export interface Conversation {
   id: string;                 // local UI id
   backendId?: string | null;   // ✅ backend conversation id
@@ -23,4 +30,5 @@ export interface Conversation {
   controlState?: ControlState;
   lastUploadIds?: string[];
   lastUploadAt?: number;
+  availableDocuments?: ConversationDocumentRef[];
 }

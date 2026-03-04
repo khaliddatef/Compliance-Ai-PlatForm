@@ -26,6 +26,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: SettingsNotifications = {
 const DEFAULT_AI_SETTINGS: SettingsAi = {
   responseStyle: 'BALANCED',
   language: 'AUTO',
+  toneProfile: 'EGYPTIAN_CASUAL',
   includeCitations: true,
   temperature: 0.2,
 };

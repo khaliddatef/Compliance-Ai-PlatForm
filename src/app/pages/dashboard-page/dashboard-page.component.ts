@@ -168,9 +168,6 @@ export class DashboardPageComponent implements OnInit {
     this.cdr.markForCheck();
 
     this.api.getDashboard({
-      framework: this.frameworkFilter || undefined,
-      businessUnit: this.businessUnitFilter || undefined,
-      riskCategory: this.riskCategoryFilter || undefined,
       rangeDays: this.rangeDays,
     }).subscribe({
       next: (res: DashboardResponse) => {
@@ -341,6 +338,20 @@ export class DashboardPageComponent implements OnInit {
   }
 
   openKpi(kpi: DashboardKpi) {
+    if (!kpi) return;
+    if (kpi.drilldown?.route === '/dashboard') {
+      const id = String(kpi.id || '').toLowerCase();
+      if (id.includes('risk')) {
+        this.router.navigate(['/control-kb'], {
+          queryParams: this.buildControlKbQuery({ compliance: 'NOT_COMPLIANT', status: 'enabled' }),
+        });
+        return;
+      }
+      if (id.includes('audit')) {
+        this.router.navigate(['/uploads']);
+        return;
+      }
+    }
     if (kpi?.drilldown?.route) {
       this.router.navigate([kpi.drilldown.route], { queryParams: kpi.drilldown.query || {} });
       return;
@@ -351,11 +362,13 @@ export class DashboardPageComponent implements OnInit {
   openTrend(series: TrendSeriesV2) {
     if (!series) return;
     if (series.id === 'compliance') {
-      this.router.navigate(['/control-kb'], { queryParams: { status: 'enabled' } });
+      this.router.navigate(['/control-kb'], { queryParams: this.buildControlKbQuery({ status: 'enabled' }) });
       return;
     }
     if (series.id === 'riskScore') {
-      this.router.navigate(['/dashboard']);
+      this.router.navigate(['/control-kb'], {
+        queryParams: this.buildControlKbQuery({ compliance: 'NOT_COMPLIANT', status: 'enabled' }),
+      });
       return;
     }
     this.router.navigate(['/uploads']);
@@ -426,7 +439,9 @@ export class DashboardPageComponent implements OnInit {
       return;
     }
     if (key.includes('risk')) {
-      this.router.navigate(['/dashboard']);
+      this.router.navigate(['/control-kb'], {
+        queryParams: this.buildControlKbQuery({ compliance: 'NOT_COMPLIANT', status: 'enabled' }),
+      });
       return;
     }
     if (key.includes('coverage') || key.includes('compliance')) {
@@ -441,11 +456,9 @@ export class DashboardPageComponent implements OnInit {
     event?: Event,
   ) {
     event?.stopPropagation();
-    const query: Record<string, string> = { compliance: status, status: 'enabled' };
-    if (this.frameworkFilter) {
-      query['framework'] = this.frameworkFilter;
-    }
-    this.router.navigate(['/control-kb'], { queryParams: query });
+    this.router.navigate(['/control-kb'], {
+      queryParams: this.buildControlKbQuery({ compliance: status, status: 'enabled' }),
+    });
   }
 
   getTrendSeries(id: 'riskScore' | 'compliance' | 'mttr') {
@@ -847,17 +860,6 @@ export class DashboardPageComponent implements OnInit {
   }
 
   toggleRiskDriver(driverId: string) {
-    const driver = this.riskDrivers.find((item) => item.id === driverId);
-    const id = String(driver?.id || driverId || '').toLowerCase();
-    const label = String(driver?.label || '').toLowerCase();
-    if (id.includes('missing-evidence') || label.includes('missing evidence')) {
-      const query: Record<string, string> = { compliance: 'UNKNOWN', status: 'enabled' };
-      if (this.frameworkFilter) {
-        query['framework'] = this.frameworkFilter;
-      }
-      this.router.navigate(['/control-kb'], { queryParams: query });
-      return;
-    }
     if (this.selectedRiskDriverId === driverId) {
       this.selectedRiskDriverId = null;
       return;
@@ -892,8 +894,9 @@ export class DashboardPageComponent implements OnInit {
   getComplianceFilterForCell(rowIndex: number | string, colIndex: number | string) {
     const r = Number(rowIndex);
     const c = Number(colIndex);
-    if (r === 1 && c === 1) return 'UNKNOWN';
-    if (r === 0 && c === 0) return 'COMPLIANT';
+    const score = (r + 1) + (c + 1);
+    if (score >= 5) return 'NOT_COMPLIANT';
+    if (score >= 3) return 'PARTIAL';
     return 'COMPLIANT';
   }
 
@@ -906,8 +909,44 @@ export class DashboardPageComponent implements OnInit {
     event?.preventDefault();
     event?.stopPropagation();
     if (!value || value <= 0) return;
-    const compliance = this.getComplianceFilterForCell(rowIndex, colIndex);
-    this.router.navigate(['/control-kb'], { queryParams: { compliance } });
+    this.toggleHeatmapCell(rowIndex, colIndex);
+  }
+
+  openRiskFilterInControlKb() {
+    if (this.selectedRiskDriverId) {
+      const driver = String(this.selectedRiskDriverId).toLowerCase();
+      if (driver.includes('missing-evidence')) {
+        this.router.navigate(['/control-kb'], {
+          queryParams: this.buildControlKbQuery({ compliance: 'UNKNOWN', status: 'enabled' }),
+        });
+        return;
+      }
+      if (driver.includes('owner-not-assigned')) {
+        this.router.navigate(['/control-kb'], {
+          queryParams: this.buildControlKbQuery({ status: 'enabled', gap: 'owner-not-assigned' }),
+        });
+        return;
+      }
+      if (driver.includes('control-not-tested')) {
+        this.router.navigate(['/control-kb'], {
+          queryParams: this.buildControlKbQuery({ status: 'enabled', gap: 'control-not-tested' }),
+        });
+        return;
+      }
+    }
+
+    if (this.selectedHeatmapCell) {
+      const compliance = this.getComplianceFilterForCell(
+        this.selectedHeatmapCell.impactIndex,
+        this.selectedHeatmapCell.likelihoodIndex,
+      );
+      this.router.navigate(['/control-kb'], {
+        queryParams: this.buildControlKbQuery({ compliance, status: 'enabled' }),
+      });
+      return;
+    }
+
+    this.router.navigate(['/control-kb'], { queryParams: this.buildControlKbQuery({ status: 'enabled' }) });
   }
 
   get riskDriversContext() {
@@ -1093,6 +1132,12 @@ export class DashboardPageComponent implements OnInit {
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays}d ago`;
   }
+
+  private buildControlKbQuery(base: Record<string, string>) {
+    const query: Record<string, string> = { ...base };
+    if (this.frameworkFilter) {
+      query['framework'] = this.frameworkFilter;
+    }
+    return query;
+  }
 }
-
-

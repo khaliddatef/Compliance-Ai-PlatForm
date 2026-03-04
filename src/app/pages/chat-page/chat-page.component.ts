@@ -12,7 +12,11 @@ import {
 } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ChatHeaderComponent } from '../../components/chat-header/chat-header.component';
-import { ComposerComponent, ComposerSendPayload } from '../../components/composer/composer.component';
+import {
+  ComposerComponent,
+  ComposerMentionOption,
+  ComposerSendPayload,
+} from '../../components/composer/composer.component';
 import { MessageListComponent } from '../../components/message-list/message-list.component';
 import { AuthService } from '../../services/auth.service';
 import { ControlState, ControlStatus } from '../../models/conversation.model';
@@ -29,6 +33,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   uploading = false;
   uploadProgress = 0;
   attachmentResetKey = 0;
+  private globalMentionOptions: ComposerMentionOption[] = [];
 
   private controls: ControlCatalogItem[] = [];
   private controlsLoaded = false;
@@ -66,6 +71,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.loadControlCatalog();
+    this.loadGlobalMentionOptions();
     this.routeSub = this.route.queryParamMap.subscribe((params) => {
       const conversationId = params.get('conversationId');
 
@@ -83,7 +89,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
             this.maybePromptAfterCatalogLoad();
           },
           error: () => {
-            this.chatService.startNewConversation();
+            this.chatService.startNewConversation(this.getUserName());
             this.ensureControlFlow();
             this.maybePromptAfterCatalogLoad();
           },
@@ -106,7 +112,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         return;
       }
 
-      this.chatService.startNewConversation();
+      this.chatService.startNewConversation(this.getUserName());
       this.ensureControlFlow();
       this.maybePromptAfterCatalogLoad();
     });
@@ -124,8 +130,36 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     return this.chatService.activeConversation()?.title || 'Compliance workspace';
   }
 
+  get mentionOptions(): ComposerMentionOption[] {
+    const conversationDocs = this.chatService.activeConversation()?.availableDocuments || [];
+    const merged = [...conversationDocs, ...this.globalMentionOptions];
+    const seen = new Set<string>();
+    const normalized: ComposerMentionOption[] = [];
+
+    merged.forEach((doc) => {
+      const id = String(doc?.id || '').trim();
+      const name = String(doc?.name || '').trim();
+      if (!id || !name || seen.has(id)) return;
+      seen.add(id);
+      normalized.push({
+        id,
+        name,
+        mimeType: doc?.mimeType || null,
+        createdAt: doc?.createdAt || null,
+      });
+    });
+
+    return normalized
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      })
+      .slice(0, 300);
+  }
+
   startNewChat() {
-    this.chatService.startNewConversation();
+    this.chatService.startNewConversation(this.getUserName());
     this.router.navigate(['/home'], { replaceUrl: true });
     this.ensureControlFlow();
     this.maybePromptAfterCatalogLoad();
@@ -134,15 +168,18 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   handleComposerSend(payload: ComposerSendPayload) {
     const text = (payload?.text ?? '').trim();
     const files = payload?.files ?? [];
+    const mentionDocumentIds = Array.isArray(payload?.mentionedDocumentIds)
+      ? payload.mentionedDocumentIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
 
     if (!text && files.length === 0) return;
 
-    const active = this.chatService.activeConversation() || this.chatService.startNewConversation();
+    const active = this.chatService.activeConversation() || this.chatService.startNewConversation(this.getUserName());
 
     // ✅ ارفع الأول (عشان يبقى available في RAG)
     if (files.length) {
       const deferredText = text || undefined;
-      this.uploadDocs(files, active.id, deferredText);
+      this.uploadDocs(files, active.id, deferredText, mentionDocumentIds);
       if (text) {
         this.chatService.appendMessage(active.id, {
           id: crypto.randomUUID(),
@@ -155,13 +192,28 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     }
 
     if (text) {
-      this.sendMessage(text, active.id);
+      this.sendMessage(text, active.id, { mentionDocumentIds });
     }
   }
 
   handleActionSelected(event: { messageId: string; action: MessageAction }) {
     const active = this.chatService.activeConversation();
     if (!active) return;
+
+    if (event.action.id === 'show_upload_details') {
+      this.handleShowUploadDetails(active.id, event.messageId, event.action);
+      return;
+    }
+
+    if (event.action.id === 'hide_upload_details') {
+      this.handleHideUploadDetails(active.id, event.messageId, event.action);
+      return;
+    }
+
+    if (this.isCopilotAction(event.action)) {
+      this.handleCopilotAction(active.id, event.messageId, event.action);
+      return;
+    }
 
     if (event.action.id === 'reevaluate') {
       this.handleReevaluateAction(active.id, event.messageId, event.action);
@@ -189,7 +241,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
   private sendMessage(
     text: string,
     conversationId: string,
-    options: { showActions?: boolean; hideUserMessage?: boolean } = {},
+    options: { showActions?: boolean; hideUserMessage?: boolean; mentionDocumentIds?: string[] } = {},
   ) {
     if (!options.hideUserMessage) {
       const userMessage: Message = {
@@ -207,9 +259,19 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const prompt = this.buildPrompt(text, conversationId);
     const showActions = options.showActions ?? this.isControlFlowActive();
     const language = this.getLanguageHint();
-    this.apiService.sendMessage(prompt, conversationId, language).subscribe({
+    const mentionDocumentIds = this.resolveMentionDocumentIds(
+      text,
+      options.mentionDocumentIds || [],
+      conversationId,
+    );
+    this.apiService
+      .sendMessage(prompt, conversationId, language, mentionDocumentIds)
+      .subscribe({
       next: (raw: ChatApiResponse) => {
         const replyText = String(raw?.reply ?? raw?.assistantMessage ?? '');
+        const cards = Array.isArray(raw?.cards) ? raw.cards : [];
+        const sources = this.sanitizeSourcesForUi(raw?.sources);
+        const structuredActions = this.mapCopilotActions(raw?.actions);
         const externalLinks = Array.isArray(raw?.externalLinks) ? raw.externalLinks : [];
         const firstLink = externalLinks[0];
         const reference = firstLink
@@ -220,9 +282,12 @@ export class ChatPageComponent implements OnInit, OnDestroy {
             }
           : undefined;
 
-        if (showActions !== false) {
+        if (showActions !== false || structuredActions.length > 0) {
           this.chatService.clearActions(conversationId);
         }
+
+        const workflowActions = showActions === false ? [] : this.getActionButtons();
+        const finalActions = structuredActions.length ? structuredActions : workflowActions;
 
         const assistantMessage: Message = {
           id: crypto.randomUUID(),
@@ -231,7 +296,10 @@ export class ChatPageComponent implements OnInit, OnDestroy {
             replyText ||
             (language === 'ar' ? 'لا يوجد رد في الوقت الحالي.' : 'No reply.'),
           timestamp: Date.now(),
-          actions: showActions === false ? undefined : this.getActionButtons(),
+          messageType: raw?.messageType || 'TEXT',
+          cards: cards.length ? cards : undefined,
+          sources: sources.length ? sources : undefined,
+          actions: finalActions.length ? finalActions : undefined,
           reference,
         };
 
@@ -255,10 +323,372 @@ export class ChatPageComponent implements OnInit, OnDestroy {
       complete: () => {
         this.typing = false;
       },
+      });
+  }
+
+  private resolveMentionDocumentIds(
+    prompt: string,
+    explicitMentionDocumentIds: string[],
+    conversationId: string,
+  ) {
+    const explicitIds = Array.isArray(explicitMentionDocumentIds)
+      ? Array.from(
+          new Set(
+            explicitMentionDocumentIds
+              .map((id) => String(id || '').trim())
+              .filter(Boolean),
+          ),
+        )
+      : [];
+    if (explicitIds.length) return explicitIds;
+
+    const active = this.chatService.activeConversation();
+    if (!active || active.id !== conversationId) return [];
+
+    const latestUploadIds = Array.isArray(active.lastUploadIds)
+      ? Array.from(new Set(active.lastUploadIds.map((id) => String(id || '').trim()).filter(Boolean)))
+      : [];
+    if (!latestUploadIds.length) return [];
+
+    if (!this.shouldAutoAttachLatestUpload(prompt, active.lastUploadAt)) return [];
+    return latestUploadIds;
+  }
+
+  private shouldAutoAttachLatestUpload(prompt: string, lastUploadAt?: number) {
+    const raw = String(prompt || '').trim();
+    if (!raw) return false;
+
+    const stripped = raw
+      .toLowerCase()
+      .replace(/[!?.,;:]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!stripped) return false;
+
+    const smallTalk = new Set([
+      'hi',
+      'hello',
+      'hey',
+      'thanks',
+      'thank you',
+      'thx',
+      'مرحبا',
+      'اهلا',
+      'أهلا',
+      'هاي',
+      'السلام عليكم',
+    ]);
+    if (smallTalk.has(stripped)) return false;
+
+    const fileIntentPattern =
+      /(this file|this document|uploaded file|uploaded document|have a look|take a look|look at (it|this|that)|check (it|this|that)|review (it|this|that)|analy[sz]e (it|this|that)|summari[sz]e (it|this|that)|what do you think|tell me what do you think|read (it|this|that)|inspect (it|this|that)|have a quick look|بص|شوف|راجع|حلل|لخص|اقر|اقرأ|إيه رأيك|ايه رايك|ده كده|دا كدا|بص كدا|شوف كدا)/i;
+    if (fileIntentPattern.test(raw)) return true;
+
+    const tokenCount = stripped.split(' ').filter(Boolean).length;
+    const withinWindow =
+      typeof lastUploadAt === 'number' && Date.now() - lastUploadAt <= 5 * 60 * 1000;
+    return withinWindow && tokenCount <= 5;
+  }
+
+  private sanitizeSourcesForUi(
+    value: unknown,
+  ): Array<{ objectType: string; id: string; snippetRef: string | null }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => {
+        const source = item as {
+          objectType?: unknown;
+          id?: unknown;
+          snippetRef?: unknown;
+        };
+        return {
+          objectType: String(source.objectType || '').trim(),
+          id: String(source.id || '').trim(),
+          snippetRef:
+            source.snippetRef === null || source.snippetRef === undefined
+              ? null
+              : String(source.snippetRef || ''),
+        };
+      })
+      .filter(
+        (source) =>
+          source.objectType &&
+          source.id &&
+          source.objectType.toLowerCase() !== 'routemeta',
+      );
+  }
+
+  private isCopilotAction(action: MessageAction) {
+    const actionType = action.meta?.copilotActionType;
+    return (
+      action.id.startsWith('copilot:') ||
+      actionType === 'CREATE_EVIDENCE_REQUEST' ||
+      actionType === 'LINK_EVIDENCE_CONTROL' ||
+      actionType === 'CREATE_REMEDIATION_TASK'
+    );
+  }
+
+  private handleCopilotAction(conversationId: string, messageId: string, action: MessageAction) {
+    const language = this.getLanguageHint();
+
+    if (action.id === 'copilot:cancel') {
+      this.chatService.updateMessage(conversationId, messageId, { actions: undefined });
+      this.appendAssistantMessage(
+        conversationId,
+        language === 'ar' ? 'تم إلغاء التنفيذ.' : 'Execution cancelled.',
+      );
+      return;
+    }
+
+    const actionType = action.meta?.copilotActionType;
+    if (
+      actionType !== 'CREATE_EVIDENCE_REQUEST' &&
+      actionType !== 'LINK_EVIDENCE_CONTROL' &&
+      actionType !== 'CREATE_REMEDIATION_TASK'
+    ) {
+      this.appendAssistantMessage(
+        conversationId,
+        language === 'ar' ? 'نوع الإجراء غير مدعوم.' : 'Unsupported action type.',
+      );
+      return;
+    }
+
+    const payload = action.meta?.payload || {};
+    const dryRun = action.meta?.dryRun !== false;
+    const idempotencyKey = crypto.randomUUID();
+
+    this.chatService.updateMessage(conversationId, messageId, { actions: undefined });
+
+    this.typing = true;
+    this.apiService.executeCopilotAction(
+      {
+        actionType,
+        payload,
+        dryRun,
+      },
+      idempotencyKey,
+    ).subscribe({
+      next: (res) => {
+        const resultView = this.buildCopilotResultView(res?.action, language);
+        if (dryRun) {
+          this.chatService.appendMessage(conversationId, {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: resultView.content,
+            messageType: 'AI_STRUCTURED',
+            cards: resultView.cards,
+            timestamp: Date.now(),
+            actions: [
+              {
+                id: 'copilot:execute',
+                label: language === 'ar' ? 'تنفيذ الآن' : 'Execute now',
+                meta: {
+                  copilotActionType: actionType,
+                  payload,
+                  dryRun: false,
+                },
+              },
+              {
+                id: 'copilot:cancel',
+                label: language === 'ar' ? 'إلغاء' : 'Cancel',
+              },
+            ],
+          });
+          return;
+        }
+
+        this.chatService.appendMessage(conversationId, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: resultView.content,
+          messageType: 'AI_STRUCTURED',
+          cards: resultView.cards,
+          timestamp: Date.now(),
+        });
+      },
+      error: (error) => {
+        console.error('copilot action error', error);
+        const status = Number(error?.status || 0);
+        const serverMessage = String(error?.error?.message || '').trim();
+        let message =
+          language === 'ar'
+            ? 'تعذر تنفيذ الإجراء الآن. راجع البيانات وحاول مرة أخرى.'
+            : 'Unable to execute this action right now. Review payload and retry.';
+
+        if (status === 403) {
+          message =
+            language === 'ar'
+              ? 'هذا الإجراء متاح للـManager/Admin فقط.'
+              : 'This action is available for Manager/Admin roles only.';
+        } else if (status === 404) {
+          message =
+            language === 'ar'
+              ? 'ميزة الإجراءات الذكية غير مفعلة حاليًا.'
+              : 'Copilot actions are currently disabled.';
+        } else if (status === 400 && serverMessage) {
+          message =
+            language === 'ar'
+              ? `تعذر تنفيذ الإجراء: ${serverMessage}`
+              : `Unable to execute action: ${serverMessage}`;
+        }
+
+        this.appendAssistantMessage(conversationId, message);
+      },
+      complete: () => {
+        this.typing = false;
+      },
     });
   }
 
-  private uploadDocs(files: File[], conversationId: string, deferredText?: string) {
+  private mapCopilotActions(actions: ChatApiResponse['actions'] | undefined): MessageAction[] {
+    if (!Array.isArray(actions) || !actions.length) return [];
+    return actions.reduce<MessageAction[]>((acc, action) => {
+      const actionType = String(action?.actionType || '').trim().toUpperCase() as
+        | 'CREATE_EVIDENCE_REQUEST'
+        | 'LINK_EVIDENCE_CONTROL'
+        | 'CREATE_REMEDIATION_TASK';
+      if (
+        actionType !== 'CREATE_EVIDENCE_REQUEST' &&
+        actionType !== 'LINK_EVIDENCE_CONTROL' &&
+        actionType !== 'CREATE_REMEDIATION_TASK'
+      ) {
+        return acc;
+      }
+      acc.push({
+        id: `copilot:${actionType.toLowerCase()}`,
+        label: String(action?.label || this.getDefaultCopilotLabel(actionType)),
+        meta: {
+          copilotActionType: actionType,
+          payload: action?.payload || {},
+          dryRun: true,
+        },
+      });
+      return acc;
+    }, []);
+  }
+
+  private getDefaultCopilotLabel(
+    actionType: 'CREATE_EVIDENCE_REQUEST' | 'LINK_EVIDENCE_CONTROL' | 'CREATE_REMEDIATION_TASK',
+  ) {
+    const language = this.getLanguageHint();
+    if (language === 'ar') {
+      if (actionType === 'CREATE_EVIDENCE_REQUEST') return 'إنشاء طلب دليل';
+      if (actionType === 'LINK_EVIDENCE_CONTROL') return 'ربط الدليل بالكنترول';
+      return 'إنشاء مهمة معالجة';
+    }
+    if (actionType === 'CREATE_EVIDENCE_REQUEST') return 'Create evidence request';
+    if (actionType === 'LINK_EVIDENCE_CONTROL') return 'Link evidence to control';
+    return 'Create remediation task';
+  }
+
+  private buildCopilotResultView(result: any, language: 'ar' | 'en') {
+    const actionType = String(result?.actionType || '').toUpperCase();
+    const isDryRun = Boolean(result?.dryRun);
+    const payload = result?.result || {};
+    const actionLabel = this.getActionDisplayLabel(actionType, language);
+    const detailSource = isDryRun ? payload?.preview || payload : payload;
+    const detailItems = this.toCopilotDetailItems(detailSource, language);
+
+    const summaryLine = isDryRun
+      ? language === 'ar'
+        ? `معاينة جاهزة لـ ${actionLabel}`
+        : `Dry-run preview ready for ${actionLabel}`
+      : language === 'ar'
+        ? `تم تنفيذ ${actionLabel}`
+        : `Executed ${actionLabel}`;
+
+    const cards = [
+      {
+        type: 'summary',
+        title: language === 'ar' ? 'Summary' : 'Summary',
+        lines: [summaryLine],
+      },
+      {
+        type: 'assessment',
+        title: language === 'ar' ? 'Action Result' : 'Action Result',
+        status: isDryRun ? 'Preview' : 'Executed',
+        scope: actionLabel,
+      },
+      {
+        type: 'details',
+        title: language === 'ar' ? 'Details' : 'Details',
+        items: detailItems.length
+          ? detailItems
+          : [language === 'ar' ? 'لا توجد تفاصيل إضافية.' : 'No additional details.'],
+      },
+    ];
+
+    return {
+      content: summaryLine,
+      cards,
+    };
+  }
+
+  private getActionDisplayLabel(actionType: string, language: 'ar' | 'en') {
+    const normalized = String(actionType || '').trim().toUpperCase();
+    if (normalized === 'CREATE_EVIDENCE_REQUEST') {
+      return language === 'ar' ? 'إنشاء طلب دليل' : 'Create evidence request';
+    }
+    if (normalized === 'LINK_EVIDENCE_CONTROL') {
+      return language === 'ar' ? 'ربط الدليل بالكنترول' : 'Link evidence to control';
+    }
+    if (normalized === 'CREATE_REMEDIATION_TASK') {
+      return language === 'ar' ? 'إنشاء مهمة معالجة' : 'Create remediation task';
+    }
+    return normalized || (language === 'ar' ? 'إجراء' : 'Action');
+  }
+
+  private toCopilotDetailItems(value: unknown, language: 'ar' | 'en') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, fieldValue]) => fieldValue !== null && fieldValue !== undefined && String(fieldValue).trim() !== '')
+      .map(([key, fieldValue]) => {
+        const label = this.formatCopilotFieldLabel(key, language);
+        const text = this.stringifyCopilotField(fieldValue);
+        return `${label}: ${text}`;
+      })
+      .filter((item) => item.trim().length > 0);
+  }
+
+  private formatCopilotFieldLabel(key: string, language: 'ar' | 'en') {
+    const pretty = key
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/[_-]+/g, ' ')
+      .trim();
+    if (language === 'ar') return pretty;
+    return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+  }
+
+  private stringifyCopilotField(value: unknown) {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized.length > 160 ? `${normalized.slice(0, 157)}...` : normalized;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      const compact = value
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 4)
+        .join(', ');
+      return compact || '--';
+    }
+    if (value && typeof value === 'object') {
+      const compact = JSON.stringify(value);
+      return compact.length > 160 ? `${compact.slice(0, 157)}...` : compact;
+    }
+    return '--';
+  }
+
+  private uploadDocs(
+    files: File[],
+    conversationId: string,
+    deferredText?: string,
+    deferredMentionDocumentIds?: string[],
+  ) {
     const language = this.getLanguageHint();
     const summaryText = this.buildUploadSummary(files, language);
     this.chatService.appendMessage(conversationId, {
@@ -277,6 +707,9 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         // backend بيرجع ingestResults وعدد chunks.. إلخ
         const ok = !!res?.ok;
         const count = Number(res?.count ?? files.length);
+        const dedupedCount = Number(res?.dedupedCount ?? 0);
+        const deferredPrompt = String(deferredText || '').trim();
+        const hasDeferredPrompt = ok && Boolean(deferredPrompt);
 
         const ingestOk = Array.isArray(res?.ingestResults)
           ? res.ingestResults.filter((x: any) => x?.ok).length
@@ -284,31 +717,62 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
         const msg = ok
           ? language === 'ar'
-            ? `✅ تم رفع ${count} ملف${count === 1 ? '' : 'ات'} بنجاح${typeof ingestOk === 'number' ? ` (تمت المعالجة: ${ingestOk}/${count})` : ''}.`
-            : `✅ Uploaded ${count} file(s) successfully${typeof ingestOk === 'number' ? ` (ingested: ${ingestOk}/${count})` : ''}.`
+            ? `✅ اكتمل الرفع${typeof ingestOk === 'number' ? ` (المعالجة: ${ingestOk}/${count})` : ''}${dedupedCount > 0 ? ` — تم اكتشاف ${dedupedCount} ملف مكرر واستخدام التحليل السابق.` : ''}.`
+            : `✅ Upload complete${typeof ingestOk === 'number' ? ` (ingested: ${ingestOk}/${count})` : ''}${dedupedCount > 0 ? ` — detected ${dedupedCount} duplicate file(s), reused previous analysis.` : ''}.`
           : language === 'ar'
-            ? '⚠️ الرفع تم لكن الرد غير متوقع.'
-            : `⚠️ Upload finished but response is unexpected.`;
+            ? '⚠️ تم الرفع لكن الرد غير متوقع.'
+            : '⚠️ Upload finished but response is unexpected.';
 
-        this.appendAssistantMessage(conversationId, msg);
+        // Keep chat concise when user already asked a question with the upload.
+        // In that case we avoid extra upload-status/analysis bubbles and send one final answer only.
+        if (!hasDeferredPrompt) {
+          this.appendAssistantMessage(conversationId, msg);
+        }
 
         const uploadedDocs = Array.isArray(res?.documents) ? res.documents : [];
         if (uploadedDocs.length) {
           const docIds = uploadedDocs.map((doc: any) => String(doc.id)).filter(Boolean);
+          const existingDocs = this.chatService.activeConversation()?.availableDocuments || [];
+          const nextDocs = [...existingDocs];
+          uploadedDocs.forEach((doc: any) => {
+            const id = String(doc?.id || '').trim();
+            const name = String(doc?.originalName || '').trim();
+            if (!id || !name) return;
+            if (nextDocs.some((item) => item.id === id)) return;
+            nextDocs.unshift({
+              id,
+              name,
+              mimeType: String(doc?.mimeType || '').trim() || null,
+              createdAt: String(doc?.createdAt || '').trim() || null,
+            });
+          });
           this.chatService.updateConversation(conversationId, {
             lastUploadIds: docIds,
             lastUploadAt: Date.now(),
+            availableDocuments: nextDocs,
           });
         }
 
-        this.appendUploadAnalysis(conversationId, res);
+        if (!hasDeferredPrompt) {
+          const dedupedDocIds = new Set<string>(
+            (Array.isArray(res?.dedupedDocuments) ? res.dedupedDocuments : [])
+              .map((entry: any) => String(entry?.createdDocumentId || '').trim())
+              .filter(Boolean),
+          );
+          this.appendUploadAnalysis(conversationId, res, {
+            skipDocumentIds: dedupedDocIds,
+          });
+        }
 
         const control = this.getActiveControl();
-        if (control && this.isControlFlowActive()) {
+        if (control && this.isControlFlowActive() && !hasDeferredPrompt) {
           void this.evaluateEvidence(conversationId, control);
         }
-        if (ok && deferredText) {
-          this.sendMessage(deferredText, conversationId, { hideUserMessage: true });
+        if (hasDeferredPrompt) {
+          this.sendMessage(deferredPrompt, conversationId, {
+            hideUserMessage: true,
+            mentionDocumentIds: deferredMentionDocumentIds || [],
+          });
         }
         this.uploadProgress = 100;
       },
@@ -393,6 +857,25 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     return 'en';
   }
 
+  private loadGlobalMentionOptions() {
+    this.apiService.listAllUploads().subscribe({
+      next: (res) => {
+        const documents = Array.isArray(res?.documents) ? res.documents : [];
+        this.globalMentionOptions = documents
+          .map((doc) => ({
+            id: String(doc?.id || '').trim(),
+            name: String(doc?.originalName || '').trim(),
+            mimeType: String(doc?.mimeType || '').trim() || null,
+            createdAt: String(doc?.createdAt || '').trim() || null,
+          }))
+          .filter((doc) => doc.id && doc.name);
+      },
+      error: () => {
+        this.globalMentionOptions = [];
+      },
+    });
+  }
+
   private getActiveControl() {
     const active = this.chatService.activeConversation();
     const state = active?.controlState;
@@ -407,7 +890,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
 
   private ensureControlFlow() {
     this.loadControlCatalog();
-    const active = this.chatService.activeConversation() || this.chatService.startNewConversation();
+    const active = this.chatService.activeConversation() || this.chatService.startNewConversation(this.getUserName());
     const name = this.getUserName();
     const currentState = active.controlState;
     if (currentState?.started) {
@@ -816,24 +1299,73 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     return /a\.\d+(\.\d+)?/i.test(text);
   }
 
-  private appendUploadAnalysis(conversationId: string, res: any) {
-    const docs = Array.isArray(res?.documents) ? res.documents : [];
+  private appendUploadAnalysis(
+    conversationId: string,
+    res: any,
+    options?: { skipDocumentIds?: Set<string> },
+  ) {
+    const skipDocumentIds = options?.skipDocumentIds || new Set<string>();
+    const docs = (Array.isArray(res?.documents) ? res.documents : []).filter((doc: any) => {
+      const id = String(doc?.id || '').trim();
+      return id ? !skipDocumentIds.has(id) : true;
+    });
     if (!docs.length) return;
 
     const language = this.getLanguageHint();
 
     docs.forEach((doc: any) => {
-      const content = this.buildUploadAnalysisContent(doc, language);
       const docId = String(doc?.id || '');
-      const actions = docId ? [this.buildReevaluateAction(docId, language)] : undefined;
+      const compactContent = this.buildUploadCompactContent(doc, language);
+      const actions = docId
+        ? this.buildUploadCollapsedActions(docId, language, compactContent)
+        : undefined;
       this.chatService.appendMessage(conversationId, {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content,
+        content: compactContent,
         timestamp: Date.now(),
         actions,
       });
     });
+  }
+
+  private buildUploadStatusLabel(matchStatus: string, language: 'ar' | 'en') {
+    if (matchStatus === 'COMPLIANT') {
+      return language === 'ar' ? 'مناسب كدليل' : 'Ready to submit';
+    }
+    if (matchStatus === 'PARTIAL') {
+      return language === 'ar' ? 'دليل جزئي' : 'Partial evidence';
+    }
+    if (matchStatus === 'NOT_COMPLIANT') {
+      return language === 'ar' ? 'غير مناسب كدليل' : 'Not evidence';
+    }
+    return language === 'ar' ? 'يحتاج مراجعة' : 'Needs review';
+  }
+
+  private buildUploadCompactContent(doc: any, language: 'ar' | 'en') {
+    const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
+    const fileName = doc?.originalName || fallbackName;
+    const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
+    const statusLabel = this.buildUploadStatusLabel(matchStatus, language);
+    const controlLine = doc?.matchControlId
+      ? language === 'ar'
+        ? `الكنترول: ${doc.matchControlId}`
+        : `Control: ${doc.matchControlId}`
+      : language === 'ar'
+        ? 'الكنترول: غير محدد'
+        : 'Control: Not identified';
+
+    const hint =
+      language === 'ar'
+        ? 'التفاصيل مخفية. اضغط "عرض التفاصيل" عند الحاجة.'
+        : 'Details are hidden. Click "Show details" when needed.';
+
+    return [
+      `📎 ${fileName}`,
+      language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
+      controlLine,
+      hint,
+    ].join('\n');
   }
 
   private buildUploadAnalysisContent(doc: any, language: 'ar' | 'en') {
@@ -852,22 +1384,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
         ? 'الكنترول: غير محدد'
         : 'Control: Not identified';
     const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
-    const statusLabel =
-      matchStatus === 'COMPLIANT'
-        ? language === 'ar'
-          ? 'مناسب كدليل'
-          : 'Ready to submit'
-        : matchStatus === 'PARTIAL'
-          ? language === 'ar'
-            ? 'دليل جزئي'
-            : 'Partial evidence'
-          : matchStatus === 'NOT_COMPLIANT'
-            ? language === 'ar'
-              ? 'غير مناسب كدليل'
-              : 'Not evidence'
-            : language === 'ar'
-              ? 'يحتاج مراجعة'
-              : 'Needs review';
+    const statusLabel = this.buildUploadStatusLabel(matchStatus, language);
     const note = doc?.matchNote
       ? language === 'ar'
         ? `ملاحظة: ${doc.matchNote}`
@@ -877,6 +1394,10 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const frameworkRefs = Array.isArray(doc?.frameworkReferences)
       ? doc.frameworkReferences.filter(Boolean)
       : [];
+    const insights = doc?.analysisJson && typeof doc.analysisJson === 'object' ? doc.analysisJson : null;
+    const owner = String(insights?.governance?.owner?.value || '').trim();
+    const topGap = String(insights?.gaps?.[0]?.message || '').trim();
+    const topAction = String(insights?.suggestedActions?.[0]?.reason || '').trim();
     const lines = [
       `📎 ${fileName}`,
       docType,
@@ -895,15 +1416,168 @@ export class ChatPageComponent implements OnInit, OnDestroy {
       lines.push(...recs.map((item: string) => `- ${item}`));
     }
 
+    if (owner) {
+      lines.push(language === 'ar' ? `المالك: ${owner}` : `Owner: ${owner}`);
+    }
+    if (topGap) {
+      lines.push(language === 'ar' ? `أهم فجوة: ${topGap}` : `Top gap: ${topGap}`);
+    }
+    if (topAction) {
+      lines.push(language === 'ar' ? `اقتراح إجراء: ${topAction}` : `Suggested action: ${topAction}`);
+    }
+
     return lines.join('\n');
   }
 
-  private buildReevaluateAction(documentId: string, language: 'ar' | 'en'): MessageAction {
+  private buildShowUploadDetailsAction(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+  ): MessageAction {
+    return {
+      id: 'show_upload_details',
+      label: language === 'ar' ? 'عرض التفاصيل' : 'Show details',
+      meta: {
+        documentId,
+        compactContent,
+        uiMode: 'collapsed',
+      },
+    };
+  }
+
+  private buildHideUploadDetailsAction(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+    expandedContent: string,
+  ): MessageAction {
+    return {
+      id: 'hide_upload_details',
+      label: language === 'ar' ? 'إخفاء التفاصيل' : 'Hide details',
+      meta: {
+        documentId,
+        compactContent,
+        expandedContent,
+        uiMode: 'expanded',
+      },
+    };
+  }
+
+  private buildUploadCollapsedActions(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+  ): MessageAction[] {
+    return [
+      this.buildShowUploadDetailsAction(documentId, language, compactContent),
+      this.buildReevaluateAction(documentId, language, compactContent, 'collapsed'),
+    ];
+  }
+
+  private buildUploadExpandedActions(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+    expandedContent: string,
+  ): MessageAction[] {
+    return [
+      this.buildHideUploadDetailsAction(documentId, language, compactContent, expandedContent),
+      this.buildReevaluateAction(documentId, language, compactContent, 'expanded'),
+    ];
+  }
+
+  private buildReevaluateAction(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent?: string,
+    uiMode: 'collapsed' | 'expanded' = 'collapsed',
+  ): MessageAction {
     return {
       id: 'reevaluate',
       label: language === 'ar' ? 'إعادة التقييم' : 'Re-evaluate',
-      meta: { documentId },
+      meta: {
+        documentId,
+        compactContent,
+        uiMode,
+      },
     };
+  }
+
+  private handleShowUploadDetails(conversationId: string, messageId: string, action: MessageAction) {
+    const documentId = action.meta?.documentId;
+    if (!documentId) return;
+
+    const language = this.getLanguageHint();
+    const active = this.chatService.activeConversation();
+    const existing = active?.messages.find((message) => message.id === messageId);
+    const compactContent =
+      String(action.meta?.compactContent || existing?.content || '').trim() ||
+      (language === 'ar' ? '📎 ملف مرفوع' : '📎 Uploaded document');
+
+    this.chatService.updateMessage(conversationId, messageId, {
+      content: language === 'ar' ? '⏳ جاري تحميل التفاصيل...' : '⏳ Loading details...',
+      actions: undefined,
+    });
+
+    this.apiService.getUpload(documentId).subscribe({
+      next: (res: any) => {
+        const doc = res?.document;
+        if (!doc) {
+          this.chatService.updateMessage(conversationId, messageId, {
+            content: compactContent,
+            actions: this.buildUploadCollapsedActions(documentId, language, compactContent),
+            timestamp: Date.now(),
+          });
+          this.appendAssistantMessage(
+            conversationId,
+            language === 'ar'
+              ? '❌ لا يمكن تحميل تفاصيل الملف الآن.'
+              : '❌ Unable to load file details right now.',
+          );
+          return;
+        }
+
+        const expandedContent = this.buildUploadAnalysisContent(doc, language);
+        this.chatService.updateMessage(conversationId, messageId, {
+          content: expandedContent,
+          actions: this.buildUploadExpandedActions(
+            documentId,
+            language,
+            compactContent,
+            expandedContent,
+          ),
+          timestamp: Date.now(),
+        });
+      },
+      error: (e: unknown) => {
+        console.error('show upload details error', e);
+        this.chatService.updateMessage(conversationId, messageId, {
+          content: compactContent,
+          actions: this.buildUploadCollapsedActions(documentId, language, compactContent),
+          timestamp: Date.now(),
+        });
+        this.appendAssistantMessage(
+          conversationId,
+          language === 'ar'
+            ? '❌ لا يمكن تحميل تفاصيل الملف الآن.'
+            : '❌ Unable to load file details right now.',
+        );
+      },
+    });
+  }
+
+  private handleHideUploadDetails(conversationId: string, messageId: string, action: MessageAction) {
+    const documentId = String(action.meta?.documentId || '').trim();
+    if (!documentId) return;
+    const language = this.getLanguageHint();
+    const compactContent = String(action.meta?.compactContent || '').trim();
+    const fallbackCompact = language === 'ar' ? '📎 ملف مرفوع' : '📎 Uploaded document';
+    const nextCompactContent = compactContent || fallbackCompact;
+    this.chatService.updateMessage(conversationId, messageId, {
+      content: nextCompactContent,
+      actions: this.buildUploadCollapsedActions(documentId, language, nextCompactContent),
+      timestamp: Date.now(),
+    });
   }
 
   private handleReevaluateAction(conversationId: string, messageId: string, action: MessageAction) {
@@ -915,6 +1589,7 @@ export class ChatPageComponent implements OnInit, OnDestroy {
     const existing = active?.messages.find((message) => message.id === messageId);
     const previousContent = existing?.content;
     const previousActions = existing?.actions;
+    const currentMode = action.meta?.uiMode === 'expanded' ? 'expanded' : 'collapsed';
 
     this.chatService.updateMessage(conversationId, messageId, {
       content: language === 'ar' ? '⏳ جاري إعادة التقييم...' : '⏳ Re-evaluating document...',
@@ -938,10 +1613,15 @@ export class ChatPageComponent implements OnInit, OnDestroy {
           return;
         }
 
-        const content = this.buildUploadAnalysisContent(doc, language);
+        const compactContent = this.buildUploadCompactContent(doc, language);
+        const expandedContent = this.buildUploadAnalysisContent(doc, language);
+        const nextActions =
+          currentMode === 'expanded'
+            ? this.buildUploadExpandedActions(documentId, language, compactContent, expandedContent)
+            : this.buildUploadCollapsedActions(documentId, language, compactContent);
         this.chatService.updateMessage(conversationId, messageId, {
-          content,
-          actions: [this.buildReevaluateAction(documentId, language)],
+          content: currentMode === 'expanded' ? expandedContent : compactContent,
+          actions: nextActions,
           timestamp: Date.now(),
         });
       },

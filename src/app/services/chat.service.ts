@@ -2,7 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import { forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { Conversation } from '../models/conversation.model';
-import { Message } from '../models/message.model';
+import { Message, MessageAction } from '../models/message.model';
 import {
   ApiService,
   ChatConversationSummary,
@@ -20,10 +20,38 @@ export class ChatService {
 
   constructor(private api: ApiService) {}
 
-  resetForUser() {
-    const fresh = this.loadInitialConversations();
+  resetForUser(userName?: string | null) {
+    const fresh = this.loadInitialConversations(userName);
     this.conversations.set(fresh);
     this.activeConversationId.set(fresh[0]?.id || '');
+  }
+
+  personalizeStarterGreeting(userName?: string | null) {
+    const displayName = this.normalizeDisplayName(userName);
+    if (!displayName) return;
+    const normalizedGreeting = this.buildWelcomeMessage(displayName, this.getPreferredLanguage());
+
+    this.conversations.update((list) =>
+      list.map((conversation) => {
+        const first = conversation.messages?.[0];
+        if (!first || first.role !== 'assistant') return conversation;
+        const content = String(first.content || '').trim().toLowerCase();
+        const isStarter =
+          content === 'hello! how can i help you today?'
+          || content === 'أهلا! أقدر أساعدك في إيه النهارده؟'
+          || content === 'أهلاً! أقدر أساعدك في إيه النهارده؟';
+        if (!isStarter) return conversation;
+
+        return {
+          ...conversation,
+          messages: [
+            { ...first, content: normalizedGreeting },
+            ...conversation.messages.slice(1),
+          ],
+          updatedAt: Date.now(),
+        };
+      }),
+    );
   }
 
   private getPreferredLanguage(): 'ar' | 'en' {
@@ -36,8 +64,9 @@ export class ChatService {
     return /[\u0600-\u06FF]/.test(text || '') ? 'ar' : 'en';
   }
 
-  startNewConversation() {
+  startNewConversation(userName?: string | null) {
     const language = this.getPreferredLanguage();
+    const displayName = this.normalizeDisplayName(userName);
     const conversation: Conversation = {
       id: crypto.randomUUID(),
       backendId: null,
@@ -46,10 +75,7 @@ export class ChatService {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content:
-            language === 'ar'
-              ? 'مرحبًا! قولّي تحب تشتغل على إيه (كنترولات، مراجعة أدلة، أو سؤال محدد). وتقدر كمان ترفع ملفات الأدلة.'
-              : 'Hi! Tell me what you want to work on (controls, evidence review, or a specific question). You can also upload evidence files.',
+          content: this.buildWelcomeMessage(displayName, language),
           timestamp: Date.now(),
         },
       ],
@@ -230,8 +256,9 @@ export class ChatService {
     return `${cleaned.slice(0, max).trim()}…`;
   }
 
-  private loadInitialConversations(): Conversation[] {
+  private loadInitialConversations(userName?: string | null): Conversation[] {
     const language = this.getPreferredLanguage();
+    const displayName = this.normalizeDisplayName(userName);
     const starter: Conversation = {
       id: crypto.randomUUID(),
       backendId: null,
@@ -240,10 +267,7 @@ export class ChatService {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content:
-            language === 'ar'
-              ? 'مرحبًا بك في Tekronyx. قولّي تحب تشتغل على إيه، أو ارفع ملفات للمراجعة السريعة.'
-              : 'Welcome to Tekronyx. Tell me what you want to work on, or upload docs for a quick review.',
+          content: this.buildWelcomeMessage(displayName, language),
           timestamp: Date.now() - 1000 * 60 * 5,
         },
       ],
@@ -251,6 +275,22 @@ export class ChatService {
     };
 
     return [starter];
+  }
+
+  private normalizeDisplayName(value?: string | null) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const token = raw.split(/\s+/)[0] || '';
+    return token.replace(/[^\p{L}\p{N}_-]/gu, '').slice(0, 24);
+  }
+
+  private buildWelcomeMessage(displayName: string, language: 'ar' | 'en') {
+    if (language === 'ar') {
+      if (displayName) return `أهلاً يا ${displayName}! أقدر أساعدك في إيه النهارده؟`;
+      return 'أهلاً! أقدر أساعدك في إيه النهارده؟';
+    }
+    if (displayName) return `Hello ${displayName}! How can I help you today?`;
+    return 'Hello! How can I help you today?';
   }
 
   loadConversationFromBackend(conversationId: string) {
@@ -267,12 +307,26 @@ export class ChatService {
         const title = this.getDisplayTitle(meta, mappedMessages);
         const mergedMessages = this.mergeMessagesWithUploads(mappedMessages, uploads);
         const updatedAt = this.resolveUpdatedAt(meta, mergedMessages);
+        const availableDocuments = uploads
+          .map((doc) => ({
+            id: String(doc?.id || '').trim(),
+            name: String(doc?.originalName || '').trim(),
+            mimeType: String(doc?.mimeType || '').trim() || null,
+            createdAt: String(doc?.createdAt || '').trim() || null,
+          }))
+          .filter((doc) => doc.id && doc.name)
+          .sort((a, b) => {
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bTime - aTime;
+          });
         const conversation: Conversation = {
           id: conversationId,
           backendId: conversationId,
           title: title || 'Chat',
           messages: mergedMessages,
           updatedAt,
+          availableDocuments,
         };
 
         this.conversations.update((list) => {
@@ -294,7 +348,69 @@ export class ChatService {
       role: row.role,
       content: row.content,
       timestamp: new Date(row.createdAt).getTime(),
+      messageType: row.messageType || 'TEXT',
+      cards: Array.isArray(row.cards) ? row.cards : undefined,
+      sources: this.sanitizeSourcesForUi(row.sources),
+      actions: this.mapStructuredActions(row.actions),
     }));
+  }
+
+  private sanitizeSourcesForUi(
+    value: unknown,
+  ): Array<{ objectType: string; id: string; snippetRef: string | null }> | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const sanitized = value
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => {
+        const source = item as {
+          objectType?: unknown;
+          id?: unknown;
+          snippetRef?: unknown;
+        };
+        return {
+          objectType: String(source.objectType || '').trim(),
+          id: String(source.id || '').trim(),
+          snippetRef:
+            source.snippetRef === null || source.snippetRef === undefined
+              ? null
+              : String(source.snippetRef || ''),
+        };
+      })
+      .filter(
+        (source) =>
+          source.objectType &&
+          source.id &&
+          source.objectType.toLowerCase() !== 'routemeta',
+      );
+    return sanitized.length ? sanitized : undefined;
+  }
+
+  private mapStructuredActions(
+    actions: ChatMessageRecord['actions'],
+  ): MessageAction[] | undefined {
+    if (!Array.isArray(actions) || !actions.length) return undefined;
+    const mapped = actions.reduce<MessageAction[]>((acc, action) => {
+      const actionType = String(action?.actionType || '').trim().toUpperCase();
+      const label = String(action?.label || '').trim();
+      if (
+        actionType !== 'CREATE_EVIDENCE_REQUEST' &&
+        actionType !== 'LINK_EVIDENCE_CONTROL' &&
+        actionType !== 'CREATE_REMEDIATION_TASK'
+      ) {
+        return acc;
+      }
+      acc.push({
+        id: `copilot:${actionType.toLowerCase()}`,
+        label: label || actionType.replaceAll('_', ' '),
+        meta: {
+          copilotActionType: actionType,
+          payload: action?.payload || {},
+          dryRun: true,
+        },
+      });
+      return acc;
+    }, []);
+    return mapped.length ? mapped : undefined;
   }
 
   private getDisplayTitle(meta: ChatConversationSummary, messages: Message[]) {
@@ -325,11 +441,16 @@ export class ChatService {
             : `Uploaded 1 document: ${doc.originalName || 'document'}`,
         timestamp: createdAt,
       };
+      const documentId = String(doc?.id || '').trim();
+      const compactContent = this.buildUploadCompactContent(doc, language);
       const analysis = {
         id: `upload-${doc.id}`,
         role: 'assistant' as const,
-        content: this.buildUploadAnalysisContent(doc, language),
+        content: compactContent,
         timestamp: new Date(doc.reviewedAt || doc.createdAt || Date.now()).getTime() + 1,
+        actions: documentId
+          ? this.buildUploadCollapsedActions(documentId, language, compactContent)
+          : undefined,
       };
       return [summary, analysis];
     });
@@ -347,65 +468,85 @@ export class ChatService {
     return /[\u0600-\u06FF]/.test(joined) ? 'ar' : 'en';
   }
 
-  private buildUploadAnalysisContent(doc: UploadDocumentRecord, language: 'ar' | 'en') {
+  private buildUploadStatusLabel(matchStatus: string, language: 'ar' | 'en') {
+    if (matchStatus === 'COMPLIANT') {
+      return language === 'ar' ? 'مناسب كدليل' : 'Ready to submit';
+    }
+    if (matchStatus === 'PARTIAL') {
+      return language === 'ar' ? 'دليل جزئي' : 'Partial evidence';
+    }
+    if (matchStatus === 'NOT_COMPLIANT') {
+      return language === 'ar' ? 'غير مناسب كدليل' : 'Not evidence';
+    }
+    return language === 'ar' ? 'يحتاج مراجعة' : 'Needs review';
+  }
+
+  private buildUploadCompactContent(doc: UploadDocumentRecord, language: 'ar' | 'en') {
     const fallbackName = language === 'ar' ? 'ملف مرفوع' : 'Uploaded document';
     const fileName = doc?.originalName || fallbackName;
-    const docType = doc?.docType
-      ? language === 'ar'
-        ? `النوع: ${doc.docType}`
-        : `Type: ${doc.docType}`
-      : '';
-    const controlId = doc?.matchControlId
+    const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
+    const statusLabel = this.buildUploadStatusLabel(matchStatus, language);
+    const controlLine = doc?.matchControlId
       ? language === 'ar'
         ? `الكنترول: ${doc.matchControlId}`
         : `Control: ${doc.matchControlId}`
       : language === 'ar'
         ? 'الكنترول: غير محدد'
         : 'Control: Not identified';
-    const matchStatus = String(doc?.matchStatus || 'UNKNOWN').toUpperCase();
-    const statusLabel =
-      matchStatus === 'COMPLIANT'
-        ? language === 'ar'
-          ? 'مناسب كدليل'
-          : 'Ready to submit'
-        : matchStatus === 'PARTIAL'
-          ? language === 'ar'
-            ? 'دليل جزئي'
-            : 'Partial evidence'
-          : matchStatus === 'NOT_COMPLIANT'
-            ? language === 'ar'
-              ? 'غير مناسب كدليل'
-              : 'Not evidence'
-            : language === 'ar'
-              ? 'يحتاج مراجعة'
-              : 'Needs review';
-    const note = doc?.matchNote
-      ? language === 'ar'
-        ? `ملاحظة: ${doc.matchNote}`
-        : `AI note: ${doc.matchNote}`
-      : '';
-    const recs = Array.isArray(doc?.matchRecommendations) ? doc.matchRecommendations.slice(0, 3) : [];
-    const frameworkRefs = Array.isArray(doc?.frameworkReferences)
-      ? doc.frameworkReferences.filter(Boolean)
-      : [];
-    const lines = [
+    const hint =
+      language === 'ar'
+        ? 'التفاصيل مخفية. اضغط "عرض التفاصيل" عند الحاجة.'
+        : 'Details are hidden. Click "Show details" when needed.';
+
+    return [
       `📎 ${fileName}`,
-      docType,
-      controlId,
       language === 'ar' ? `الحالة: ${statusLabel}` : `Status: ${statusLabel}`,
-      note,
-    ].filter(Boolean);
+      controlLine,
+      hint,
+    ].join('\n');
+  }
 
-    if (frameworkRefs.length) {
-      lines.push(language === 'ar' ? 'مراجع الفريموركات:' : 'Framework references:');
-      lines.push(frameworkRefs.map((ref) => `- ${ref}`).join('\n'));
-    }
-    if (recs.length) {
-      lines.push(language === 'ar' ? 'الخطوات القادمة:' : 'Next steps:');
-      lines.push(recs.map((rec) => `- ${rec}`).join('\n'));
-    }
+  private buildShowUploadDetailsAction(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+  ): MessageAction {
+    return {
+      id: 'show_upload_details',
+      label: language === 'ar' ? 'عرض التفاصيل' : 'Show details',
+      meta: {
+        documentId,
+        compactContent,
+        uiMode: 'collapsed',
+      },
+    };
+  }
 
-    return lines.filter(Boolean).join('\n');
+  private buildReevaluateAction(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+  ): MessageAction {
+    return {
+      id: 'reevaluate',
+      label: language === 'ar' ? 'إعادة التقييم' : 'Re-evaluate',
+      meta: {
+        documentId,
+        compactContent,
+        uiMode: 'collapsed',
+      },
+    };
+  }
+
+  private buildUploadCollapsedActions(
+    documentId: string,
+    language: 'ar' | 'en',
+    compactContent: string,
+  ): MessageAction[] {
+    return [
+      this.buildShowUploadDetailsAction(documentId, language, compactContent),
+      this.buildReevaluateAction(documentId, language, compactContent),
+    ];
   }
 
   private formatTitle(value: string) {

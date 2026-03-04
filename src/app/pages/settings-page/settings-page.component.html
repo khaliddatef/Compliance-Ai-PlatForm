@@ -133,6 +133,15 @@
             <option value="AR">Arabic</option>
           </select>
         </label>
+        <label class="field">
+          <span>Tone profile</span>
+          <select [(ngModel)]="ai.toneProfile">
+            <option value="EGYPTIAN_CASUAL">Egyptian Arabic (casual)</option>
+            <option value="ARABIC_FORMAL">Arabic (formal)</option>
+            <option value="ENGLISH_NEUTRAL">English (neutral)</option>
+            <option value="DEFAULT">System default</option>
+          </select>
+        </label>
         <label class="checkbox-row">
           <input type="checkbox" [(ngModel)]="ai.includeCitations" />
           <span>Require citations in AI responses</span>

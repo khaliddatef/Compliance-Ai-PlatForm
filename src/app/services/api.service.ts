@@ -47,6 +47,7 @@ export type SettingsNotifications = {
 export type SettingsAi = {
   responseStyle: 'CONCISE' | 'BALANCED' | 'DETAILED';
   language: 'AUTO' | 'EN' | 'AR';
+  toneProfile: 'DEFAULT' | 'EGYPTIAN_CASUAL' | 'ARABIC_FORMAL' | 'ENGLISH_NEUTRAL';
   includeCitations: boolean;
   temperature: number;
 };
@@ -103,6 +104,25 @@ export type ChatApiResponse = {
   citations: Citation[];
   complianceSummary: ComplianceSummary;
   externalLinks?: ExternalLink[];
+  messageType?: 'TEXT' | 'AI_STRUCTURED';
+  cards?: any[];
+  actions?: Array<{
+    actionType: 'CREATE_EVIDENCE_REQUEST' | 'LINK_EVIDENCE_CONTROL' | 'CREATE_REMEDIATION_TASK';
+    label: string;
+    payload?: any;
+  }>;
+  sources?: Array<{
+    objectType: string;
+    id: string;
+    snippetRef: string | null;
+  }>;
+  route?: {
+    path: string;
+    confidence: number;
+    confidenceBand?: 'LOW' | 'MEDIUM' | 'HIGH';
+  };
+  state?: string;
+  memory?: Record<string, unknown>;
 };
 
 export type ChatConversationSummary = {
@@ -120,6 +140,18 @@ export type ChatMessageRecord = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  messageType?: 'TEXT' | 'AI_STRUCTURED';
+  cards?: any[] | null;
+  actions?: Array<{
+    actionType: 'CREATE_EVIDENCE_REQUEST' | 'LINK_EVIDENCE_CONTROL' | 'CREATE_REMEDIATION_TASK';
+    label: string;
+    payload?: any;
+  }> | null;
+  sources?: Array<{
+    objectType: string;
+    id: string;
+    snippetRef: string | null;
+  }> | null;
   createdAt: string;
 };
 
@@ -169,6 +201,9 @@ export type UploadDocumentRecord = {
   matchStatus?: string;
   matchNote?: string;
   matchRecommendations?: string[];
+  analysisJson?: any;
+  analysisVersion?: number;
+  analysisComputedAt?: string | null;
   frameworkReferences?: string[];
   reviewedAt?: string | null;
   submittedAt?: string | null;
@@ -189,6 +224,14 @@ export type UploadDetailResponse = {
   activeFrameworkVersion?: string | null;
 };
 
+export type UploadAnalysisResponse = {
+  ok: boolean;
+  documentId: string;
+  analysis: any | null;
+  analysisVersion: number;
+  analysisComputedAt: string | null;
+};
+
 export type UploadSaveResponse = {
   ok: boolean;
   conversationId: string;
@@ -200,6 +243,14 @@ export type UploadSaveResponse = {
     ok: boolean;
     chunks?: number;
     message?: string;
+    deduped?: boolean;
+  }>;
+  dedupedCount?: number;
+  dedupedDocuments?: Array<{
+    incomingName: string;
+    createdDocumentId: string;
+    reusedDocumentId: string;
+    checksumSha256: string;
   }>;
   customerVectorStoreId?: string | null;
 };
@@ -558,6 +609,172 @@ export type ControlDefinitionRecord = {
   topic?: ControlTopic;
 };
 
+export type ControlStatusPayload = {
+  controlId: string;
+  controlCode: string;
+  controlTitle: string;
+  complianceStatus: 'PASS' | 'PARTIAL' | 'FAIL' | 'NOT_ASSESSED';
+  evidenceCompleteness: {
+    accepted: number;
+    required: number;
+  };
+  lastAssessedAt: string | null;
+  nextDueAt: string | null;
+  owner: string | null;
+  openFindingsCount: number;
+  weakEvidenceCount?: number;
+  weakEvidence?: Array<{
+    evidenceId: string;
+    title: string;
+    score: number;
+    grade: 'STRONG' | 'MEDIUM' | 'WEAK';
+    reasonCodes: string[];
+  }>;
+  componentStatuses?: Array<{
+    componentId: string;
+    requirement: string;
+    status: 'PASS' | 'PARTIAL' | 'FAIL';
+    bestEvidenceId: string | null;
+    bestScore: number | null;
+    reasonCodes: string[];
+    hasMappedEvidence: boolean;
+  }>;
+  why?: {
+    summary: string;
+    failedComponents: Array<{
+      componentId: string;
+      requirement: string;
+      status: 'PASS' | 'PARTIAL' | 'FAIL';
+      bestEvidenceId: string | null;
+      bestScore: number | null;
+      reasonCodes: string[];
+      hasMappedEvidence: boolean;
+    }>;
+    partialComponents: Array<{
+      componentId: string;
+      requirement: string;
+      status: 'PASS' | 'PARTIAL' | 'FAIL';
+      bestEvidenceId: string | null;
+      bestScore: number | null;
+      reasonCodes: string[];
+      hasMappedEvidence: boolean;
+    }>;
+  };
+  latestAssessment: {
+    status: string;
+    confidence: number;
+    summary: string | null;
+    assessedAt: string;
+    assessedById: string | null;
+  } | null;
+  frequencyDays: number;
+};
+
+export type EvidenceQualityFactors = {
+  version: number;
+  relevance: { points: number; max: number; signals: string[] };
+  reliability: { points: number; max: number; signals: string[] };
+  freshness: { points: number; max: number; signals: string[] };
+  completeness: { points: number; max: number; signals: string[] };
+  reasons: Array<{ code: string; msg: string; severity: 'info' | 'warn' | 'blocker' }>;
+  fixes: Array<{
+    code: string;
+    msg: string;
+    suggestedAction: 'CREATE_REQUEST' | 'LINK_CONTROL' | 'ADD_METADATA' | 'REUPLOAD';
+  }>;
+  coverage: {
+    linkedControls: string[];
+    linkedRequests: string[];
+    linkedTestComponents: string[];
+  };
+};
+
+export type EvidenceQualityPayload = {
+  score: number;
+  grade: 'STRONG' | 'MEDIUM' | 'WEAK';
+  factors: EvidenceQualityFactors;
+  computedAt: string;
+  version: number;
+};
+
+export type EvidenceRecord = {
+  id: string;
+  title: string;
+  type: string;
+  source: string;
+  documentId?: string | null;
+  url?: string | null;
+  status: 'SUBMITTED' | 'REVIEWED' | 'ACCEPTED' | 'REJECTED';
+  createdById?: string | null;
+  createdByName?: string | null;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  reviewComment?: string | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  qualityScore?: number | null;
+  qualityGrade?: 'STRONG' | 'MEDIUM' | 'WEAK' | null;
+  qualityFactors?: EvidenceQualityFactors | null;
+  qualityComputedAt?: string | null;
+  qualityVersion?: number;
+  createdAt: string;
+  updatedAt?: string | null;
+  matchControlId?: string | null;
+  linksCount?: number;
+  links?: Array<{
+    id: string;
+    controlId: string;
+    controlCode?: string | null;
+    controlTitle?: string | null;
+    linkedById?: string | null;
+    createdAt?: string | null;
+  }>;
+};
+
+export type EvidenceListResponse = {
+  items: EvidenceRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type EvidenceRequestRecord = {
+  id: string;
+  controlId: string;
+  controlCode?: string | null;
+  controlTitle?: string | null;
+  testComponentId?: string | null;
+  testComponentRequirement?: string | null;
+  ownerId: string;
+  ownerName?: string | null;
+  dueDate: string;
+  status: 'OPEN' | 'SUBMITTED' | 'OVERDUE' | 'CLOSED';
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string | null;
+  dedupKey?: string | null;
+  fulfillmentCount?: number;
+};
+
+export type EvidenceRequestListResponse = {
+  items: EvidenceRequestRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CopilotStructuredResponse = {
+  messageType: 'AI_STRUCTURED';
+  cards: any[];
+  actions: any[];
+  sources: Array<{
+    objectType: string;
+    id: string;
+    snippetRef: string | null;
+  }>;
+};
+
 export type ControlDefinitionListResponse = {
   items: ControlDefinitionRecord[];
   total: number;
@@ -628,6 +845,10 @@ export class ApiService {
 
   getUpload(id: string) {
     return this.http.get<UploadDetailResponse>(`/api/uploads/${id}`);
+  }
+
+  getUploadAnalysis(id: string) {
+    return this.http.get<UploadAnalysisResponse>(`/api/uploads/${id}/analysis`);
   }
 
   deleteUpload(id: string) {
@@ -774,6 +995,32 @@ export class ApiService {
     return this.http.get<ControlDefinitionRecord>(`/api/control-kb/controls/${id}`);
   }
 
+  getControlStatus(id: string) {
+    return this.http.get<{ ok: boolean; status: ControlStatusPayload }>(
+      `/api/control-kb/controls/${id}/status`,
+    );
+  }
+
+  requestControlEvidence(
+    id: string,
+    payload: {
+      ownerId?: string;
+      dueDate?: string;
+      cycleKey?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    return this.http.post<{ ok: boolean; replayed: boolean; result: any }>(
+      `/api/control-kb/controls/${id}/request-evidence`,
+      payload || {},
+      {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      },
+    );
+  }
+
   createControlDefinition(payload: {
     topicId: string;
     controlCode: string;
@@ -858,14 +1105,233 @@ export class ApiService {
     return this.http.delete<TestComponentRecord>(`/api/control-kb/test-components/${id}`);
   }
 
+  // ===== Evidence =====
+
+  listEvidence(params?: {
+    status?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    let query = new HttpParams();
+    if (params?.status) query = query.set('status', params.status);
+    if (params?.q) query = query.set('q', params.q);
+    if (params?.page) query = query.set('page', params.page);
+    if (params?.pageSize) query = query.set('pageSize', params.pageSize);
+    return this.http.get<EvidenceListResponse>('/api/evidence', { params: query });
+  }
+
+  getEvidence(id: string) {
+    return this.http.get<{ ok: boolean; evidence: EvidenceRecord }>(`/api/evidence/${id}`);
+  }
+
+  getEvidenceByDocumentId(documentId: string) {
+    return this.http.get<{ ok: boolean; evidence: EvidenceRecord | null }>(
+      `/api/evidence/by-document/${documentId}`,
+    );
+  }
+
+  getEvidenceQuality(id: string, params?: { controlId?: string; testComponentId?: string }) {
+    let query = new HttpParams();
+    if (params?.controlId) query = query.set('controlId', params.controlId);
+    if (params?.testComponentId) query = query.set('testComponentId', params.testComponentId);
+    return this.http.get<{ ok: boolean; quality: EvidenceQualityPayload }>(`/api/evidence/${id}/quality`, {
+      params: query,
+    });
+  }
+
+  recomputeEvidenceQuality(
+    id: string,
+    payload?: {
+      reason?: string;
+      force?: boolean;
+    },
+    idempotencyKey?: string,
+    requestId?: string,
+  ) {
+    const headers: Record<string, string> = {};
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    if (requestId) headers['X-Request-Id'] = requestId;
+    return this.http.post<{ ok: boolean; replayed: boolean; quality: EvidenceQualityPayload }>(
+      `/api/evidence/${id}/quality/recompute`,
+      payload || {},
+      { headers },
+    );
+  }
+
+  getEvidenceReviewInbox(bucket: 'pending' | 'expiring' | 'overdue') {
+    const params = new HttpParams().set('bucket', bucket);
+    return this.http.get<{ ok: boolean; bucket: string; items: any[] }>('/api/evidence/review/inbox', { params });
+  }
+
+  reviewEvidence(
+    id: string,
+    payload: {
+      status: 'SUBMITTED' | 'REVIEWED' | 'ACCEPTED' | 'REJECTED';
+      reviewComment?: string;
+      validFrom?: string;
+      validTo?: string;
+      reason?: string;
+    },
+    requestId?: string,
+  ) {
+    const headers = requestId ? { 'X-Request-Id': requestId } : undefined;
+    return this.http.patch<{ ok: boolean; evidence: EvidenceRecord }>(
+      `/api/evidence/${id}/review`,
+      payload,
+      { headers },
+    );
+  }
+
+  linkEvidenceToControl(payload: { evidenceId: string; controlId: string; reason?: string }, requestId?: string) {
+    const headers = requestId ? { 'X-Request-Id': requestId } : undefined;
+    return this.http.post<{ ok: boolean; created: boolean; linkId: string }>(
+      '/api/evidence/links',
+      payload,
+      { headers },
+    );
+  }
+
+  unlinkEvidenceLink(linkId: string, reason?: string, requestId?: string) {
+    const headers = requestId ? { 'X-Request-Id': requestId } : undefined;
+    return this.http.request<{ ok: boolean }>('DELETE', `/api/evidence/links/${linkId}`, {
+      body: reason ? { reason } : {},
+      headers,
+    });
+  }
+
+  backfillEvidence() {
+    return this.http.post<{ ok: boolean; scanned: number; created: number; reused: number }>(
+      '/api/evidence/backfill',
+      {},
+    );
+  }
+
+  // ===== Evidence Requests =====
+
+  listEvidenceRequests(params?: {
+    status?: string;
+    ownerId?: string;
+    controlId?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    let query = new HttpParams();
+    if (params?.status) query = query.set('status', params.status);
+    if (params?.ownerId) query = query.set('ownerId', params.ownerId);
+    if (params?.controlId) query = query.set('controlId', params.controlId);
+    if (params?.page) query = query.set('page', params.page);
+    if (params?.pageSize) query = query.set('pageSize', params.pageSize);
+    return this.http.get<EvidenceRequestListResponse>('/api/evidence-requests', { params: query });
+  }
+
+  createEvidenceRequest(payload: {
+    controlId: string;
+    ownerId: string;
+    dueDate: string;
+    testComponentId?: string;
+    dedupKey?: string;
+    reason?: string;
+  }, requestId?: string) {
+    const headers = requestId ? { 'X-Request-Id': requestId } : undefined;
+    return this.http.post<{ ok: boolean; created: boolean; request?: EvidenceRequestRecord; requestId?: string }>(
+      '/api/evidence-requests',
+      payload,
+      { headers },
+    );
+  }
+
+  fulfillEvidenceRequest(id: string, payload: { evidenceId: string; reason?: string }, requestId?: string) {
+    const headers = requestId ? { 'X-Request-Id': requestId } : undefined;
+    return this.http.post<{ ok: boolean; fulfillmentId: string; request: EvidenceRequestRecord }>(
+      `/api/evidence-requests/${id}/fulfill`,
+      payload,
+      { headers },
+    );
+  }
+
+  // ===== Copilot =====
+
+  executeCopilotAction(
+    payload: {
+      actionType: 'CREATE_EVIDENCE_REQUEST' | 'LINK_EVIDENCE_CONTROL' | 'CREATE_REMEDIATION_TASK';
+      payload: any;
+      dryRun?: boolean;
+    },
+    idempotencyKey: string,
+    requestId?: string,
+  ) {
+    const headers: Record<string, string> = {
+      'Idempotency-Key': idempotencyKey,
+    };
+    if (requestId) headers['X-Request-Id'] = requestId;
+    return this.http.post<{ ok: boolean; replayed: boolean; action: any }>(
+      '/api/copilot/actions/execute',
+      payload,
+      { headers },
+    );
+  }
+
+  // ===== Audit Pack =====
+
+  generateAuditPack(payload: { frameworkId?: string; periodStart: string; periodEnd: string }) {
+    return this.http.post<{ ok: boolean; pack: any }>(
+      '/api/audit-packs/generate',
+      payload,
+    );
+  }
+
+  getAuditPack(id: string) {
+    return this.http.get<{ ok: boolean; pack: any }>(`/api/audit-packs/${id}`);
+  }
+
+  downloadAuditPack(id: string, format: 'csv' | 'zip') {
+    const params = new HttpParams().set('format', format);
+    return this.http.get(`/api/audit-packs/${id}/download`, { params, responseType: 'blob' });
+  }
+
+  // ===== Connectors =====
+
+  listConnectors() {
+    return this.http.get<{ ok: boolean; connectors: any[] }>('/api/connectors');
+  }
+
+  createConnector(payload: { name: string; type: string; config?: unknown }) {
+    return this.http.post<{ ok: boolean; connector: any }>('/api/connectors', payload);
+  }
+
+  runConnector(id: string, payload?: { artifacts?: any[] }) {
+    return this.http.post<{ ok: boolean; run: any }>(`/api/connectors/${id}/runs`, payload || {});
+  }
+
+  listConnectorArtifacts(id: string) {
+    return this.http.get<{ ok: boolean; artifacts: any[] }>(`/api/connectors/${id}/artifacts`);
+  }
+
+  convertConnectorArtifactToEvidence(artifactId: string, payload?: { controlId?: string }) {
+    return this.http.post<{ ok: boolean; created: boolean; evidenceId: string }>(
+      `/api/connectors/artifacts/${artifactId}/convert-to-evidence`,
+      payload || {},
+    );
+  }
+
   // ===== Chat =====
 
   chat(
     conversationId: string,
     message: string,
     language?: 'ar' | 'en',
+    mentionDocumentIds: string[] = [],
   ) {
-    return this.http.post<any>('/api/chat', { conversationId, message, language });
+    const normalizedMentionIds = Array.isArray(mentionDocumentIds)
+      ? mentionDocumentIds.map((id) => String(id || '').trim()).filter(Boolean)
+      : [];
+    return this.http.post<any>('/api/chat', {
+      conversationId,
+      message,
+      language,
+      mentionDocumentIds: normalizedMentionIds,
+    });
   }
 
   evaluateControl(
@@ -966,10 +1432,11 @@ export class ApiService {
     message: string,
     conversationId?: string,
     language?: 'ar' | 'en',
+    mentionDocumentIds: string[] = [],
   ) {
     const convId = conversationId || crypto.randomUUID();
 
-    return this.chat(convId, message, language).pipe(
+    return this.chat(convId, message, language, mentionDocumentIds).pipe(
       map((res) => {
         const reply = String(res?.reply ?? '');
         const backendConversationId = String(res?.conversationId ?? convId);
@@ -985,6 +1452,10 @@ export class ApiService {
             missing: [],
             recommendations: [],
           },
+          messageType: res?.messageType || 'TEXT',
+          cards: Array.isArray(res?.cards) ? res.cards : [],
+          actions: Array.isArray(res?.actions) ? res.actions : [],
+          sources: Array.isArray(res?.sources) ? res.sources : [],
         };
 
         // ✅ normalize status defensively

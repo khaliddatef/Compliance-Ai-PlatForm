@@ -410,6 +410,11 @@ export class DashboardService {
       requestedFramework && enabledFrameworkSet.has(requestedFramework)
         ? requestedFramework
         : activeFrameworkName;
+    const withFramework = (query?: Record<string, string>) => {
+      const result: Record<string, string> = { ...(query || {}) };
+      if (frameworkScope) result['framework'] = frameworkScope;
+      return result;
+    };
 
     const filterOptions: DashboardFilterOptions = {
       frameworks: Array.from(new Set(frameworkOptions.map((fw) => fw.name).filter(Boolean))).sort((a, b) =>
@@ -508,6 +513,7 @@ export class DashboardService {
     let totalDocuments = 0;
     let awaitingReview = 0;
     const documents: Array<{
+      id: string;
       matchControlId: string | null;
       docType: string | null;
       originalName: string;
@@ -517,39 +523,99 @@ export class DashboardService {
       createdAt: Date;
       conversation?: { title: string } | null;
     }> = [];
+    const documentsByScope = new Map<string, (typeof documents)[number]>();
+    const uniqueDocuments = new Map<string, (typeof documents)[number]>();
+    const addDocumentToScope = (
+      doc: Omit<(typeof documents)[number], 'matchControlId'> & { matchControlId?: string | null },
+      controlCode: string,
+    ) => {
+      const normalizedControlCode = String(controlCode || '').trim();
+      const normalizedDocId = String(doc.id || '').trim();
+      if (!normalizedControlCode || !normalizedDocId) return;
+      const scopeKey = `${normalizedDocId}:${normalizedControlCode}`;
+      if (!documentsByScope.has(scopeKey)) {
+        documentsByScope.set(scopeKey, {
+          ...doc,
+          matchControlId: normalizedControlCode,
+        });
+      }
+      if (!uniqueDocuments.has(normalizedDocId)) {
+        uniqueDocuments.set(normalizedDocId, {
+          ...doc,
+          matchControlId: normalizedControlCode,
+        });
+      }
+    };
 
     if (allowedControlCodes.length) {
       for (const chunk of this.chunk(allowedControlCodes)) {
-        const [chunkTotal, chunkAwaiting, chunkDocs] = await Promise.all([
-          this.prisma.document.count({ where: { matchControlId: { in: chunk } } }),
-          this.prisma.document.count({ where: { matchControlId: { in: chunk }, reviewedAt: null } }),
-          this.prisma.document.findMany({
-            where: { matchControlId: { in: chunk } },
-            select: {
-              matchControlId: true,
-              docType: true,
-              originalName: true,
-              matchStatus: true,
-              reviewedAt: true,
-              submittedAt: true,
-              createdAt: true,
-              conversation: { select: { title: true } },
-            },
-          }),
-        ]);
-        totalDocuments += chunkTotal;
-        awaitingReview += chunkAwaiting;
-        documents.push(...chunkDocs);
+        const chunkDocs = await this.prisma.document.findMany({
+          where: { matchControlId: { in: chunk } },
+          select: {
+            id: true,
+            matchControlId: true,
+            docType: true,
+            originalName: true,
+            matchStatus: true,
+            reviewedAt: true,
+            submittedAt: true,
+            createdAt: true,
+            conversation: { select: { title: true } },
+          },
+        });
+        for (const doc of chunkDocs) {
+          const controlCode = String(doc.matchControlId || '').trim();
+          if (!controlCode) continue;
+          addDocumentToScope(doc, controlCode);
+        }
       }
     }
+
+    if (allowedControlIds.length) {
+      for (const chunk of this.chunk(allowedControlIds)) {
+        const chunkLinks = await this.prisma.evidenceControlLink.findMany({
+          where: { controlId: { in: chunk } },
+          select: {
+            controlId: true,
+            evidence: {
+              select: {
+                document: {
+                  select: {
+                    id: true,
+                    matchControlId: true,
+                    docType: true,
+                    originalName: true,
+                    matchStatus: true,
+                    reviewedAt: true,
+                    submittedAt: true,
+                    createdAt: true,
+                    conversation: { select: { title: true } },
+                  },
+                },
+              },
+            },
+          },
+        });
+        for (const link of chunkLinks) {
+          const controlCode = String(controlIdToCode.get(String(link.controlId || '')) || '').trim();
+          const doc = link.evidence?.document;
+          if (!controlCode || !doc?.id) continue;
+          addDocumentToScope(doc, controlCode);
+        }
+      }
+    }
+
+    documents.push(...documentsByScope.values());
+    totalDocuments = uniqueDocuments.size;
+    awaitingReview = Array.from(uniqueDocuments.values()).filter((doc) => !doc.reviewedAt).length;
 
     const lastReviewAt = evaluations[0]?.createdAt ?? null;
 
     const docsByControl = new Map<string, typeof documents>();
     const latestDocByControl = new Map<string, { status: string; createdAt: Date; docType: string | null; originalName: string }>();
     const acceptedControls = new Set<string>();
-    let reviewedDocs = 0;
-    let submittedDocs = 0;
+    let reviewedDocs = Array.from(uniqueDocuments.values()).filter((doc) => Boolean(doc.reviewedAt)).length;
+    let submittedDocs = Array.from(uniqueDocuments.values()).filter((doc) => Boolean(doc.submittedAt)).length;
     for (const doc of documents) {
       const controlCode = String(doc.matchControlId || '');
       if (!controlCode) continue;
@@ -569,8 +635,6 @@ export class DashboardService {
           });
         }
       }
-      if (doc.reviewedAt) reviewedDocs += 1;
-      if (doc.submittedAt) submittedDocs += 1;
       if (doc.submittedAt && String(doc.matchStatus || '').toUpperCase() === 'COMPLIANT') {
         acceptedControls.add(controlCode);
       }
@@ -628,10 +692,14 @@ export class DashboardService {
       }
     }
 
+    const weightedCoveredControls = statusCounts.COMPLIANT + statusCounts.PARTIAL * partialWeight;
+    const coverageRawPercent = totalControls
+      ? (weightedCoveredControls / totalControls) * 100
+      : 0;
     const coveragePercent = totalControls
-      ? Math.round(
-          ((statusCounts.COMPLIANT + statusCounts.PARTIAL * partialWeight) / totalControls) * 100,
-        )
+      ? (weightedCoveredControls > 0 && coverageRawPercent < 1
+          ? 1
+          : Math.round(coverageRawPercent))
       : 0;
 
     const evidenceHealth: EvidenceHealth = {
@@ -1213,8 +1281,10 @@ export class DashboardService {
       };
     });
 
+    const globalUploadedDocuments = await this.prisma.document.count();
+
     const uploadSummary: UploadSummary = {
-      totalUploadedDocuments: totalDocuments,
+      totalUploadedDocuments: Math.max(totalDocuments, globalUploadedDocuments),
       distinctMatchedControls,
       documentsPerControl: documentsPerControl.slice(0, 8),
     };
@@ -1237,6 +1307,12 @@ export class DashboardService {
     const controlsNeedingAttention = new Set([...failedControlCodes, ...overdueControlCodes]);
     const overdueControls = overdueControlCodes.length;
     const risksWithoutMitigation = riskCoverage.filter((risk) => risk.coveragePercent === 0).length;
+    const risksWithoutOwner = allowedControls.reduce((sum, control) => {
+      const status = (statusByControlCode.get(control.controlCode) || 'UNKNOWN').toUpperCase();
+      if (status === 'COMPLIANT') return sum;
+      const hasOwner = String(control.ownerRole || '').trim().length > 0;
+      return hasOwner ? sum : sum + getControlUnits(control.controlCode);
+    }, 0);
     const evidenceIssues = evidenceMissing + evidenceExpired;
 
     const auditSummary: AuditSummary = {
@@ -1255,7 +1331,7 @@ export class DashboardService {
         severity: failedControls ? 'high' : 'low',
         kind: 'control',
         route: '/control-kb',
-        query: { status: 'enabled' },
+        query: withFramework({ status: 'enabled' }),
       },
       {
         id: 'missing-evidence',
@@ -1268,10 +1344,11 @@ export class DashboardService {
       {
         id: 'risks-without-owner',
         label: 'Risks Without Owner',
-        count: risksWithoutMitigation,
-        severity: risksWithoutMitigation ? 'medium' : 'low',
+        count: risksWithoutOwner,
+        severity: risksWithoutOwner ? 'medium' : 'low',
         kind: 'risk',
-        route: '/dashboard',
+        route: '/control-kb',
+        query: withFramework({ status: 'enabled', gap: 'owner-not-assigned' }),
       },
       {
         id: 'upcoming-audits',
@@ -1279,7 +1356,7 @@ export class DashboardService {
         count: auditSummary.upcoming30,
         severity: auditSummary.upcoming30 ? 'medium' : 'low',
         kind: 'audit',
-        route: '/dashboard',
+        route: '/uploads',
         query: { range: '30' },
       },
     ];
@@ -1291,7 +1368,7 @@ export class DashboardService {
         count: failedControls,
         severity: 'high',
         route: '/control-kb',
-        query: { status: 'enabled' },
+        query: withFramework({ status: 'enabled' }),
       },
       {
         id: 'overdue-controls',
@@ -1299,14 +1376,15 @@ export class DashboardService {
         count: overdueControls,
         severity: 'medium',
         route: '/control-kb',
-        query: { status: 'enabled' },
+        query: withFramework({ status: 'enabled' }),
       },
       {
-        id: 'risks-without-mitigation',
-        label: 'Risks without mitigation',
-        count: risksWithoutMitigation,
+        id: 'risks-without-owner',
+        label: 'Risks without owner',
+        count: risksWithoutOwner,
         severity: 'medium',
-        route: '/dashboard',
+        route: '/control-kb',
+        query: withFramework({ status: 'enabled', gap: 'owner-not-assigned' }),
       },
       {
         id: 'evidence-issues',
@@ -1320,7 +1398,7 @@ export class DashboardService {
         label: 'Audits in next 30 days',
         count: upcomingAudits,
         severity: 'low',
-        route: '/dashboard',
+        route: '/uploads',
       },
     ];
 
@@ -1348,7 +1426,18 @@ export class DashboardService {
         id: 'mitigate-risks',
         title: 'Mitigate uncovered risks',
         reason: `${risksWithoutMitigation} risks have 0% coverage`,
-        route: '/dashboard',
+        route: '/control-kb',
+        query: withFramework({ compliance: 'NOT_COMPLIANT', status: 'enabled' }),
+        severity: 'medium',
+      });
+    }
+    if (risksWithoutOwner) {
+      recommendedActions.push({
+        id: 'assign-risk-owners',
+        title: 'Assign owners to high-risk controls',
+        reason: `${risksWithoutOwner} controls are missing owners`,
+        route: '/control-kb',
+        query: withFramework({ status: 'enabled', gap: 'owner-not-assigned' }),
         severity: 'medium',
       });
     }
@@ -1371,7 +1460,7 @@ export class DashboardService {
         title: 'Review overdue controls',
         reason: `${overdueControls} controls have not been updated in 30+ days`,
         route: '/control-kb',
-        query: { status: 'enabled' },
+        query: withFramework({ status: 'enabled' }),
         severity: 'medium',
         cta: 'Open controls',
       });
@@ -1389,11 +1478,23 @@ export class DashboardService {
     if (risksWithoutMitigation) {
       recommendedActionsV2.push({
         id: 'mitigate-risks',
-        title: 'Assign mitigation owners for top risks',
+        title: 'Mitigate uncovered risks',
         reason: `${risksWithoutMitigation} risks show 0% coverage`,
-        route: '/dashboard',
+        route: '/control-kb',
+        query: withFramework({ compliance: 'NOT_COMPLIANT', status: 'enabled' }),
         severity: 'medium',
         cta: 'View risks',
+      });
+    }
+    if (risksWithoutOwner) {
+      recommendedActionsV2.push({
+        id: 'assign-risk-owners',
+        title: 'Assign owners to risk controls',
+        reason: `${risksWithoutOwner} controls are missing owners`,
+        route: '/control-kb',
+        query: withFramework({ status: 'enabled', gap: 'owner-not-assigned' }),
+        severity: 'medium',
+        cta: 'Assign owners',
       });
     }
 
@@ -1404,9 +1505,9 @@ export class DashboardService {
         id: 'coverage',
         label: 'Overall Coverage',
         value: `${coveragePercent}%`,
-        note: `${statusCounts.COMPLIANT + statusCounts.PARTIAL}/${evaluatedControls} controls reviewed`,
+        note: `Evaluated ${evaluatedControls}/${totalControls} controls`,
         severity: coveragePercent < 60 ? 'high' : coveragePercent < 80 ? 'medium' : 'low',
-        drilldown: { route: '/control-kb', query: { status: 'enabled' } },
+        drilldown: { route: '/control-kb', query: withFramework({ status: 'enabled' }) },
       },
       {
         id: 'evidence-health',
@@ -1446,7 +1547,7 @@ export class DashboardService {
         value: `${openRisks}`,
         note: 'Partial or missing controls',
         severity: openRisks ? 'medium' : 'low',
-        drilldown: { route: '/dashboard' },
+        drilldown: { route: '/control-kb', query: withFramework({ compliance: 'NOT_COMPLIANT', status: 'enabled' }) },
       },
       {
         id: 'documents-uploaded',
@@ -1464,9 +1565,7 @@ export class DashboardService {
         severity: 'low',
         drilldown: {
           route: '/control-kb',
-          query: frameworkScope
-            ? { compliance: 'COMPLIANT', framework: frameworkScope }
-            : { compliance: 'COMPLIANT' },
+          query: withFramework({ compliance: 'COMPLIANT' }),
         },
       },
     ];

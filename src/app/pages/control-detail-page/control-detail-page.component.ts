@@ -6,6 +6,7 @@ import {
   ApiService,
   ControlDefinitionRecord,
   ControlFrameworkMappingRecord,
+  ControlStatusPayload,
   FrameworkSummary,
   TestComponentRecord,
 } from '../../services/api.service';
@@ -37,6 +38,12 @@ export class ControlDetailPageComponent implements OnInit {
   loading = true;
   error = '';
   editingControl = false;
+  statusLoading = false;
+  statusError = '';
+  controlStatus: ControlStatusPayload | null = null;
+  actionNotice = '';
+  actionBusy = false;
+  whyPanelOpen = false;
 
   constructor(
     private readonly api: ApiService,
@@ -73,6 +80,11 @@ export class ControlDetailPageComponent implements OnInit {
     return this.isAdmin;
   }
 
+  get canOperateControl() {
+    const role = this.auth.user()?.role;
+    return role === 'ADMIN' || role === 'MANAGER';
+  }
+
   get statusLabel() {
     return this.control?.status === 'disabled' ? 'disabled' : 'enabled';
   }
@@ -91,6 +103,22 @@ export class ControlDetailPageComponent implements OnInit {
       .map((mapping) => mapping.title);
   }
 
+  get controlComplianceLabel() {
+    const status = this.controlStatus?.complianceStatus || 'NOT_ASSESSED';
+    if (status === 'PASS') return 'Pass';
+    if (status === 'PARTIAL') return 'Partial';
+    if (status === 'FAIL') return 'Fail';
+    return 'Not assessed';
+  }
+
+  get controlComplianceClass() {
+    const status = this.controlStatus?.complianceStatus || 'NOT_ASSESSED';
+    if (status === 'PASS') return 'compliance-pass';
+    if (status === 'PARTIAL') return 'compliance-partial';
+    if (status === 'FAIL') return 'compliance-fail';
+    return 'compliance-not-assessed';
+  }
+
   fetchControl(id: string) {
     this.loading = true;
     this.error = '';
@@ -101,6 +129,13 @@ export class ControlDetailPageComponent implements OnInit {
         this.controlEdit = this.control ? this.mapControlForm(this.control) : null;
         this.editingControl = false;
         this.rebuildActiveReferenceCodes();
+        this.statusError = '';
+        this.actionNotice = '';
+        if (this.control?.id) {
+          this.fetchControlStatus(this.control.id);
+        } else {
+          this.controlStatus = null;
+        }
         this.loading = false;
         this.cdr.markForCheck();
       },
@@ -188,6 +223,106 @@ export class ControlDetailPageComponent implements OnInit {
       return;
     }
     this.router.navigate(['/control-kb'], { queryParams: this.backQueryParams });
+  }
+
+  requestEvidenceFromBanner() {
+    if (!this.canOperateControl || !this.control?.id || this.actionBusy) return;
+    const dueDate = new Date(Date.now() + 14 * 86400000).toISOString();
+    this.actionBusy = true;
+    this.actionNotice = '';
+    this.api.requestControlEvidence(
+      this.control.id,
+      {
+        dueDate,
+      },
+      crypto.randomUUID(),
+    ).subscribe({
+      next: (res) => {
+        const created = Number(res?.result?.createdCount || 0);
+        const existing = Number(res?.result?.existingCount || 0);
+        this.actionNotice = `Evidence requests synced. Created: ${created}, existing: ${existing}.`;
+        if (this.control?.id) this.fetchControlStatus(this.control.id);
+      },
+      error: () => {
+        this.actionNotice = 'Unable to create evidence requests.';
+      },
+      complete: () => {
+        this.actionBusy = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  runAssessmentFromBanner() {
+    this.actionNotice = 'Assessment is currently manual/AI-assisted through chat.';
+    this.cdr.markForCheck();
+  }
+
+  createRemediationFromBanner() {
+    if (!this.canOperateControl || !this.control || this.actionBusy) return;
+    this.actionBusy = true;
+    this.actionNotice = '';
+    this.api.executeCopilotAction(
+      {
+        actionType: 'CREATE_REMEDIATION_TASK',
+        payload: {
+          title: `Remediate ${this.control.controlCode} - ${this.control.title}`,
+          controlId: this.control.id,
+        },
+        dryRun: false,
+      },
+      crypto.randomUUID(),
+    ).subscribe({
+      next: () => {
+        this.actionNotice = 'Remediation task created.';
+        if (this.control?.id) this.fetchControlStatus(this.control.id);
+      },
+      error: () => {
+        this.actionNotice = 'Unable to create remediation task.';
+      },
+      complete: () => {
+        this.actionBusy = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  addToAuditPackFromBanner() {
+    if (!this.canOperateControl || this.actionBusy) return;
+    this.actionBusy = true;
+    this.actionNotice = '';
+    const periodEnd = new Date();
+    const periodStart = new Date(periodEnd.getTime() - 90 * 86400000);
+    this.api.generateAuditPack({
+      frameworkId: this.activeFramework?.framework || undefined,
+      periodStart: periodStart.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+    }).subscribe({
+      next: (res) => {
+        const packId = String(res?.pack?.id || '');
+        this.actionNotice = packId
+          ? `Audit pack generated: ${packId}`
+          : 'Audit pack generated.';
+      },
+      error: () => {
+        this.actionNotice = 'Unable to generate audit pack.';
+      },
+      complete: () => {
+        this.actionBusy = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  formatDate(value?: string | null) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString();
+  }
+
+  toggleWhyPanel() {
+    this.whyPanelOpen = !this.whyPanelOpen;
   }
 
   private getTopicMappings() {
@@ -293,5 +428,24 @@ export class ControlDetailPageComponent implements OnInit {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  private fetchControlStatus(controlId: string) {
+    this.statusLoading = true;
+    this.statusError = '';
+    this.whyPanelOpen = false;
+    this.api.getControlStatus(controlId).subscribe({
+      next: (res) => {
+        this.controlStatus = res?.status || null;
+        this.statusLoading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.controlStatus = null;
+        this.statusError = 'Unable to load control status.';
+        this.statusLoading = false;
+        this.cdr.markForCheck();
+      },
+    });
   }
 }

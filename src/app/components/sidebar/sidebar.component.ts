@@ -19,6 +19,7 @@ export class SidebarComponent {
     { label: 'Chat History', path: '/history', icon: 'history' },
     { label: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
     { label: 'Uploaded Files', path: '/uploads', icon: 'uploads' },
+    { label: 'Evidence Hub', path: '/evidence', icon: 'evidence' },
     { label: 'Frameworks', path: '/frameworks', icon: 'frameworks' },
     { label: 'Control KB', path: '/control-kb', icon: 'kb' },
     { label: 'Settings', path: '/settings', icon: 'settings' }

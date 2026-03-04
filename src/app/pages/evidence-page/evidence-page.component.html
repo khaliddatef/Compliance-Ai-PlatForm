@@ -1,0 +1,471 @@
+<section class="hub-page">
+  <div class="hub-main panel">
+    <header class="hub-header">
+      <div>
+        <h3>Evidence Hub</h3>
+        <p class="sub">Unified operations for uploads, evidence quality, linking, review, and requests.</p>
+      </div>
+      <div class="header-actions">
+        <button
+          class="ghost-btn compact-toggle"
+          type="button"
+          [class.active]="showMobileSearchInput"
+          (click)="toggleMobileSearch()"
+        >
+          {{ showMobileSearchInput ? 'Hide search' : 'Search' }}
+        </button>
+        <button
+          class="ghost-btn compact-toggle"
+          type="button"
+          [class.active]="mobileFiltersExpanded"
+          (click)="toggleMobileFilters()"
+        >
+          {{ mobileFiltersExpanded ? 'Hide filters' : 'Filters' }}
+        </button>
+        <button
+          *ngIf="canManageEvidence"
+          class="secondary-btn"
+          type="button"
+          (click)="toggleUploadPanel()"
+        >
+          {{ showUploadPanel ? 'Close Upload' : 'Upload' }}
+        </button>
+        <button class="primary-btn" type="button" (click)="refresh()" [disabled]="loadingEvidence || loadingRequests">
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Evidence hub tabs">
+      <button
+        type="button"
+        class="tab-btn"
+        [class.active]="activeTab === 'inbox'"
+        (click)="setTab('inbox')"
+      >
+        Inbox
+      </button>
+      <button
+        type="button"
+        class="tab-btn"
+        [class.active]="activeTab === 'evidence'"
+        (click)="setTab('evidence')"
+      >
+        Evidence
+      </button>
+      <button
+        type="button"
+        class="tab-btn"
+        [class.active]="activeTab === 'requests'"
+        (click)="setTab('requests')"
+      >
+        Requests
+      </button>
+    </div>
+
+    <div
+      class="upload-modal-backdrop"
+      *ngIf="canManageEvidence && showUploadPanel"
+      (click)="closeUploadPanel()"
+    >
+      <div class="upload-modal" (click)="$event.stopPropagation()">
+        <div class="upload-modal-header">
+          <div>
+            <h4>Upload evidence files</h4>
+            <p>Files appear immediately in Inbox and start at Submitted state.</p>
+          </div>
+          <button class="icon-btn" type="button" (click)="closeUploadPanel()">x</button>
+        </div>
+        <app-upload-dropzone (filesAdded)="handleManagerUpload($event)"></app-upload-dropzone>
+        <div class="manager-upload-status" *ngIf="uploadNotice || uploadError">
+          <span *ngIf="uploadNotice" [class.loading]="uploading">{{ uploadNotice }}</span>
+          <span class="error" *ngIf="uploadError">{{ uploadError }}</span>
+        </div>
+      </div>
+    </div>
+
+    <p *ngIf="error" class="error">{{ error }}</p>
+    <p *ngIf="notice" class="notice">{{ notice }}</p>
+
+    <ng-container *ngIf="activeTab !== 'requests'; else requestsTemplate">
+      <div class="preset-row">
+        <button type="button" class="preset" [class.active]="presetFilter === 'all'" (click)="setPreset('all')">
+          All ({{ evidence.length }})
+        </button>
+        <button type="button" class="preset" [class.active]="presetFilter === 'pending'" (click)="setPreset('pending')">
+          Pending review ({{ pendingCount }})
+        </button>
+        <button type="button" class="preset" [class.active]="presetFilter === 'expiring'" (click)="setPreset('expiring')">
+          Expiring soon ({{ expiringCount }})
+        </button>
+        <button type="button" class="preset" [class.active]="presetFilter === 'weak'" (click)="setPreset('weak')">
+          Weak ({{ weakCount }})
+        </button>
+        <button type="button" class="preset" [class.active]="presetFilter === 'expired'" (click)="setPreset('expired')">
+          Expired ({{ expiredCount }})
+        </button>
+        <button type="button" class="preset" [class.active]="presetFilter === 'unlinked'" (click)="setPreset('unlinked')">
+          Unlinked ({{ unlinkedCount }})
+        </button>
+      </div>
+
+      <div
+        class="filters"
+        [class.mobile-search-collapsed]="!showMobileSearchInput"
+        [class.mobile-filters-collapsed]="!mobileFiltersExpanded"
+      >
+        <div class="search-wrap">
+          <input type="search" placeholder="Search evidence..." [(ngModel)]="search" />
+        </div>
+        <label>
+          Status
+          <select [(ngModel)]="statusFilter">
+            <option value="all">All</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="REVIEWED">Reviewed</option>
+            <option value="ACCEPTED">Accepted</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+        </label>
+        <label>
+          Quality
+          <select [(ngModel)]="qualityFilter">
+            <option value="all">All</option>
+            <option value="WEAK">Weak</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="STRONG">Strong</option>
+          </select>
+        </label>
+        <label>
+          Source
+          <select [(ngModel)]="sourceFilter">
+            <option value="all">All</option>
+            <option value="upload">Upload</option>
+            <option value="link">Link</option>
+            <option value="connector">Connector</option>
+          </select>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="showExpiringSoonOnly" />
+          Expiring in 30 days
+        </label>
+      </div>
+
+      <div class="view-toggle" *ngIf="activeTab === 'evidence'">
+        <button type="button" class="preset" [class.active]="viewMode === 'table'" (click)="setViewMode('table')">
+          Table
+        </button>
+        <button type="button" class="preset" [class.active]="viewMode === 'byControl'" (click)="setViewMode('byControl')">
+          Group by control
+        </button>
+      </div>
+
+      <div class="loading" *ngIf="loadingEvidence">Loading evidence records...</div>
+
+      <div class="table" *ngIf="!loadingEvidence && visibleEvidence.length && viewMode === 'table'">
+        <div class="row header">
+          <span>Evidence</span>
+          <span>Status</span>
+          <span>Quality</span>
+          <span>Links</span>
+          <span>Validity</span>
+          <span>Owner/Reviewer</span>
+          <span>Actions</span>
+        </div>
+
+        <button
+          type="button"
+          class="row item"
+          *ngFor="let item of visibleEvidence; trackBy: trackByEvidenceId"
+          (click)="openDetail(item)"
+        >
+          <span class="title-cell">
+            <span class="title">{{ item.title }}</span>
+            <span class="meta">{{ item.type }} - {{ item.source }}</span>
+          </span>
+
+          <span class="status-pill" [ngClass]="statusClass(item)">{{ item.status }}</span>
+
+          <span class="quality-pill" [ngClass]="qualityClass(item)">
+            {{ qualityBadge(item) }}
+          </span>
+
+          <span class="links-cell">
+            <span class="chip warn" *ngIf="(item.linksCount || 0) === 0">Link needed</span>
+            <span class="chip" *ngIf="(item.linksCount || 0) > 0">{{ item.linksCount }} linked</span>
+            <span class="chip subtle" *ngIf="item.matchControlId">{{ item.matchControlId }}</span>
+          </span>
+
+          <span>
+            <ng-container *ngIf="item.validTo; else noValidity">
+              {{ item.validTo | date: 'MMM d, y' }}
+              <span class="expired-icon" *ngIf="isExpired(item)" title="Expired">!</span>
+            </ng-container>
+            <ng-template #noValidity>--</ng-template>
+          </span>
+
+          <span class="owner-cell">
+            <span>{{ item.createdByName || item.createdById || '--' }}</span>
+            <small *ngIf="item.reviewedById">Reviewed by {{ item.reviewedById }}</small>
+          </span>
+
+          <span class="row-actions" (click)="$event.stopPropagation()">
+            <button type="button" class="ghost-btn" (click)="openDetail(item)">Open</button>
+            <button
+              type="button"
+              class="ghost-btn"
+              *ngIf="item.documentId"
+              (click)="openUploadDetail(item, $event)"
+            >
+              File
+            </button>
+          </span>
+        </button>
+      </div>
+
+      <div class="grouped" *ngIf="!loadingEvidence && visibleEvidence.length && viewMode === 'byControl'">
+        <section class="group-card" *ngFor="let group of groupedEvidence">
+          <header>
+            <h4>{{ group.label }}</h4>
+            <span>{{ group.items.length }} item(s)</span>
+          </header>
+          <div class="group-items">
+            <button
+              type="button"
+              class="group-item"
+              *ngFor="let item of group.items; trackBy: trackByEvidenceId"
+              (click)="openDetail(item)"
+            >
+              <span>{{ item.title }}</span>
+              <span class="quality-pill" [ngClass]="qualityClass(item)">{{ qualityBadge(item) }}</span>
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <p *ngIf="!loadingEvidence && !visibleEvidence.length" class="empty">
+        No evidence matches the current filters.
+      </p>
+
+      <section class="overdue-box" *ngIf="activeTab === 'inbox' && overdueCount > 0">
+        <header>
+          <h4>Overdue requests ({{ overdueCount }})</h4>
+        </header>
+        <div class="overdue-list">
+          <div class="overdue-item" *ngFor="let req of visibleOverdueRequests; trackBy: trackByRequestId">
+            <div>
+              <strong>{{ req.controlCode || req.controlId }}</strong>
+              <p>{{ req.controlTitle || 'Control evidence request' }}</p>
+            </div>
+            <div>
+              <span>{{ req.ownerName || req.ownerId }}</span>
+              <small>Due {{ req.dueDate | date: 'MMM d, y' }}</small>
+            </div>
+          </div>
+        </div>
+      </section>
+    </ng-container>
+
+    <ng-template #requestsTemplate>
+      <div class="requests-header">
+        <div>
+          <h4>Evidence Requests</h4>
+          <p class="sub">Track ownership, due dates, and fulfillment lifecycle.</p>
+        </div>
+        <button
+          *ngIf="canManageEvidence"
+          type="button"
+          class="primary-btn"
+          [disabled]="actionBusy"
+          (click)="createRequestQuick()"
+        >
+          Create request
+        </button>
+      </div>
+
+      <div class="filters request-filters">
+        <input type="search" placeholder="Search requests..." [(ngModel)]="requestSearch" />
+        <label>
+          Status
+          <select [(ngModel)]="requestStatusFilter">
+            <option value="all">All</option>
+            <option value="OPEN">Open</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="OVERDUE">Overdue</option>
+            <option value="CLOSED">Closed</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="loading" *ngIf="loadingRequests">Loading requests...</div>
+
+      <div class="table" *ngIf="!loadingRequests && visibleRequests.length">
+        <div class="row header request-row">
+          <span>Request</span>
+          <span>Control</span>
+          <span>Owner</span>
+          <span>Due</span>
+          <span>Status</span>
+          <span>Fulfillment</span>
+          <span>Actions</span>
+        </div>
+
+        <div class="row item request-row" *ngFor="let req of visibleRequests; trackBy: trackByRequestId">
+          <span>
+            <strong>{{ req.id.slice(0, 8) }}</strong>
+            <small *ngIf="req.testComponentRequirement">{{ req.testComponentRequirement }}</small>
+          </span>
+          <span>
+            <strong>{{ req.controlCode || req.controlId }}</strong>
+            <small>{{ req.controlTitle || '--' }}</small>
+          </span>
+          <span>{{ req.ownerName || req.ownerId }}</span>
+          <span>{{ req.dueDate | date: 'MMM d, y' }}</span>
+          <span class="status-pill" [ngClass]="requestStatusClass(req)">{{ req.status }}</span>
+          <span>{{ req.fulfillmentCount || 0 }}</span>
+          <span class="row-actions">
+            <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="fulfillRequest(req)">
+              Fulfill
+            </button>
+            <button type="button" class="ghost-btn" (click)="openControl(req.controlId)">Control</button>
+          </span>
+        </div>
+      </div>
+
+      <p *ngIf="!loadingRequests && !visibleRequests.length" class="empty">
+        No requests match the current filters.
+      </p>
+    </ng-template>
+  </div>
+
+  <aside class="detail panel" *ngIf="activeTab !== 'requests' && (selectedEvidence || detailLoading)">
+    <div class="detail-head">
+      <h4>Evidence Detail</h4>
+      <button type="button" class="ghost-btn" (click)="closeDetail()">Close</button>
+    </div>
+
+    <div class="loading" *ngIf="detailLoading">Loading detail...</div>
+
+    <ng-container *ngIf="!detailLoading && selectedEvidence">
+      <div class="detail-meta">
+        <div>
+          <div class="label">Title</div>
+          <div class="value">{{ selectedEvidence.title }}</div>
+        </div>
+        <div>
+          <div class="label">Status</div>
+          <div class="value">{{ selectedEvidence.status }}</div>
+        </div>
+        <div>
+          <div class="label">Type</div>
+          <div class="value">{{ selectedEvidence.type }}</div>
+        </div>
+      </div>
+
+      <div class="quality-card" *ngIf="selectedQuality">
+        <div class="quality-head">
+          <div>
+            <div class="label">Quality score</div>
+            <div class="quality-score" [ngClass]="selectedGradeClass">
+              {{ selectedQuality.score }} / {{ selectedQuality.grade }}
+            </div>
+          </div>
+          <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="recomputeSelectedQuality()">
+            Recompute
+          </button>
+        </div>
+
+        <div class="breakdown">
+          <div class="breakdown-row" *ngFor="let row of qualityBreakdownRows">
+            <div class="row-head">
+              <span>{{ row.key }}</span>
+              <span>{{ row.points }}/{{ row.max }}</span>
+            </div>
+            <div class="bar">
+              <span class="bar-fill" [style.width.%]="barPercent(row.points, row.max)"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="reasons" *ngIf="topReasons.length">
+          <div class="label">Top reasons</div>
+          <ul>
+            <li *ngFor="let reason of topReasons">{{ reason.msg }}</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="checklist" *ngIf="selectedChecklist.length">
+        <div class="label">Onboarding checklist</div>
+        <div class="checklist-row" *ngFor="let item of selectedChecklist">
+          <span class="checkmark" [class.done]="item.done">{{ item.done ? '✓' : '•' }}</span>
+          <span>{{ item.label }}</span>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="reviewSelected('REVIEWED')">
+          Mark reviewed
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="reviewSelected('ACCEPTED')">
+          Accept
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="reviewSelected('REJECTED')">
+          Reject
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="reviewSelected('SUBMITTED')">
+          Send to submitted
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="updateSelectedValidity()">
+          Set validity
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="linkSelectedToControl()">
+          Link control
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="createRequestFromSelected()">
+          Create request
+        </button>
+        <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="downloadSelectedEvidence()">
+          Download
+        </button>
+        <button
+          type="button"
+          class="ghost-btn danger"
+          [disabled]="actionBusy || !selectedEvidence.documentId"
+          (click)="deleteSelectedEvidence()"
+        >
+          Delete
+        </button>
+      </div>
+
+      <div class="links" *ngIf="selectedEvidence.links?.length">
+        <div class="label">Linked controls</div>
+        <div class="chips">
+          <button
+            type="button"
+            class="chip link-chip"
+            *ngFor="let link of selectedEvidence.links"
+            (click)="openControl(link.controlId)"
+          >
+            {{ link.controlCode || link.controlId }}
+          </button>
+        </div>
+      </div>
+
+      <div class="fixes" *ngIf="fixActions.length">
+        <div class="label">Suggested fixes</div>
+        <div class="fix-actions">
+          <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="linkSelectedToControl()">
+            Link to control
+          </button>
+          <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="createRequestFromSelected()">
+            Create request
+          </button>
+          <button type="button" class="ghost-btn" [disabled]="actionBusy" (click)="updateSelectedValidity()">
+            Update metadata
+          </button>
+        </div>
+      </div>
+    </ng-container>
+  </aside>
+</section>

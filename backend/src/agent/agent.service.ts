@@ -67,6 +67,8 @@ type CustomerProbe = {
   reason: string;
 };
 
+type ToneProfile = 'DEFAULT' | 'EGYPTIAN_CASUAL' | 'ARABIC_FORMAL' | 'ENGLISH_NEUTRAL';
+
 @Injectable()
 export class AgentService {
   private readonly apiKey = process.env.OPENAI_API_KEY || '';
@@ -120,6 +122,28 @@ export class AgentService {
     const value = String(framework || '').trim();
     if (value) return value;
     return language === 'ar' ? 'الإطار النشط' : 'the active framework';
+  }
+
+  private normalizeToneProfile(value?: string | null): ToneProfile {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (
+      normalized === 'DEFAULT' ||
+      normalized === 'EGYPTIAN_CASUAL' ||
+      normalized === 'ARABIC_FORMAL' ||
+      normalized === 'ENGLISH_NEUTRAL'
+    ) {
+      return normalized as ToneProfile;
+    }
+    return 'EGYPTIAN_CASUAL';
+  }
+
+  private languageInstruction(language: 'ar' | 'en', toneProfile: ToneProfile) {
+    if (language === 'ar') {
+      if (toneProfile === 'ARABIC_FORMAL') return 'Arabic (formal MSA)';
+      return 'Egyptian Arabic (clear colloquial)';
+    }
+    if (toneProfile === 'ENGLISH_NEUTRAL') return 'English (neutral professional)';
+    return 'English';
   }
 
   private shouldSearchWeb(question: string) {
@@ -328,6 +352,7 @@ Rules:
     evidenceChunks?: EvidenceChunk[];
     hasCustomerDocs?: boolean;
     language?: 'ar' | 'en';
+    toneProfile?: string;
   }): Promise<AgentComplianceResponse> {
     this.assertConfig();
 
@@ -337,14 +362,16 @@ Rules:
       evidenceChunks = [],
       hasCustomerDocs = false,
       language: forcedLanguage,
+      toneProfile: toneProfileRaw,
     } = params;
     const language = forcedLanguage ?? this.detectLanguage(question);
+    const toneProfile = this.normalizeToneProfile(toneProfileRaw);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
 
     // ✅ لو مفيش أدلة عميل (ولا ملفات أصلاً): ندي guidance عام + UNKNOWN
     if (!hasCustomerDocs) {
-      return this.answerGeneral({ framework, question, language });
+      return this.answerGeneral({ framework, question, language, toneProfile });
     }
 
     // ✅ لو مفيش evidence مطابق: اقفل الباب قبل ما نخلط
@@ -410,7 +437,7 @@ You are NOT:
 You ARE a calm, supportive, honest colleague walking side-by-side with the user.
 
 Language:
-- Always respond in ${language === 'ar' ? 'Arabic' : 'English'} only.
+- Always respond in ${this.languageInstruction(language, toneProfile)} only.
 - Do not mix languages in the same response (except file names or control IDs).
 
 Scope & behavior:
@@ -622,11 +649,13 @@ Structure:
     framework?: string | null;
     question: string;
     language?: 'ar' | 'en';
+    toneProfile?: string;
   }): Promise<AgentComplianceResponse> {
     this.assertConfig();
 
-    const { framework, question, language: forcedLanguage } = params;
+    const { framework, question, language: forcedLanguage, toneProfile: toneProfileRaw } = params;
     const language = forcedLanguage ?? this.detectLanguage(question);
+    const toneProfile = this.normalizeToneProfile(toneProfileRaw);
     const wantsWeb = this.shouldSearchWeb(question);
     const webSearchPromise = wantsWeb ? this.searchWeb(question) : Promise.resolve([]);
 
@@ -638,7 +667,7 @@ Role:
 - Do not sound intimidating or bureaucratic.
 
 Language:
-- Respond in ${language === 'ar' ? 'Arabic' : 'English'} only.
+- Respond in ${this.languageInstruction(language, toneProfile)} only.
 - Do not mix languages in the same response (except file names or control IDs).
 
 Guidance rules:
@@ -836,12 +865,14 @@ Structure:
     fileName: string;
     content?: string | null;
     language?: 'ar' | 'en';
+    toneProfile?: string;
     controlCandidates?: ControlCandidate[];
   }): Promise<DocumentMatchResult> {
     this.assertConfig();
 
-    const { framework, fileName, content, language: forcedLanguage, controlCandidates } = params;
+    const { framework, fileName, content, language: forcedLanguage, toneProfile: toneProfileRaw, controlCandidates } = params;
     const language = forcedLanguage ?? this.detectLanguage(content || fileName || '');
+    const toneProfile = this.normalizeToneProfile(toneProfileRaw);
     const trimmedContent = (content || '').trim();
     const hasContent = Boolean(trimmedContent);
     const candidates = Array.isArray(controlCandidates) ? controlCandidates : [];
@@ -883,7 +914,7 @@ You are a supportive cybersecurity compliance teammate for ${this.frameworkLabel
 Analyze ONE customer document and decide whether it is valid evidence for a specific control.
 
 Language:
-- Respond in ${language === 'ar' ? 'Arabic' : 'English'} only.
+- Respond in ${this.languageInstruction(language, toneProfile)} only.
 - Do not mix languages in the same response (except file names or control IDs).
 
 Rules:
@@ -1054,6 +1085,7 @@ Return STRICT JSON only.
     evidenceChunks?: EvidenceChunk[];
     hasCustomerDocs?: boolean;
     language?: 'ar' | 'en';
+    toneProfile?: string;
   }): Promise<AgentControlEvaluation> {
     this.assertConfig();
 
@@ -1062,8 +1094,11 @@ Return STRICT JSON only.
       control,
       evidenceChunks = [],
       hasCustomerDocs = false,
-      language,
+      language: forcedLanguage,
+      toneProfile: toneProfileRaw,
     } = params;
+    const language = forcedLanguage ?? this.detectLanguage(`${control?.title || ''} ${control?.summary || ''}`);
+    const toneProfile = this.normalizeToneProfile(toneProfileRaw);
 
     if (!hasCustomerDocs) {
       const languageLabel = language === 'ar' ? 'ar' : 'en';
@@ -1107,7 +1142,7 @@ Return STRICT JSON only.
       };
     }
 
-    const languageLabel = language === 'ar' ? 'Arabic' : 'English';
+    const languageLabel = this.languageInstruction(language, toneProfile);
 
     const instructions = `
 You are a supportive cybersecurity compliance teammate.

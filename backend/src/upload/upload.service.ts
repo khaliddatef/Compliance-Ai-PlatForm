@@ -5,11 +5,14 @@ import { AgentService } from '../agent/agent.service';
 import type { ControlCandidate } from '../agent/agent.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import { EvidenceService } from '../evidence/evidence.service';
+import { DocumentInsightsService } from './document-insights.service';
 
 type DocKind = 'CUSTOMER' | 'STANDARD';
 
 type IngestResult =
-  | { documentId: string; ok: true; chunks: number }
+  | { documentId: string; ok: true; chunks: number; deduped?: boolean }
   | { documentId: string; ok: false; message: string };
 
 type EvidenceEvalRow = {
@@ -31,6 +34,8 @@ export class UploadService {
     private readonly prisma: PrismaService,
     private readonly ingest: IngestService,
     private readonly agent: AgentService,
+    private readonly evidence: EvidenceService,
+    private readonly documentInsights: DocumentInsightsService,
   ) {}
 
   private assertConfig() {
@@ -74,6 +79,97 @@ export class UploadService {
 
     await fs.writeFile(fullPath, buf);
     return fullPath;
+  }
+
+  private resolveAbsoluteStoragePath(storagePath: string) {
+    return path.isAbsolute(storagePath) ? storagePath : path.resolve(process.cwd(), storagePath);
+  }
+
+  private async computeFileChecksumSha256(storagePath: string) {
+    const resolvedPath = this.resolveAbsoluteStoragePath(storagePath);
+    const buffer = await fs.readFile(resolvedPath);
+    return createHash('sha256').update(buffer).digest('hex');
+  }
+
+  private async deleteStorageFileQuietly(storagePath: string) {
+    const resolvedPath = this.resolveAbsoluteStoragePath(storagePath);
+    try {
+      await fs.unlink(resolvedPath);
+    } catch {
+      // ignore missing file
+    }
+  }
+
+  private splitFileName(name: string) {
+    const safeName = String(name || '').trim() || 'document';
+    const ext = path.extname(safeName);
+    const base = ext ? safeName.slice(0, -ext.length) : safeName;
+    return { base: base || 'document', ext };
+  }
+
+  private escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async generateDuplicateDisplayName(
+    conversationId: string,
+    kind: DocKind,
+    originalName: string,
+  ) {
+    const { base, ext } = this.splitFileName(originalName);
+    const siblings = await this.prisma.document.findMany({
+      where: {
+        conversationId,
+        kind,
+        originalName: { startsWith: base },
+      },
+      select: { originalName: true },
+    });
+
+    const escapedBase = this.escapeRegExp(base);
+    const escapedExt = this.escapeRegExp(ext);
+    const suffixPattern = new RegExp(`^${escapedBase}_(\\d+)${escapedExt}$`, 'i');
+    const plainName = `${base}${ext}`.toLowerCase();
+    let maxSuffix = siblings.some((sibling) => String(sibling.originalName || '').toLowerCase() === plainName)
+      ? 1
+      : 0;
+
+    for (const sibling of siblings) {
+      const match = suffixPattern.exec(String(sibling.originalName || ''));
+      if (!match) continue;
+      const suffix = Number.parseInt(match[1], 10);
+      if (Number.isFinite(suffix) && suffix > maxSuffix) {
+        maxSuffix = suffix;
+      }
+    }
+
+    const nextSuffix = Math.max(2, maxSuffix + 1);
+    return `${base}_${nextSuffix}${ext}`;
+  }
+
+  private async cloneDocumentChunks(sourceDocumentId: string, targetDocumentId: string) {
+    const sourceChunks = await this.prisma.documentChunk.findMany({
+      where: { documentId: sourceDocumentId },
+      orderBy: { chunkIndex: 'asc' },
+      select: {
+        chunkIndex: true,
+        text: true,
+        embedding: true,
+      },
+    });
+
+    if (!sourceChunks.length) return 0;
+
+    await this.prisma.documentChunk.createMany({
+      data: sourceChunks.map((chunk) => ({
+        documentId: targetDocumentId,
+        chunkIndex: chunk.chunkIndex,
+        text: chunk.text,
+        embedding: chunk.embedding as any,
+      })),
+    });
+
+    return sourceChunks.length;
   }
 
   private async createVectorStore(name: string): Promise<string> {
@@ -259,6 +355,13 @@ export class UploadService {
     count: number;
     documents: any[];
     ingestResults: IngestResult[];
+    dedupedCount: number;
+    dedupedDocuments: Array<{
+      incomingName: string;
+      createdDocumentId: string;
+      reusedDocumentId: string;
+      checksumSha256: string;
+    }>;
     customerVectorStoreId?: string | null;
   }> {
     const { conversationId, kind, files, user, language } = params;
@@ -317,11 +420,122 @@ export class UploadService {
       });
     }
 
-    const documents = await Promise.all(
-      files.map(async (f) => {
-        const storagePath = await this.resolveStoragePath(f);
+    const documents: any[] = [];
+    const uploadEntries: Array<{
+      documentId: string;
+    }> = [];
+    const dedupedDocuments: Array<{
+      incomingName: string;
+      createdDocumentId: string;
+      reusedDocumentId: string;
+      checksumSha256: string;
+      reusedChunks: number;
+    }> = [];
 
-        return this.prisma.document.create({
+    for (const f of files) {
+      const storagePath = await this.resolveStoragePath(f);
+      const checksumSha256 = await this.computeFileChecksumSha256(storagePath);
+      const duplicate = await this.prisma.document.findFirst({
+        where: {
+          conversationId,
+          kind,
+          checksumSha256,
+        },
+        include: {
+          _count: { select: { chunks: true } },
+        },
+      });
+
+      if (duplicate) {
+        const duplicateName = await this.generateDuplicateDisplayName(
+          conversationId,
+          kind,
+          f.originalname,
+        );
+        const dedupedCopy = await this.prisma.document.create({
+          data: {
+            conversationId,
+            kind,
+            originalName: duplicateName,
+            mimeType: f.mimetype,
+            sizeBytes: f.size,
+            storagePath,
+            checksumSha256: null,
+            docType: duplicate.docType,
+            matchControlId: duplicate.matchControlId,
+            matchStatus: duplicate.matchStatus,
+            matchNote: duplicate.matchNote,
+            matchRecommendations: duplicate.matchRecommendations as any,
+            reviewedAt: duplicate.reviewedAt,
+            submittedAt: duplicate.submittedAt,
+            analysisVersion: Number(duplicate.analysisVersion || 1),
+            analysisComputedAt: duplicate.analysisComputedAt,
+          } as any,
+        });
+        const dedupeAnalysis = this.documentInsights.cloneForDuplicate({
+          existing: duplicate.analysisJson,
+          documentId: dedupedCopy.id,
+          duplicateOfDocumentId: duplicate.id,
+          fileName: dedupedCopy.originalName,
+          checksumSha256,
+        });
+        if (dedupeAnalysis) {
+          await this.prisma.document.update({
+            where: { id: dedupedCopy.id },
+            data: {
+              analysisJson: dedupeAnalysis as any,
+              analysisVersion: Number(dedupeAnalysis.version || 1),
+              analysisComputedAt: new Date(),
+            } as any,
+          });
+        }
+        const clonedChunks = await this.cloneDocumentChunks(duplicate.id, dedupedCopy.id);
+        if (!dedupeAnalysis) {
+          const clonedTextChunks = await this.getDocumentChunksForInsights(dedupedCopy.id);
+          const generatedInsights = this.documentInsights.extract({
+            document: {
+              id: dedupedCopy.id,
+              originalName: dedupedCopy.originalName,
+              mimeType: dedupedCopy.mimeType,
+              sizeBytes: dedupedCopy.sizeBytes,
+              checksumSha256,
+              createdAt: dedupedCopy.createdAt,
+            },
+            content: clonedTextChunks.map((chunk) => chunk.text).join('\n'),
+            chunks: clonedTextChunks,
+            duplicateOfDocumentId: duplicate.id,
+            context: {
+              matchControlId: duplicate.matchControlId,
+              matchStatus: duplicate.matchStatus,
+              recommendations: Array.isArray(duplicate.matchRecommendations)
+                ? duplicate.matchRecommendations
+                    .map((item: unknown) => String(item || '').trim())
+                    .filter(Boolean)
+                : [],
+            },
+          });
+          await this.prisma.document.update({
+            where: { id: dedupedCopy.id },
+            data: {
+              analysisJson: generatedInsights as any,
+              analysisVersion: Number(generatedInsights.version || 1),
+              analysisComputedAt: new Date(),
+            } as any,
+          });
+        }
+        dedupedDocuments.push({
+          incomingName: f.originalname,
+          createdDocumentId: dedupedCopy.id,
+          reusedDocumentId: duplicate.id,
+          checksumSha256,
+          reusedChunks: clonedChunks,
+        });
+        uploadEntries.push({ documentId: dedupedCopy.id });
+        continue;
+      }
+
+      try {
+        const created = await this.prisma.document.create({
           data: {
             conversationId,
             kind,
@@ -329,10 +543,129 @@ export class UploadService {
             mimeType: f.mimetype,
             sizeBytes: f.size,
             storagePath,
+            checksumSha256,
           } as any,
         });
-      }),
-    );
+        documents.push(created);
+        uploadEntries.push({ documentId: created.id });
+      } catch (error: any) {
+        if (error?.code !== 'P2002') {
+          throw error;
+        }
+
+        const duplicateAfterRace = await this.prisma.document.findFirst({
+          where: {
+            conversationId,
+            kind,
+            checksumSha256,
+          },
+          include: {
+            _count: { select: { chunks: true } },
+          },
+        });
+
+        if (!duplicateAfterRace) {
+          throw error;
+        }
+
+        const duplicateName = await this.generateDuplicateDisplayName(
+          conversationId,
+          kind,
+          f.originalname,
+        );
+        const dedupedCopy = await this.prisma.document.create({
+          data: {
+            conversationId,
+            kind,
+            originalName: duplicateName,
+            mimeType: f.mimetype,
+            sizeBytes: f.size,
+            storagePath,
+            checksumSha256: null,
+            docType: duplicateAfterRace.docType,
+            matchControlId: duplicateAfterRace.matchControlId,
+            matchStatus: duplicateAfterRace.matchStatus,
+            matchNote: duplicateAfterRace.matchNote,
+            matchRecommendations: duplicateAfterRace.matchRecommendations as any,
+            reviewedAt: duplicateAfterRace.reviewedAt,
+            submittedAt: duplicateAfterRace.submittedAt,
+            analysisVersion: Number(duplicateAfterRace.analysisVersion || 1),
+            analysisComputedAt: duplicateAfterRace.analysisComputedAt,
+          } as any,
+        });
+        const duplicateAnalysis = this.documentInsights.cloneForDuplicate({
+          existing: duplicateAfterRace.analysisJson,
+          documentId: dedupedCopy.id,
+          duplicateOfDocumentId: duplicateAfterRace.id,
+          fileName: dedupedCopy.originalName,
+          checksumSha256,
+        });
+        if (duplicateAnalysis) {
+          await this.prisma.document.update({
+            where: { id: dedupedCopy.id },
+            data: {
+              analysisJson: duplicateAnalysis as any,
+              analysisVersion: Number(duplicateAnalysis.version || 1),
+              analysisComputedAt: new Date(),
+            } as any,
+          });
+        }
+        const clonedChunks = await this.cloneDocumentChunks(
+          duplicateAfterRace.id,
+          dedupedCopy.id,
+        );
+        if (!duplicateAnalysis) {
+          const clonedTextChunks = await this.getDocumentChunksForInsights(dedupedCopy.id);
+          const generatedInsights = this.documentInsights.extract({
+            document: {
+              id: dedupedCopy.id,
+              originalName: dedupedCopy.originalName,
+              mimeType: dedupedCopy.mimeType,
+              sizeBytes: dedupedCopy.sizeBytes,
+              checksumSha256,
+              createdAt: dedupedCopy.createdAt,
+            },
+            content: clonedTextChunks.map((chunk) => chunk.text).join('\n'),
+            chunks: clonedTextChunks,
+            duplicateOfDocumentId: duplicateAfterRace.id,
+            context: {
+              matchControlId: duplicateAfterRace.matchControlId,
+              matchStatus: duplicateAfterRace.matchStatus,
+              recommendations: Array.isArray(duplicateAfterRace.matchRecommendations)
+                ? duplicateAfterRace.matchRecommendations
+                    .map((item: unknown) => String(item || '').trim())
+                    .filter(Boolean)
+                : [],
+            },
+          });
+          await this.prisma.document.update({
+            where: { id: dedupedCopy.id },
+            data: {
+              analysisJson: generatedInsights as any,
+              analysisVersion: Number(generatedInsights.version || 1),
+              analysisComputedAt: new Date(),
+            } as any,
+          });
+        }
+        dedupedDocuments.push({
+          incomingName: f.originalname,
+          createdDocumentId: dedupedCopy.id,
+          reusedDocumentId: duplicateAfterRace.id,
+          checksumSha256,
+          reusedChunks: clonedChunks,
+        });
+        uploadEntries.push({ documentId: dedupedCopy.id });
+      }
+    }
+
+    if (dedupedDocuments.length) {
+      console.log(
+        '[UPLOAD] dedupe reused',
+        dedupedDocuments.length,
+        'document(s) in conversation',
+        conversationId,
+      );
+    }
 
     const attachToVectorStore = async (doc: any, vectorStoreId: string, label: string) => {
       try {
@@ -355,11 +688,21 @@ export class UploadService {
       }
     }
 
-    // DB ingest: optional (we're canceling RAG path, so you can disable it)
-    const ingestResults: IngestResult[] = [];
+    // DB ingest: optional for non-customer docs only.
+    // Customer documents require local chunks for matching + evidence analysis.
+    const ingestResults: IngestResult[] = dedupedDocuments.map((entry) => ({
+      documentId: entry.createdDocumentId,
+      ok: true,
+      chunks: entry.reusedChunks,
+      deduped: true,
+    }));
     const disableIngest = String(process.env.DISABLE_DB_INGEST || '').toLowerCase() === 'true';
+    const skipIngest = disableIngest && kind !== 'CUSTOMER';
 
-    if (!disableIngest) {
+    if (!skipIngest) {
+      if (disableIngest && kind === 'CUSTOMER') {
+        console.warn('[INGEST] DISABLE_DB_INGEST=true ignored for CUSTOMER uploads (required for analysis).');
+      }
       for (const doc of documents) {
         try {
           const res = await this.ingest.ingestDocument(doc.id);
@@ -380,7 +723,8 @@ export class UploadService {
     if (kind === 'CUSTOMER') {
       for (const doc of documents) {
         try {
-          const extractedText = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+          const extractedText = await this.getOrExtractDocumentText(doc.id);
+          const chunks = await this.getDocumentChunksForInsights(doc.id);
           console.log('[DOC MATCH] document text chars=', extractedText.length, 'doc=', doc.id, 'name=', doc.originalName);
           if (!extractedText) {
             const noTextNote =
@@ -391,6 +735,23 @@ export class UploadService {
               language === 'ar'
                 ? ['ارفع نسخة أوضح بصيغة PDF/DOCX أو أضف سياقًا أكثر.']
                 : ['Upload a clearer PDF/DOCX or provide more context.'];
+            const noTextInsights = this.documentInsights.extract({
+              document: {
+                id: doc.id,
+                originalName: doc.originalName,
+                mimeType: doc.mimeType,
+                sizeBytes: doc.sizeBytes,
+                checksumSha256: doc.checksumSha256,
+                createdAt: doc.createdAt,
+              },
+              content: extractedText,
+              chunks,
+              context: {
+                matchControlId: null,
+                matchStatus: 'UNKNOWN',
+                recommendations: noTextRecs,
+              },
+            });
             await this.prisma.document.update({
               where: { id: doc.id },
               data: {
@@ -398,6 +759,9 @@ export class UploadService {
                 matchNote: noTextNote,
                 matchRecommendations: noTextRecs,
                 reviewedAt: new Date(),
+                analysisJson: noTextInsights as any,
+                analysisVersion: Number(noTextInsights.version || 1),
+                analysisComputedAt: new Date(),
               } as any,
             });
             continue;
@@ -412,6 +776,23 @@ export class UploadService {
             language,
             controlCandidates: candidates,
           });
+          const insights = this.documentInsights.extract({
+            document: {
+              id: doc.id,
+              originalName: doc.originalName,
+              mimeType: doc.mimeType,
+              sizeBytes: doc.sizeBytes,
+              checksumSha256: doc.checksumSha256,
+              createdAt: doc.createdAt,
+            },
+            content: extractedText,
+            chunks,
+            context: {
+              matchControlId: analysis.matchControlId,
+              matchStatus: analysis.matchStatus,
+              recommendations: analysis.matchRecommendations,
+            },
+          });
 
           await this.prisma.document.update({
             where: { id: doc.id },
@@ -422,6 +803,9 @@ export class UploadService {
               matchNote: analysis.matchNote,
               matchRecommendations: analysis.matchRecommendations,
               reviewedAt: new Date(),
+              analysisJson: insights as any,
+              analysisVersion: Number(insights.version || 1),
+              analysisComputedAt: new Date(),
             } as any,
           });
         } catch (e: any) {
@@ -435,15 +819,65 @@ export class UploadService {
       });
     }
 
-    const documentsWithReferences = await this.attachFrameworkReferences(analyzedDocs);
+    const syncedDocumentIds = new Set<string>();
+    for (const doc of analyzedDocs) {
+      try {
+        await this.evidence.syncEvidenceFromDocument({
+          documentId: doc.id,
+          fallbackCreatedById: user.id,
+        });
+        syncedDocumentIds.add(String(doc.id));
+      } catch (e: any) {
+        console.error('[EVIDENCE] sync failed for upload', doc.id, e?.message || e);
+      }
+    }
+
+    for (const entry of uploadEntries) {
+      const documentId = String(entry.documentId || '').trim();
+      if (!documentId || syncedDocumentIds.has(documentId)) continue;
+      try {
+        await this.evidence.syncEvidenceFromDocument({
+          documentId,
+          fallbackCreatedById: user.id,
+        });
+      } catch (e: any) {
+        console.error('[EVIDENCE] sync failed for upload duplicate', documentId, e?.message || e);
+      }
+    }
+
+    const responseDocIds = Array.from(new Set(uploadEntries.map((entry) => entry.documentId)));
+    const responseDocsRaw = responseDocIds.length
+      ? await this.prisma.document.findMany({
+          where: { id: { in: responseDocIds } },
+          include: {
+            conversation: { select: { title: true } },
+            _count: { select: { chunks: true } },
+          },
+        })
+      : [];
+    const responseDocsWithHints = await this.attachEvaluationHints(responseDocsRaw);
+    const responseDocsWithReferences = await this.attachFrameworkReferences(responseDocsWithHints);
+    const responseDocById = new Map(
+      responseDocsWithReferences.map((doc) => [String(doc.id), doc]),
+    );
+    const orderedResponseDocs = uploadEntries
+      .map((entry) => responseDocById.get(String(entry.documentId)))
+      .filter(Boolean);
 
     return {
       ok: true,
       conversationId,
       kind,
-      count: documents.length,
-      documents: documentsWithReferences,
+      count: files.length,
+      documents: orderedResponseDocs,
       ingestResults,
+      dedupedCount: dedupedDocuments.length,
+      dedupedDocuments: dedupedDocuments.map((entry) => ({
+        incomingName: entry.incomingName,
+        createdDocumentId: entry.createdDocumentId,
+        reusedDocumentId: entry.reusedDocumentId,
+        checksumSha256: entry.checksumSha256,
+      })),
       customerVectorStoreId,
     };
   }
@@ -521,8 +955,9 @@ export class UploadService {
     if (!doc) return null;
 
     const withHints = await this.attachEvaluationHints([doc]);
-    const withRefs = await this.attachFrameworkReferences(withHints);
-    return withRefs[0] || withHints[0] || doc;
+    const withLinkFallback = await this.attachEvidenceLinkControlFallback(withHints);
+    const withRefs = await this.attachFrameworkReferences(withLinkFallback);
+    return withRefs[0] || withLinkFallback[0] || withHints[0] || doc;
   }
 
   getDocumentWithOwner(id: string) {
@@ -542,7 +977,8 @@ export class UploadService {
     });
     if (!doc) return null;
 
-    const extractedText = String((await this.getDocumentExcerpt(doc.id)) || '').trim();
+    const extractedText = await this.getOrExtractDocumentText(doc.id);
+    const chunks = await this.getDocumentChunksForInsights(doc.id);
     if (!extractedText) {
       const noTextNote =
         language === 'ar'
@@ -552,6 +988,23 @@ export class UploadService {
         language === 'ar'
           ? ['ارفع نسخة أوضح بصيغة PDF/DOCX أو أضف سياقًا أكثر.']
           : ['Upload a clearer PDF/DOCX or provide more context.'];
+      const noTextInsights = this.documentInsights.extract({
+        document: {
+          id: doc.id,
+          originalName: doc.originalName,
+          mimeType: doc.mimeType,
+          sizeBytes: doc.sizeBytes,
+          checksumSha256: doc.checksumSha256,
+          createdAt: doc.createdAt,
+        },
+        content: extractedText,
+        chunks,
+        context: {
+          matchControlId: null,
+          matchStatus: 'UNKNOWN',
+          recommendations: noTextRecs,
+        },
+      });
       const pending = await this.prisma.document.update({
         where: { id: doc.id },
         data: {
@@ -559,11 +1012,17 @@ export class UploadService {
           matchNote: noTextNote,
           matchRecommendations: noTextRecs,
           reviewedAt: new Date(),
+          analysisJson: noTextInsights as any,
+          analysisVersion: Number(noTextInsights.version || 1),
+          analysisComputedAt: new Date(),
         } as any,
         include: {
           conversation: { select: { title: true } },
           _count: { select: { chunks: true } },
         },
+      });
+      await this.evidence.syncEvidenceFromDocument({
+        documentId: pending.id,
       });
       const withRefs = await this.attachFrameworkReferences([pending]);
       return withRefs[0] || pending;
@@ -579,6 +1038,23 @@ export class UploadService {
       language,
       controlCandidates: candidates,
     });
+    const insights = this.documentInsights.extract({
+      document: {
+        id: doc.id,
+        originalName: doc.originalName,
+        mimeType: doc.mimeType,
+        sizeBytes: doc.sizeBytes,
+        checksumSha256: doc.checksumSha256,
+        createdAt: doc.createdAt,
+      },
+      content: extractedText,
+      chunks,
+      context: {
+        matchControlId: analysis.matchControlId,
+        matchStatus: analysis.matchStatus,
+        recommendations: analysis.matchRecommendations,
+      },
+    });
 
     const updated = await this.prisma.document.update({
       where: { id: doc.id },
@@ -589,11 +1065,17 @@ export class UploadService {
         matchNote: analysis.matchNote,
         matchRecommendations: analysis.matchRecommendations,
         reviewedAt: new Date(),
+        analysisJson: insights as any,
+        analysisVersion: Number(insights.version || 1),
+        analysisComputedAt: new Date(),
       } as any,
       include: {
         conversation: { select: { title: true } },
         _count: { select: { chunks: true } },
       },
+    });
+    await this.evidence.syncEvidenceFromDocument({
+      documentId: updated.id,
     });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
@@ -608,6 +1090,7 @@ export class UploadService {
     if (!doc) return null;
 
     await this.prisma.document.delete({ where: { id } });
+    await this.evidence.deleteEvidenceByDocumentId(id);
 
     const resolvedPath = path.isAbsolute(doc.storagePath)
       ? doc.storagePath
@@ -660,6 +1143,9 @@ export class UploadService {
         _count: { select: { chunks: true } },
       },
     });
+    await this.evidence.syncEvidenceFromDocument({
+      documentId: updated.id,
+    });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
     return withRefs[0] || updated;
@@ -688,6 +1174,9 @@ export class UploadService {
         conversation: { select: { title: true, user: { select: { name: true, email: true } } } },
         _count: { select: { chunks: true } },
       },
+    });
+    await this.evidence.syncEvidenceFromDocument({
+      documentId: updated.id,
     });
 
     const withRefs = await this.attachFrameworkReferences([updated]);
@@ -806,6 +1295,11 @@ export class UploadService {
         }),
       ),
     );
+    for (const updated of updates) {
+      await this.evidence.syncEvidenceFromDocument({
+        documentId: updated.id,
+      });
+    }
 
     return { ok: true as const, count: updates.length, documents: updates };
   }
@@ -985,6 +1479,38 @@ export class UploadService {
     });
   }
 
+  private async attachEvidenceLinkControlFallback(docs: any[]) {
+    if (!docs?.length) return docs;
+
+    const result = [...docs];
+    for (let i = 0; i < result.length; i += 1) {
+      const doc = result[i];
+      const documentId = String(doc?.id || '').trim();
+      const currentControl = String(doc?.matchControlId || '').trim();
+      if (!documentId || currentControl) continue;
+
+      const rows = await this.prisma.$queryRaw<any[]>`
+        SELECT cd.controlCode AS controlCode
+        FROM "Evidence" e
+        INNER JOIN "EvidenceControlLink" l ON l.evidenceId = e.id
+        INNER JOIN "ControlDefinition" cd ON cd.id = l.controlId
+        WHERE e.documentId = ${documentId}
+        ORDER BY datetime(l.createdAt) DESC
+        LIMIT 1
+      `;
+
+      const linkedControlCode = String(rows[0]?.controlCode || '').trim();
+      if (linkedControlCode) {
+        result[i] = {
+          ...doc,
+          matchControlId: linkedControlCode,
+        };
+      }
+    }
+
+    return result;
+  }
+
   private defaultMatchNote(status: string) {
     switch (status) {
       case 'COMPLIANT':
@@ -1010,6 +1536,40 @@ export class UploadService {
     if (!chunks.length) return '';
     const joined = chunks.map((chunk) => chunk.text).join('\n');
     return joined;
+  }
+
+  private async getDocumentChunksForInsights(documentId: string) {
+    const chunks = await this.prisma.documentChunk.findMany({
+      where: { documentId },
+      orderBy: { chunkIndex: 'asc' },
+      select: {
+        chunkIndex: true,
+        text: true,
+      },
+    });
+    return chunks.map((chunk) => ({
+      chunkIndex: chunk.chunkIndex,
+      text: String(chunk.text || ''),
+    }));
+  }
+
+  private async getOrExtractDocumentText(documentId: string) {
+    let text = String((await this.getDocumentExcerpt(documentId)) || '').trim();
+    if (text) return text;
+
+    try {
+      const ingest = await this.ingest.ingestDocument(documentId);
+      if (!ingest.ok) {
+        console.warn('[INGEST] retry extract failed for doc=', documentId, 'reason=', ingest.message);
+        return '';
+      }
+    } catch (error: any) {
+      console.warn('[INGEST] retry extract threw for doc=', documentId, 'reason=', error?.message || error);
+      return '';
+    }
+
+    text = String((await this.getDocumentExcerpt(documentId)) || '').trim();
+    return text;
   }
 
   private normalizeSearchText(value: string) {

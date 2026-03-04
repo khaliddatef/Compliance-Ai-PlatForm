@@ -3,7 +3,8 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { Message, MessageAction, MessageReference } from '../../models/message.model';
 
 type RenderLine = {
-  type: 'bullet' | 'text';
+  type: 'bullet' | 'text' | 'option';
+  optionIndex?: string;
   parts: { text: string; citation: boolean }[];
 };
 
@@ -30,6 +31,14 @@ export class MessageBubbleComponent {
       .filter((line) => line.trim().length)
       .map((line) => {
         const trimmed = line.trim();
+        const optionMatch = trimmed.match(/^(\d+)[).\-]\s*(.+)$/);
+        if (optionMatch) {
+          return {
+            type: 'option' as const,
+            optionIndex: optionMatch[1],
+            parts: this.parseCitations(optionMatch[2]),
+          };
+        }
         const isBullet = trimmed.startsWith('-') || trimmed.startsWith('*');
         const text = isBullet ? trimmed.replace(/^[-*]\s*/, '') : trimmed;
         return {
@@ -115,6 +124,53 @@ export class MessageBubbleComponent {
     return this.message?.reference;
   }
 
+  get hasStructuredCards() {
+    return this.message?.messageType === 'AI_STRUCTURED' && this.structuredCards.length > 0;
+  }
+
+  get structuredCards() {
+    const cards = Array.isArray(this.message?.cards) ? this.message.cards : [];
+    return cards.filter((card) => this.isRenderableCard(card));
+  }
+
+  get structuredSources() {
+    if (!Array.isArray(this.message?.sources)) return [];
+    return this.message.sources.filter((source) => {
+      const objectType = String(source?.objectType || '').trim();
+      const id = String(source?.id || '').trim();
+      if (!objectType || !id) return false;
+      return objectType.toLowerCase() !== 'routemeta';
+    });
+  }
+
+  formatCardItem(item: string | { type?: string; example?: string }) {
+    if (typeof item === 'string') return item;
+    const type = String(item?.type || '').trim();
+    const example = String(item?.example || '').trim();
+    if (type && example) return `${type}: ${example}`;
+    return type || example || '';
+  }
+
+  cardTitle(card: any) {
+    const type = String(card?.type || '').trim().toLowerCase();
+    if (type === 'summary') return 'Summary';
+    if (type === 'assessment') return 'Assessment';
+    if (type === 'gaps') return 'Gaps';
+    if (type === 'evidence_needed') return 'Evidence Needed';
+    if (type === 'recommended_actions') return 'Recommended Actions';
+    return String(card?.title || card?.type || '').trim() || 'Card';
+  }
+
+  cardClass(card: any) {
+    const type = String(card?.type || '').trim().toLowerCase();
+    if (type === 'summary') return 'card-summary';
+    if (type === 'assessment') return 'card-assessment';
+    if (type === 'gaps') return 'card-gaps';
+    if (type === 'evidence_needed') return 'card-evidence';
+    if (type === 'recommended_actions') return 'card-actions';
+    return '';
+  }
+
   get referenceLabel() {
     if (!this.reference) return '';
     return this.reference.label || (this.reference.type === 'kb' ? 'Control reference' : 'Source');
@@ -171,5 +227,13 @@ export class MessageBubbleComponent {
     }
 
     return parts.length ? parts : [{ text, citation: false }];
+  }
+
+  private isRenderableCard(card: any) {
+    if (!card || typeof card !== 'object') return false;
+    const hasLines = Array.isArray(card.lines) && card.lines.some((line: unknown) => String(line || '').trim().length > 0);
+    const hasItems = Array.isArray(card.items) && card.items.some((item: unknown) => String(this.formatCardItem(item as any) || '').trim().length > 0);
+    const hasMeta = Boolean(card.status) || Number.isFinite(Number(card.confidence)) || Boolean(card.scope);
+    return hasLines || hasItems || hasMeta;
   }
 }

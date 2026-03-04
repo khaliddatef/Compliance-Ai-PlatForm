@@ -45,6 +45,7 @@ export class AuthService {
             email: user.email,
             role: user.role,
           });
+          this.chatService.personalizeStarterGreeting(user.name);
         } else {
           this.userSignal.set(null);
         }
@@ -85,7 +86,7 @@ export class AuthService {
         });
         this.sessionChecked = true;
         this.sessionCheckRequest = undefined;
-        this.chatService.resetForUser();
+        this.chatService.resetForUser(user.name);
       }),
       map(() => true),
     );

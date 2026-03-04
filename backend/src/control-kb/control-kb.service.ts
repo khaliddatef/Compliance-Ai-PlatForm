@@ -1,7 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ControlContext } from '../agent/agent.service';
+import { EvidenceService } from '../evidence/evidence.service';
+import { EvidenceQualityService } from '../evidence/evidence-quality.service';
+import type { AuthUser } from '../auth/auth.service';
+import { deriveControlComplianceStatus, deriveTestComponentStatus } from './control-status.util';
 
 const DEFAULT_ACCEPTANCE = 'Evidence clearly meets the requirement.';
 const DEFAULT_PARTIAL = 'Evidence partially meets the requirement or is incomplete.';
@@ -36,8 +40,16 @@ const GAP_ALIAS_MAP: Record<string, ComplianceGapKey> = {
 };
 
 @Injectable()
-export class ControlKbService {
-  constructor(private readonly prisma: PrismaService) {}
+export class ControlKbService implements OnModuleInit {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly evidence: EvidenceService,
+    private readonly evidenceQuality: EvidenceQualityService,
+  ) {}
+
+  async onModuleInit() {
+    await this.ensureOperationalSchema();
+  }
 
   async listTopics(framework?: string | null, includeDisabled = false) {
     const activeFrameworks = includeDisabled ? null : await this.getActiveFrameworkSet();
@@ -1561,6 +1573,402 @@ export class ControlKbService {
       evidence,
       testComponents: (control.testComponents || []).map((item) => item.requirement),
     };
+  }
+
+  async getControlStatus(controlId: string) {
+    const control = await this.prisma.controlDefinition.findUnique({
+      where: { id: controlId },
+      include: {
+        testComponents: {
+          select: { id: true, requirement: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+    if (!control) {
+      throw new BadRequestException('Control not found');
+    }
+
+    const requiredCount = Math.max(control.testComponents.length, 0);
+    const acceptedEvidenceRows = await this.prisma.$queryRaw<any[]>`
+      SELECT DISTINCT
+        e.id,
+        e.title,
+        e.qualityScore,
+        e.qualityGrade,
+        e.qualityFactors,
+        e.qualityComputedAt,
+        e.qualityVersion,
+        e.validTo
+      FROM "EvidenceControlLink" l
+      INNER JOIN "Evidence" e ON e.id = l.evidenceId
+      WHERE l.controlId = ${controlId}
+        AND e.status = 'ACCEPTED'
+        AND (
+          e.validTo IS NULL
+          OR datetime(e.validTo) >= datetime('now')
+        )
+    `;
+
+    const acceptedEvidence = await Promise.all(
+      acceptedEvidenceRows.map(async (row) => {
+        const parsedFactors = this.parseQualityFactors(row.qualityFactors);
+        const hasQuality = row.qualityScore !== null && row.qualityScore !== undefined && row.qualityComputedAt;
+        if (hasQuality && Number(row.qualityVersion || 0) === 1) {
+          return {
+            id: row.id,
+            title: row.title || 'Evidence',
+            score: Number(row.qualityScore),
+            grade: String(row.qualityGrade || '').toUpperCase() || null,
+            factors: parsedFactors,
+          };
+        }
+
+        const computed = await this.evidenceQuality.recomputeEvidenceQuality({
+          evidenceId: String(row.id || ''),
+          actor: null,
+          reason: 'CONTROL_STATUS_LAZY_RECOMPUTE',
+          requestId: null,
+          force: false,
+        });
+        return {
+          id: row.id,
+          title: row.title || 'Evidence',
+          score: Number(computed.score || 0),
+          grade: computed.grade,
+          factors: computed.factors,
+        };
+      }),
+    );
+    const acceptedCount = acceptedEvidence.length;
+
+    const componentFulfillmentRows = await this.prisma.$queryRaw<Array<{ evidenceId: string; testComponentId: string }>>`
+      SELECT
+        f.evidenceId,
+        r.testComponentId
+      FROM "EvidenceRequestFulfillment" f
+      INNER JOIN "ControlEvidenceRequest" r ON r.id = f.requestId
+      WHERE r.controlId = ${controlId}
+        AND r.testComponentId IS NOT NULL
+    `;
+    const componentEvidenceMap = new Map<string, Set<string>>();
+    for (const row of componentFulfillmentRows) {
+      const componentId = String(row.testComponentId || '').trim();
+      const evidenceId = String(row.evidenceId || '').trim();
+      if (!componentId || !evidenceId) continue;
+      const bucket = componentEvidenceMap.get(componentId) || new Set<string>();
+      bucket.add(evidenceId);
+      componentEvidenceMap.set(componentId, bucket);
+    }
+
+    const evidenceById = new Map(acceptedEvidence.map((item) => [item.id, item]));
+
+    const componentStatuses = control.testComponents.map((component) => {
+      const mappedIds = Array.from(componentEvidenceMap.get(component.id) || []);
+      const mappedEvidence = mappedIds
+        .map((id) => evidenceById.get(id))
+        .filter((item): item is NonNullable<typeof item> => !!item);
+      const pool = mappedEvidence.length ? mappedEvidence : acceptedEvidence;
+      const best = pool.reduce<{ id: string | null; score: number | null; reasons: string[] }>(
+        (acc, item) => {
+          const score = Number(item.score || 0);
+          if (acc.score === null || score > acc.score) {
+            return {
+              id: item.id,
+              score,
+              reasons: Array.isArray(item.factors?.reasons)
+                ? item.factors.reasons.map((reason: any) => String(reason?.code || '')).filter(Boolean)
+                : [],
+            };
+          }
+          return acc;
+        },
+        { id: null, score: null, reasons: [] },
+      );
+      const hasAcceptedEvidence = pool.length > 0;
+      const status = deriveTestComponentStatus(best.score, hasAcceptedEvidence);
+      return {
+        componentId: component.id,
+        requirement: component.requirement || '',
+        status,
+        bestEvidenceId: best.id,
+        bestScore: best.score,
+        reasonCodes: best.reasons,
+        hasMappedEvidence: mappedEvidence.length > 0,
+      };
+    });
+
+    const latestAssessmentRows = await this.prisma.$queryRaw<any[]>`
+      SELECT status, confidence, summary, assessedAt, assessedById
+      FROM "ControlAssessment"
+      WHERE controlId = ${controlId}
+      ORDER BY datetime(assessedAt) DESC
+      LIMIT 1
+    `;
+    const latestAssessment = latestAssessmentRows[0] || null;
+
+    const lastEvidenceReviewRows = await this.prisma.$queryRaw<{ latest: string | null }[]>`
+      SELECT MAX(datetime(e.reviewedAt)) AS latest
+      FROM "EvidenceControlLink" l
+      INNER JOIN "Evidence" e ON e.id = l.evidenceId
+      WHERE l.controlId = ${controlId}
+    `;
+    const lastEvidenceReviewAt = lastEvidenceReviewRows[0]?.latest || null;
+
+    const scheduleRows = await this.prisma.$queryRaw<any[]>`
+      SELECT frequencyDays
+      FROM "ControlSchedule"
+      WHERE controlId = ${controlId}
+      LIMIT 1
+    `;
+    const frequencyDays = Math.max(1, Number(scheduleRows[0]?.frequencyDays || 90));
+
+    const lastAnchor = latestAssessment?.assessedAt || lastEvidenceReviewAt || null;
+    const nextDueAt = lastAnchor
+      ? new Date(new Date(lastAnchor).getTime() + frequencyDays * 86400000).toISOString()
+      : null;
+
+    const openFindingsRows = await this.prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(1) AS count
+      FROM "RemediationTask"
+      WHERE controlId = ${controlId}
+        AND status <> 'DONE'
+    `;
+    const openFindingsCount = Number(openFindingsRows[0]?.count || 0);
+
+    const complianceStatus = deriveControlComplianceStatus({
+      requiredCount,
+      acceptedCount,
+      latestAssessmentStatus: latestAssessment?.status || null,
+      componentInputs: componentStatuses.map((component) => ({
+        componentId: component.componentId,
+        bestScore: component.bestScore,
+        hasAcceptedEvidence: component.bestEvidenceId !== null,
+      })),
+    });
+
+    const weakEvidence = acceptedEvidence
+      .filter((item) => Number(item.score || 0) < 50)
+      .map((item) => ({
+        evidenceId: item.id,
+        title: item.title,
+        score: Number(item.score || 0),
+        grade: item.grade || 'WEAK',
+        reasonCodes: Array.isArray(item.factors?.reasons)
+          ? item.factors.reasons.map((reason: any) => String(reason?.code || '')).filter(Boolean)
+          : [],
+      }));
+
+    const failedComponents = componentStatuses.filter((component) => component.status === 'FAIL');
+    const partialComponents = componentStatuses.filter((component) => component.status === 'PARTIAL');
+    const whySummary =
+      complianceStatus === 'PASS'
+        ? 'All required test components have strong accepted evidence.'
+        : complianceStatus === 'PARTIAL'
+          ? 'Some components are only partially supported by accepted evidence scores.'
+          : complianceStatus === 'FAIL'
+            ? 'At least one required component lacks strong accepted evidence.'
+            : 'Control is not assessed yet.';
+
+    return {
+      controlId: control.id,
+      controlCode: control.controlCode,
+      controlTitle: control.title,
+      complianceStatus,
+      evidenceCompleteness: {
+        accepted: acceptedCount,
+        required: requiredCount,
+      },
+      lastAssessedAt: latestAssessment?.assessedAt || null,
+      nextDueAt,
+      owner: control.ownerRole || null,
+      openFindingsCount,
+      weakEvidenceCount: weakEvidence.length,
+      weakEvidence,
+      componentStatuses,
+      why: {
+        summary: whySummary,
+        failedComponents,
+        partialComponents,
+      },
+      latestAssessment: latestAssessment
+        ? {
+            status: String(latestAssessment.status || '').toUpperCase(),
+            confidence: Number(latestAssessment.confidence || 0),
+            summary: latestAssessment.summary || null,
+            assessedAt: latestAssessment.assessedAt,
+            assessedById: latestAssessment.assessedById || null,
+          }
+        : null,
+      frequencyDays,
+    };
+  }
+
+  async createEvidenceRequestsForControl(params: {
+    controlId: string;
+    actor: AuthUser;
+    ownerId?: string | null;
+    dueDate?: string | null;
+    cycleKey?: string | null;
+  }) {
+    const control = await this.prisma.controlDefinition.findUnique({
+      where: { id: params.controlId },
+      include: {
+        testComponents: {
+          select: {
+            id: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+    if (!control) {
+      throw new BadRequestException('Control not found');
+    }
+    const ownerId = await this.resolveRequestOwnerId({
+      requestedOwnerId: params.ownerId || null,
+      ownerRole: control.ownerRole || null,
+      fallbackUserId: params.actor.id,
+    });
+    const dueDate = params.dueDate
+      ? new Date(params.dueDate)
+      : new Date(Date.now() + 14 * 86400000);
+    if (Number.isNaN(dueDate.getTime())) {
+      throw new BadRequestException('Invalid dueDate');
+    }
+
+    const cycleKey = String(params.cycleKey || '').trim() || this.getCycleKey();
+    const created: string[] = [];
+    const existing: string[] = [];
+
+    for (const component of control.testComponents) {
+      const dedupKey = `${control.id}:${component.id}:${cycleKey}`;
+      const result = await this.evidence.createRequest({
+        actor: params.actor,
+        input: {
+          controlId: control.id,
+          testComponentId: component.id,
+          ownerId,
+          dueDate: dueDate.toISOString(),
+          dedupKey,
+        },
+      });
+      if (result.created) {
+        created.push(result.request.id);
+      } else {
+        existing.push(result.requestId);
+      }
+    }
+
+    return {
+      controlId: control.id,
+      cycleKey,
+      ownerId,
+      dueDate: dueDate.toISOString(),
+      createdCount: created.length,
+      existingCount: existing.length,
+      createdRequestIds: created,
+      existingRequestIds: existing,
+      totalComponents: control.testComponents.length,
+    };
+  }
+
+  private parseQualityFactors(value: unknown): any {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+    return value;
+  }
+
+  private async resolveRequestOwnerId(params: {
+    requestedOwnerId: string | null;
+    ownerRole: string | null;
+    fallbackUserId: string;
+  }) {
+    const requested = String(params.requestedOwnerId || '').trim();
+    if (requested) return requested;
+
+    const ownerRole = String(params.ownerRole || '').trim().toUpperCase();
+    if (ownerRole) {
+      const users = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id
+        FROM "User"
+        WHERE role = ${ownerRole}
+        ORDER BY datetime(createdAt) ASC
+        LIMIT 1
+      `;
+      if (users.length) return users[0].id;
+    }
+
+    return params.fallbackUserId;
+  }
+
+  private getCycleKey() {
+    const now = new Date();
+    const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    return month;
+  }
+
+  private async ensureOperationalSchema() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ControlAssessment" (
+        id TEXT PRIMARY KEY,
+        controlId TEXT NOT NULL,
+        status TEXT NOT NULL,
+        confidence REAL,
+        summary TEXT,
+        assessedAt TEXT NOT NULL DEFAULT (datetime('now')),
+        assessedById TEXT NOT NULL,
+        createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+        updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (controlId) REFERENCES "ControlDefinition"(id) ON DELETE CASCADE
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "ControlAssessment_control_idx"
+      ON "ControlAssessment"(controlId, assessedAt)
+    `);
+
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ControlSchedule" (
+        id TEXT PRIMARY KEY,
+        controlId TEXT NOT NULL UNIQUE,
+        frequencyDays INTEGER NOT NULL DEFAULT 90,
+        startFrom TEXT,
+        createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+        updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (controlId) REFERENCES "ControlDefinition"(id) ON DELETE CASCADE
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "ControlSchedule_control_idx"
+      ON "ControlSchedule"(controlId)
+    `);
+
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RemediationTask" (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        controlId TEXT,
+        ownerId TEXT,
+        dueDate TEXT,
+        status TEXT NOT NULL DEFAULT 'OPEN',
+        createdById TEXT NOT NULL,
+        createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+        updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (controlId) REFERENCES "ControlDefinition"(id) ON DELETE SET NULL
+      )
+    `);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "RemediationTask_control_status_idx"
+      ON "RemediationTask"(controlId, status)
+    `);
   }
 
   private async findByIsoMapping(controlCode: string) {

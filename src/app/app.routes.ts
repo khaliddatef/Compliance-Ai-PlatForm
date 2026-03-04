@@ -3,6 +3,7 @@ import { AppShellComponent } from './components/app-shell/app-shell.component';
 import { ChatPageComponent } from './pages/chat-page/chat-page.component';
 import { DashboardPageComponent } from './pages/dashboard-page/dashboard-page.component';
 import { UploadsPageComponent } from './pages/uploads-page/uploads-page.component';
+import { EvidencePageComponent } from './pages/evidence-page/evidence-page.component';
 import { FrameworksPageComponent } from './pages/frameworks-page/frameworks-page.component';
 import { FrameworkControlsPageComponent } from './pages/framework-controls-page/framework-controls-page.component';
 import { LoginPageComponent } from './pages/login-page/login-page.component';
@@ -36,6 +37,7 @@ export const routes: Routes = [
         data: { title: 'File Details' },
       },
       { path: 'uploads', component: UploadsPageComponent, data: { title: 'Uploaded Files' } },
+      { path: 'evidence', component: EvidencePageComponent, data: { title: 'Evidence Hub' } },
       { path: 'frameworks', component: FrameworksPageComponent, canActivate: [requireKbGuard], data: { title: 'Frameworks' } },
       { path: 'framework-controls', component: FrameworkControlsPageComponent, canActivate: [requireKbGuard], data: { title: 'Topics' } },
       { path: 'framework-controls/assign-topic', component: AssignTopicPageComponent, canActivate: [requireAdminGuard], data: { title: 'Assign Topic' } },

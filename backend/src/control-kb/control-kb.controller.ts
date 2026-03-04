@@ -9,17 +9,27 @@ import {
   Patch,
   Post,
   Query,
+  Headers,
+  NotFoundException,
   UseGuards,
 } from '@nestjs/common';
 import { ControlKbService } from './control-kb.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/auth.service';
+import { IdempotencyService } from '../idempotency/idempotency.service';
+import { PolicyGuard } from '../access-control/policy.guard';
+import { RequireRoles } from '../access-control/policy.decorator';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PolicyGuard)
 @Controller('api/control-kb')
 export class ControlKbController {
-  constructor(private readonly service: ControlKbService) {}
+  constructor(
+    private readonly service: ControlKbService,
+    private readonly idempotency: IdempotencyService,
+    private readonly featureFlags: FeatureFlagsService,
+  ) {}
 
   @Get('topics')
   async listTopics(
@@ -178,6 +188,17 @@ export class ControlKbController {
     return this.service.getControl(id, true);
   }
 
+  @Get('controls/:id/status')
+  @RequireRoles('ADMIN', 'MANAGER', 'USER')
+  async getControlStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    this.assertControlStatusEnabled();
+    if (!user) {
+      throw new ForbiddenException('Authentication required');
+    }
+    const status = await this.service.getControlStatus(id);
+    return { ok: true, status };
+  }
+
   @Post('controls')
   async createControl(
     @CurrentUser() user: AuthUser,
@@ -233,6 +254,49 @@ export class ControlKbController {
       throw new BadRequestException('status must be enabled or disabled');
     }
     return this.service.updateControlActivation(id, status);
+  }
+
+  @Post('controls/:id/request-evidence')
+  @RequireRoles('ADMIN', 'MANAGER')
+  async requestEvidence(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @Body()
+    body?: {
+      ownerId?: string;
+      dueDate?: string;
+      cycleKey?: string;
+    },
+  ) {
+    this.assertControlStatusEnabled();
+    this.assertViewAccess(user);
+    if (user.role === 'USER') {
+      throw new ForbiddenException('Admin or Manager access required');
+    }
+
+    const key = this.idempotency.assertKey(idempotencyKey);
+    const payload = {
+      controlId: id,
+      ownerId: String(body?.ownerId || '').trim() || null,
+      dueDate: String(body?.dueDate || '').trim() || null,
+      cycleKey: String(body?.cycleKey || '').trim() || null,
+    };
+    const result = await this.idempotency.execute({
+      key,
+      actorId: user.id,
+      actionType: 'CONTROL_REQUEST_EVIDENCE',
+      payload,
+      handler: async () => this.service.createEvidenceRequestsForControl({
+        controlId: id,
+        actor: user,
+        ownerId: payload.ownerId,
+        dueDate: payload.dueDate,
+        cycleKey: payload.cycleKey,
+      }),
+    });
+
+    return { ok: true, replayed: result.replayed, result: result.value };
   }
 
   @Post('controls/:id/assign')
@@ -370,6 +434,12 @@ export class ControlKbController {
   private assertViewAccess(user?: AuthUser) {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'MANAGER')) {
       throw new ForbiddenException('Admin or Manager access required');
+    }
+  }
+
+  private assertControlStatusEnabled() {
+    if (!this.featureFlags.isEnabled('controlStatusBanner')) {
+      throw new NotFoundException('Control status banner is disabled');
     }
   }
 }

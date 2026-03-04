@@ -124,6 +124,9 @@
             <h4>Filtered risks</h4>
             <p>{{ selectedRiskFilterLabel }}</p>
           </div>
+          <button class="ghost" type="button" (click)="openRiskFilterInControlKb()">
+            Open in Control KB
+          </button>
         </div>
         <div class="risk-list" *ngIf="filteredRiskControls.length; else emptyRiskFilter">
           <div class="risk-row" *ngFor="let item of filteredRiskControls">

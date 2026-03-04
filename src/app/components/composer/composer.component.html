@@ -1,10 +1,25 @@
 <div
+  #composerRoot
   class="composer"
   [class.dragging]="dragging"
   (drop)="onDrop($event)"
   (dragover)="onDragOver($event)"
   (dragleave)="onDragLeave()"
 >
+  <div class="mentions" *ngIf="selectedMentions.length">
+    <div class="mention-chip" *ngFor="let mention of selectedMentions; let i = index">
+      <span class="mention-chip-label">@{{ mention.name }}</span>
+      <button
+        type="button"
+        class="mention-chip-remove"
+        (click)="removeMention(i)"
+        aria-label="Remove mentioned file"
+      >
+        ×
+      </button>
+    </div>
+  </div>
+
   <div class="attachments" *ngIf="attachments.length">
     <div class="chip" *ngFor="let file of attachments; let i = index">
       <div class="chip-text">
@@ -53,6 +68,33 @@
             <path d="M6 12h12" />
           </svg>
         </button>
+      </div>
+
+      <div class="mention-overlay" *ngIf="mentionOpen">
+        <div class="mention-palette" role="listbox" aria-label="Select a file mention">
+          <div class="mention-search-row">
+            <span class="mention-search-prefix">@</span>
+            <span class="mention-search-text">{{ mentionQuery || 'Type to search for files' }}</span>
+          </div>
+          <div class="mention-options-list">
+            <button
+              class="mention-option"
+              type="button"
+              *ngFor="let option of mentionCandidates; let i = index"
+              [class.active]="i === mentionIndex"
+              (mousedown)="onMentionMouseDown($event, option)"
+            >
+              <span class="mention-option-icon">📄</span>
+              <span class="mention-option-content">
+                <span class="mention-option-name">{{ option.name }}</span>
+                <span class="mention-option-meta">{{ option.mimeType || 'document' }}</span>
+              </span>
+            </button>
+            <div class="mention-empty" *ngIf="!mentionCandidates.length">
+              No files found for this search.
+            </div>
+          </div>
+        </div>
       </div>
 
       <input

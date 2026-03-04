@@ -26,6 +26,10 @@ model Message {
   conversationId String
   role           String // "user" | "assistant"
   content        String
+  messageType    String   @default("TEXT")
+  cardsJson      Json?
+  actionsJson    Json?
+  sourcesJson    Json?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -41,20 +45,27 @@ model Document {
   mimeType       String
   sizeBytes      Int
   storagePath    String
+  checksumSha256 String?
   openaiFileId   String?
   docType        String?
   matchControlId String?
   matchStatus    String?
   matchNote      String?
   matchRecommendations Json?
+  analysisJson   Json?
+  analysisVersion Int @default(1)
+  analysisComputedAt DateTime?
   reviewedAt     DateTime?
   submittedAt    DateTime?
   createdAt      DateTime @default(now())
 
   conversation Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   chunks       DocumentChunk[]
+  evidence     Evidence?
 
   @@index([conversationId])
+  @@index([checksumSha256])
+  @@unique([conversationId, kind, checksumSha256])
 }
 
 model DocumentChunk {
@@ -144,6 +155,11 @@ model ControlDefinition {
   applicability ControlApplicability?
   riskMappings ControlRiskMapping[]
   threatMappings ControlThreatMapping[]
+  evidenceLinks EvidenceControlLink[]
+  controlEvidenceRequests ControlEvidenceRequest[]
+  assessments ControlAssessment[]
+  schedule ControlSchedule?
+  remediationTasks RemediationTask[]
 
   @@index([controlCode])
   @@index([topicId])
@@ -247,6 +263,7 @@ model TestComponent {
 
   control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
   signals TestComponentSignal[]
+  controlEvidenceRequests ControlEvidenceRequest[]
 
   @@index([controlId])
 }
@@ -472,4 +489,248 @@ model EvidenceEvaluation {
 
   @@index([conversationId])
   @@index([controlId])
+}
+
+enum EvidenceQualityGrade {
+  STRONG
+  MEDIUM
+  WEAK
+}
+
+model Evidence {
+  id            String   @id @default(cuid())
+  title         String
+  type          String
+  source        String
+  documentId    String?  @unique
+  url           String?
+  createdById   String?
+  status        String   @default("SUBMITTED")
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewComment String?
+  validFrom     DateTime?
+  validTo       DateTime?
+  qualityScore  Int?
+  qualityGrade  EvidenceQualityGrade?
+  qualityFactors Json?
+  qualityComputedAt DateTime?
+  qualityVersion Int @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  document          Document?                   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  links             EvidenceControlLink[]
+  fulfillments      EvidenceRequestFulfillment[]
+  connectorArtifacts ConnectorArtifact[]
+
+  @@index([status])
+  @@index([validTo])
+  @@index([qualityGrade])
+}
+
+model EvidenceControlLink {
+  id         String   @id @default(cuid())
+  evidenceId String
+  controlId  String
+  linkedById String
+  createdAt  DateTime @default(now())
+
+  evidence Evidence          @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  control  ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, controlId])
+  @@index([controlId])
+}
+
+model ControlEvidenceRequest {
+  id              String   @id @default(cuid())
+  controlId       String
+  testComponentId String?
+  ownerId         String
+  dueDate         DateTime
+  status          String   @default("OPEN")
+  createdById     String
+  dedupKey        String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  closedAt        DateTime?
+
+  control      ControlDefinition          @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  testComponent TestComponent?            @relation(fields: [testComponentId], references: [id], onDelete: SetNull)
+  fulfillments EvidenceRequestFulfillment[]
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([controlId])
+}
+
+model EvidenceRequestFulfillment {
+  id          String   @id @default(cuid())
+  requestId   String
+  evidenceId  String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  request  ControlEvidenceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  evidence Evidence               @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, evidenceId])
+  @@index([requestId])
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorRole String?
+  actionType String
+  entityType String
+  entityId  String
+  beforeJson String?
+  afterJson String?
+  reason    String?
+  requestId String?
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model IdempotencyRecord {
+  id          String   @id @default(cuid())
+  key         String
+  actorId     String
+  actionType  String
+  requestHash String
+  responseJson String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  @@unique([key, actorId, actionType])
+  @@index([createdAt])
+}
+
+model ControlAssessment {
+  id           String   @id @default(cuid())
+  controlId    String
+  status       String
+  confidence   Float?
+  summary      String?
+  assessedAt   DateTime @default(now())
+  assessedById String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId, assessedAt])
+}
+
+model ControlSchedule {
+  id            String   @id @default(cuid())
+  controlId     String   @unique
+  frequencyDays Int      @default(90)
+  startFrom     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  control ControlDefinition @relation(fields: [controlId], references: [id], onDelete: Cascade)
+
+  @@index([controlId])
+}
+
+model RemediationTask {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  controlId   String?
+  ownerId     String?
+  dueDate     DateTime?
+  status      String   @default("OPEN")
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  control ControlDefinition? @relation(fields: [controlId], references: [id], onDelete: SetNull)
+
+  @@index([controlId, status])
+}
+
+model AuditPack {
+  id         String   @id @default(cuid())
+  frameworkId String?
+  periodStart DateTime
+  periodEnd  DateTime
+  createdById String
+  createdAt  DateTime @default(now())
+
+  items AuditPackItem[]
+
+  @@index([createdAt])
+}
+
+model AuditPackItem {
+  id          String   @id @default(cuid())
+  auditPackId String
+  type        String
+  refId       String
+  snapshotData String
+  createdAt   DateTime @default(now())
+
+  auditPack AuditPack @relation(fields: [auditPackId], references: [id], onDelete: Cascade)
+
+  @@index([auditPackId])
+}
+
+model Connector {
+  id         String   @id @default(cuid())
+  name       String
+  type       String
+  configJson String?
+  status     String   @default("ACTIVE")
+  createdById String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  runs      ConnectorRun[]
+  artifacts ConnectorArtifact[]
+
+  @@index([type])
+}
+
+model ConnectorRun {
+  id          String   @id @default(cuid())
+  connectorId String
+  status      String
+  startedAt   DateTime
+  endedAt     DateTime?
+  statsJson   String?
+  errorText   String?
+  createdAt   DateTime @default(now())
+
+  connector Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  artifacts ConnectorArtifact[]
+
+  @@index([connectorId, startedAt])
+}
+
+model ConnectorArtifact {
+  id               String   @id @default(cuid())
+  connectorId      String
+  runId            String?
+  type             String
+  source           String?
+  timestamp        DateTime
+  rawPayloadRef    String?
+  parsedSummaryJson String?
+  evidenceId       String?
+  createdAt        DateTime @default(now())
+
+  connector Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  run       ConnectorRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  evidence  Evidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+
+  @@index([connectorId, createdAt])
+  @@index([evidenceId])
 }

@@ -166,7 +166,7 @@
               </div>
               <div>
                 <div class="meta-label">Linked control</div>
-                <div class="meta-value">{{ file.controlCode || 'Not mapped yet' }}</div>
+                <div class="meta-value">{{ linkedControlLabel }}</div>
               </div>
             </div>
 
@@ -240,6 +240,119 @@
               </tbody>
             </table>
           </article>
+
+          <article class="card evidence-detail-card">
+            <div class="evidence-head">
+              <h4>Evidence Detail</h4>
+              <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="refreshEvidence()">
+                Refresh
+              </button>
+            </div>
+
+            <p class="muted" *ngIf="evidenceNotice">{{ evidenceNotice }}</p>
+            <p class="muted" *ngIf="evidenceLoading">Loading evidence details...</p>
+
+            <ng-container *ngIf="!evidenceLoading && evidenceRecord as evidence; else noEvidenceTemplate">
+              <div class="meta-grid evidence-meta-grid">
+                <div>
+                  <div class="meta-label">Title</div>
+                  <div class="meta-value">{{ evidence.title }}</div>
+                </div>
+                <div>
+                  <div class="meta-label">Status</div>
+                  <div class="meta-value">{{ evidence.status }}</div>
+                </div>
+                <div>
+                  <div class="meta-label">Type</div>
+                  <div class="meta-value mono-value">{{ evidence.type }}</div>
+                </div>
+              </div>
+
+              <div class="quality-box" *ngIf="evidenceQuality as quality">
+                <div class="quality-box-head">
+                  <div>
+                    <div class="meta-label">Quality score</div>
+                    <div class="quality-score" [ngClass]="evidenceGradeClass">
+                      {{ quality.score }} / {{ quality.grade }}
+                    </div>
+                  </div>
+                  <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="recomputeEvidenceQuality()">
+                    Recompute
+                  </button>
+                </div>
+
+                <div class="breakdown-row" *ngFor="let row of evidenceBreakdownRows">
+                  <div class="row-head">
+                    <span>{{ row.key }}</span>
+                    <span>{{ row.points }}/{{ row.max }}</span>
+                  </div>
+                  <div class="bar">
+                    <span class="bar-fill" [style.width.%]="barPercent(row.points, row.max)"></span>
+                  </div>
+                </div>
+
+                <div class="reasons" *ngIf="evidenceTopReasons.length">
+                  <div class="meta-label">Top reasons</div>
+                  <ul>
+                    <li *ngFor="let reason of evidenceTopReasons">{{ reason.msg }}</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="checklist" *ngIf="evidenceChecklist.length">
+                <div class="meta-label">Onboarding checklist</div>
+                <div class="checklist-row" *ngFor="let item of evidenceChecklist; trackBy: trackByIndex">
+                  <span class="checkmark" [class.done]="item.done">{{ item.done ? '✓' : '•' }}</span>
+                  <span>{{ item.label }}</span>
+                </div>
+              </div>
+
+              <div class="evidence-actions">
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="updateEvidenceStatus('REVIEWED')">
+                  Mark reviewed
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="updateEvidenceStatus('ACCEPTED')">
+                  Accept
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="updateEvidenceStatus('REJECTED')">
+                  Reject
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="updateEvidenceStatus('SUBMITTED')">
+                  Send to submitted
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="updateEvidenceValidity()">
+                  Set validity
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="linkEvidenceToControl()">
+                  Link control
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="createEvidenceRequest()">
+                  Create request
+                </button>
+                <button class="ghost-btn" type="button" [disabled]="evidenceBusy" (click)="downloadDocument()">
+                  Download
+                </button>
+                <button class="ghost-btn danger" type="button" [disabled]="evidenceBusy" (click)="deleteDocument()">
+                  Delete
+                </button>
+              </div>
+            </ng-container>
+
+            <ng-template #noEvidenceTemplate>
+              <div class="empty-evidence">
+                <p class="muted">No evidence record is linked to this file yet.</p>
+                <button
+                  class="ghost-btn"
+                  type="button"
+                  *ngIf="canManageStatus"
+                  [disabled]="evidenceBusy"
+                  (click)="runEvidenceBackfill()"
+                >
+                  Run backfill
+                </button>
+              </div>
+            </ng-template>
+          </article>
         </div>
 
         <div class="analysis-grid" *ngSwitchCase="'analysis'">
@@ -262,7 +375,7 @@
             <h4>Reference & Mapping</h4>
             <div class="mapping-item">
               <span>Linked control</span>
-              <strong>{{ file.controlCode || 'Not linked yet' }}</strong>
+              <strong>{{ linkedControlLabel }}</strong>
             </div>
             <div class="mapping-item">
               <span>Framework references</span>
@@ -273,6 +386,84 @@
               <strong>{{ file.chatTitle }}</strong>
             </div>
             <button class="ghost-btn" type="button" (click)="openControlKb()">Open Control KB view</button>
+          </article>
+
+          <article class="card" *ngIf="insights as model">
+            <h4>Document Intelligence (v{{ model.version || 1 }})</h4>
+
+            <div class="mapping-item">
+              <span>Language</span>
+              <strong>{{ model?.metadata?.language || '—' }}</strong>
+            </div>
+            <div class="mapping-item">
+              <span>Word count</span>
+              <strong>{{ model?.metadata?.wordCount || 0 }}</strong>
+            </div>
+            <div class="mapping-item">
+              <span>Estimated pages</span>
+              <strong>{{ model?.metadata?.estimatedPageCount || '—' }}</strong>
+            </div>
+            <div class="mapping-item">
+              <span>Duplicate of</span>
+              <strong>{{ model?.metadata?.duplicateOfDocumentId || '—' }}</strong>
+            </div>
+
+            <h5>Governance fields</h5>
+            <ul>
+              <li *ngFor="let row of governanceSummaryRows; trackBy: trackByIndex">
+                <strong>{{ row.label }}:</strong> {{ row.value }}
+              </li>
+            </ul>
+
+            <h5>Control references</h5>
+            <ul *ngIf="insightsControlReferences.length; else noControlRefs">
+              <li *ngFor="let row of insightsControlReferences; trackBy: trackByIndex">
+                {{ row.controlCode }} ({{ row.confidence }}%)
+              </li>
+            </ul>
+            <ng-template #noControlRefs>
+              <p class="muted">No explicit control reference detected.</p>
+            </ng-template>
+
+            <h5>Top obligations</h5>
+            <ul *ngIf="insightsObligations.length; else noObligations">
+              <li *ngFor="let row of insightsObligations; trackBy: trackByIndex">
+                {{ row.text }}
+              </li>
+            </ul>
+            <ng-template #noObligations>
+              <p class="muted">No explicit must/shall/required obligations detected.</p>
+            </ng-template>
+
+            <h5>Evidence artifacts</h5>
+            <ul *ngIf="insightsArtifacts.length; else noArtifacts">
+              <li *ngFor="let row of insightsArtifacts; trackBy: trackByIndex">
+                {{ row.type }}: {{ row.text }}
+              </li>
+            </ul>
+            <ng-template #noArtifacts>
+              <p class="muted">No operational artifacts detected.</p>
+            </ng-template>
+
+            <h5>Detected gaps</h5>
+            <ul *ngIf="insightsGaps.length; else noGaps">
+              <li *ngFor="let row of insightsGaps; trackBy: trackByIndex">
+                {{ row.message }}
+              </li>
+            </ul>
+            <ng-template #noGaps>
+              <p class="muted">No high-signal gaps detected.</p>
+            </ng-template>
+
+            <h5>Suggested actions</h5>
+            <ul *ngIf="insightsActions.length; else noActions">
+              <li *ngFor="let row of insightsActions; trackBy: trackByIndex">
+                {{ row.actionType }}: {{ row.reason }}
+              </li>
+            </ul>
+            <ng-template #noActions>
+              <p class="muted">No additional actions suggested.</p>
+            </ng-template>
           </article>
         </div>
 
@@ -308,5 +499,84 @@
         </div>
       </ng-container>
     </ng-container>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="showLinkControlModal" (click)="closeLinkControlModal()">
+    <div
+      class="link-control-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="link-control-modal-title"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="link-control-modal-header">
+        <div>
+          <h3 id="link-control-modal-title">Link to control</h3>
+          <p class="muted">Search active controls and link one or more items.</p>
+        </div>
+        <button class="ghost-btn" type="button" [disabled]="linkControlSaving" (click)="closeLinkControlModal()">
+          Close
+        </button>
+      </div>
+
+      <div class="link-control-search-row">
+        <input
+          class="link-control-search"
+          type="search"
+          placeholder="Search by control code or title..."
+          [(ngModel)]="linkControlQuery"
+          [disabled]="linkControlLoading || linkControlSaving"
+        />
+        <span class="selected-chip">{{ linkSelectedCount }} selected</span>
+      </div>
+
+      <p class="state error" *ngIf="linkControlError">{{ linkControlError }}</p>
+
+      <div class="link-control-list" *ngIf="!linkControlLoading; else loadingControls">
+        <ng-container *ngIf="filteredLinkControlOptions.length; else emptyControls">
+          <label
+            class="link-control-item"
+            *ngFor="let option of filteredLinkControlOptions; trackBy: trackByLinkControlOption"
+            [class.is-linked]="option.alreadyLinked"
+          >
+            <span class="item-main">
+              <input
+                type="checkbox"
+                [disabled]="option.alreadyLinked || linkControlSaving"
+                [checked]="isLinkControlSelected(option.id)"
+                (change)="toggleLinkControlSelection(option.id, $event)"
+              />
+              <span class="item-text">
+                <strong>{{ option.controlCode || option.id }}</strong>
+                <small>{{ option.title }}</small>
+              </span>
+            </span>
+            <span class="link-state" *ngIf="option.alreadyLinked">Linked</span>
+          </label>
+        </ng-container>
+      </div>
+
+      <ng-template #loadingControls>
+        <p class="muted">Loading active controls...</p>
+      </ng-template>
+
+      <ng-template #emptyControls>
+        <p class="muted">No controls found for this search.</p>
+      </ng-template>
+
+      <div class="link-control-modal-footer">
+        <button class="ghost-btn" type="button" [disabled]="linkControlSaving" (click)="closeLinkControlModal()">
+          Cancel
+        </button>
+        <button
+          class="primary-btn"
+          type="button"
+          [disabled]="linkControlSaving || linkControlLoading || !linkSelectedCount"
+          (click)="submitLinkControlSelection()"
+        >
+          {{ linkControlSaving ? 'Linking...' : ('Link selected (' + linkSelectedCount + ')') }}
+        </button>
+      </div>
+    </div>
   </div>
 </section>

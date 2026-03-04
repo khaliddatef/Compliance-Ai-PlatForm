@@ -20,6 +20,9 @@ type AiResponseStyle = (typeof AI_RESPONSE_STYLES)[number];
 const AI_LANGUAGES = ['AUTO', 'EN', 'AR'] as const;
 type AiLanguage = (typeof AI_LANGUAGES)[number];
 
+const AI_TONE_PROFILES = ['DEFAULT', 'EGYPTIAN_CASUAL', 'ARABIC_FORMAL', 'ENGLISH_NEUTRAL'] as const;
+export type AiToneProfile = (typeof AI_TONE_PROFILES)[number];
+
 export type NotificationSettings = {
   emailAlerts: boolean;
   inAppAlerts: boolean;
@@ -31,6 +34,7 @@ export type NotificationSettings = {
 export type AiSettings = {
   responseStyle: AiResponseStyle;
   language: AiLanguage;
+  toneProfile: AiToneProfile;
   includeCitations: boolean;
   temperature: number;
 };
@@ -84,6 +88,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 const DEFAULT_AI_SETTINGS: AiSettings = {
   responseStyle: 'BALANCED',
   language: 'AUTO',
+  toneProfile: 'EGYPTIAN_CASUAL',
   includeCitations: true,
   temperature: 0.2,
 };
@@ -131,6 +136,11 @@ export class SettingsService implements OnModuleInit {
     `;
 
     return next;
+  }
+
+  async getAiSettings(user: AuthUser) {
+    const row = await this.getOrCreateSettingsRow(user.id);
+    return this.normalizeAiSettings(this.parseJson(row.aiJson), DEFAULT_AI_SETTINGS);
   }
 
   async listTeamAccess(user: AuthUser) {
@@ -405,6 +415,11 @@ export class SettingsService implements OnModuleInit {
       ? (languageRaw as AiLanguage)
       : fallback.language;
 
+    const toneRaw = String(source['toneProfile'] || '').toUpperCase();
+    const toneProfile = AI_TONE_PROFILES.includes(toneRaw as AiToneProfile)
+      ? (toneRaw as AiToneProfile)
+      : fallback.toneProfile;
+
     const parsedTemperature = Number(source['temperature']);
     const temperature = Number.isFinite(parsedTemperature)
       ? Math.min(Math.max(parsedTemperature, 0), 1)
@@ -413,6 +428,7 @@ export class SettingsService implements OnModuleInit {
     return {
       responseStyle,
       language,
+      toneProfile,
       includeCitations: this.toBoolean(source['includeCitations'], fallback.includeCitations),
       temperature,
     };

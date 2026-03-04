@@ -20,6 +20,103 @@
         </div>
       </div>
 
+      <div class="status-banner" *ngIf="controlStatus || statusLoading || statusError">
+        <div class="status-banner-head">
+          <div>
+            <div class="status-banner-label">Compliance status</div>
+            <div class="status-banner-value" [ngClass]="controlComplianceClass">{{ controlComplianceLabel }}</div>
+          </div>
+          <div class="status-banner-actions" *ngIf="canOperateControl">
+            <button class="ghost-btn" type="button" [disabled]="actionBusy" (click)="requestEvidenceFromBanner()">Request evidence</button>
+            <button class="ghost-btn" type="button" [disabled]="actionBusy" (click)="runAssessmentFromBanner()">Run assessment</button>
+            <button class="ghost-btn" type="button" [disabled]="actionBusy" (click)="addToAuditPackFromBanner()">Add to audit pack</button>
+            <button class="ghost-btn" type="button" [disabled]="actionBusy" (click)="createRemediationFromBanner()">Create remediation</button>
+          </div>
+        </div>
+
+        <div class="status-banner-grid" *ngIf="controlStatus as status">
+          <div>
+            <div class="label">Evidence completeness</div>
+            <div class="value">{{ status.evidenceCompleteness.accepted }}/{{ status.evidenceCompleteness.required }}</div>
+          </div>
+          <div>
+            <div class="label">Last assessed</div>
+            <div class="value">{{ formatDate(status.lastAssessedAt) }}</div>
+          </div>
+          <div>
+            <div class="label">Next due</div>
+            <div class="value">{{ formatDate(status.nextDueAt) }}</div>
+          </div>
+          <div>
+            <div class="label">Owner</div>
+            <div class="value">{{ status.owner || '—' }}</div>
+          </div>
+          <div>
+            <div class="label">Open findings</div>
+            <div class="value">{{ status.openFindingsCount }}</div>
+          </div>
+          <div>
+            <div class="label">Weak evidence</div>
+            <div class="value value-inline">
+              <button
+                class="link-btn"
+                type="button"
+                *ngIf="(status.weakEvidenceCount || 0) > 0; else zeroWeakEvidence"
+                (click)="toggleWhyPanel()"
+              >
+                {{ status.weakEvidenceCount }}
+              </button>
+              <ng-template #zeroWeakEvidence>0</ng-template>
+            </div>
+          </div>
+        </div>
+
+        <div class="why-panel" *ngIf="controlStatus as status">
+          <ng-container *ngIf="status.why && (status.complianceStatus === 'PARTIAL' || status.complianceStatus === 'FAIL')">
+          <button type="button" class="ghost-btn" (click)="toggleWhyPanel()">
+            {{ whyPanelOpen ? 'Hide why' : 'Why Partial/Fail?' }}
+          </button>
+          <div class="why-content" *ngIf="whyPanelOpen">
+            <p class="muted">{{ status.why.summary }}</p>
+            <div class="why-grid">
+              <div>
+                <div class="label">Failed components</div>
+                <ul class="why-list" *ngIf="status.why.failedComponents.length; else noFailedComponents">
+                  <li *ngFor="let item of status.why.failedComponents">
+                    {{ item.requirement || item.componentId }}
+                    <span class="muted">· score: {{ item.bestScore ?? '—' }}</span>
+                  </li>
+                </ul>
+                <ng-template #noFailedComponents><span class="muted">None</span></ng-template>
+              </div>
+              <div>
+                <div class="label">Partial components</div>
+                <ul class="why-list" *ngIf="status.why.partialComponents.length; else noPartialComponents">
+                  <li *ngFor="let item of status.why.partialComponents">
+                    {{ item.requirement || item.componentId }}
+                    <span class="muted">· score: {{ item.bestScore ?? '—' }}</span>
+                  </li>
+                </ul>
+                <ng-template #noPartialComponents><span class="muted">None</span></ng-template>
+              </div>
+            </div>
+            <div *ngIf="status.weakEvidence?.length">
+              <div class="label">Weak evidence records</div>
+              <div class="tag-list">
+                <span class="tag" *ngFor="let evidence of status.weakEvidence">
+                  {{ evidence.title }} ({{ evidence.score }})
+                </span>
+              </div>
+            </div>
+          </div>
+          </ng-container>
+        </div>
+
+        <div class="muted" *ngIf="statusLoading">Loading latest status...</div>
+        <div class="error" *ngIf="statusError">{{ statusError }}</div>
+        <div class="muted" *ngIf="actionNotice">{{ actionNotice }}</div>
+      </div>
+
       <div class="card" *ngIf="controlEdit && editingControl">
         <div class="card-header">
           <h5>Control details</h5>
@@ -81,18 +178,18 @@
             <div class="label">Reference codes</div>
             <div class="tag-list">
               <span
-              class="tag"
-              *ngFor="let item of control.isoMappings"
-              [class.tag--active-ref]="isActiveReferenceCode(item)"
+                class="tag"
+                *ngFor="let item of control.isoMappings"
+                [class.tag--active-ref]="isActiveReferenceCode(item)"
               >
-              {{ item }}
-            </span>
+                {{ item }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    
-    <div class="card">
+
+      <div class="card">
       <div class="card-header">
         <h5>Test components</h5>
         <span class="muted">Evidence requirements and signals</span>
@@ -126,12 +223,13 @@
       <ng-template #noComponents>
         <p class="empty">No test components yet.</p>
       </ng-template>
-    </div>
-    
-    <div class="card" *ngIf="!canEdit">
-      <h5>Notes</h5>
-      <p class="muted">This view is read-only for your role.</p>
-    </div>
+      </div>
+
+      <div class="card" *ngIf="!canEdit">
+        <h5>Notes</h5>
+        <p class="muted">This view is read-only for your role.</p>
+      </div>
+      
   </ng-container>
 </div>
 </section>

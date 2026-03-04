@@ -1,80 +1,168 @@
-# Compliance AI Platform – Backend (NestJS)
+# Backend (NestJS)
 
-Mocked API that mirrors the future OpenAI RAG/Agents pipeline. Provides chat, uploads, and health endpoints for the Angular client.
+Backend service for the Compliance AI Platform.
 
-## Quick start
+It provides:
+1. Authentication and role-aware access control.
+2. Chat and control evidence evaluation APIs.
+3. File upload, ingestion, and document-level compliance matching.
+4. Control knowledge base and framework mapping APIs.
+5. Dashboard aggregation APIs.
+6. Personal settings and team-access management APIs.
+
+## Stack
+
+- NestJS 11
+- Prisma 7 with SQLite
+- better-sqlite3 adapter
+- OpenAI Responses API integration
+
+## Run Locally
+
+### 1) Install
 
 ```bash
 cd backend
 npm install
-
-# Dev watch
-npm run dev
-
-# Build
-npm run build
-
-# Production start (after build)
-npm run start:prod
 ```
 
-Environment:
-- `PORT` (default: `3000`)
-- `NODE_ENV` (default: `development`)
+### 2) Configure env (`backend/.env`)
 
-The server enables CORS for `http://localhost:4200` to allow the Angular app to call it directly.
+Core:
 
-## Endpoints
+```bash
+PORT=3000
+DATABASE_URL=file:./prisma/dev.db
+JWT_SECRET=replace-in-production
+JWT_EXPIRES_IN=8h
+TEST_USERS_PASSWORD=Tekronyx@123
+NODE_ENV=development
+```
 
-### Health
-- `GET /health` → `{ "status": "ok", "timestamp": 1712345678901 }`
+AI features:
 
-### Chat
-- `POST /api/chat`
-  ```json
-  {
-    "conversationId": "optional-uuid",
-    "message": "How are we handling MFA and logging for finance?"
-  }
-  ```
-  Response:
-  ```json
-  {
-    "conversationId": "generated-or-provided",
-    "reply": "text...",
-    "citations": [
-      { "doc": "ISO-27001.pdf", "page": 12, "snippet": "..." }
-    ],
-    "complianceSummary": {
-      "framework": "ISO 27001",
-      "status": "COMPLIANT",
-      "missing": ["Quarterly access review evidence"],
-      "recommendations": ["Refresh data flow diagrams...", "..."]
-    }
-  }
-  ```
+```bash
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
+DISABLE_OPENAI_STORAGE=false
+DISABLE_DB_INGEST=false
+```
 
-### Uploads
-- `POST /api/upload` (multipart/form-data, field: `files`, accepts PDF/DOCX/XLSX, max 15MB each)
-  Response:
-  ```json
-  {
-    "uploaded": [
-      { "originalName": "AccessPolicy.pdf", "storedName": "uuid.pdf", "size": 102400, "status": "UPLOADED" }
-    ]
-  }
-  ```
-- `GET /api/uploads` → `{ "uploaded": [ { "originalName": "...", "storedName": "...", "size": 12345, "status": "UPLOADED" } ] }`
+### 3) Sync schema
 
-Files are stored under `backend/uploads` with unique filenames.
+```bash
+npm run db:sync
+```
 
-## Client integration
+### 4) Start
 
-- Angular base URL: `http://localhost:3000`
-- Error shape (all endpoints): `{ "error": { "code": "BAD_REQUEST", "message": "...", "details": [...] } }`
+```bash
+npm run dev
+```
 
-## Notes
+## Authentication Model
 
-- Global validation pipe (class-validator) and error filter are enabled.
-- Helmet for security headers, morgan for request logging, and ConfigModule for env management are configured.
-- Conversations are stored in-memory only; restart clears history.
+- JWT-based auth.
+- Token can be sent as:
+  1. `Authorization: Bearer <token>` header
+  2. `tekronyx_token` cookie
+- Roles: `ADMIN`, `MANAGER`, `USER`.
+
+Default users are auto-seeded on startup.
+
+## Core Modules
+
+1. `AuthModule`: login/logout/me, token verification, seeded users
+2. `ChatModule`: conversation APIs, chat replies, evidence evaluation
+3. `UploadModule`: upload/list/download/status/submit/reevaluate APIs
+4. `IngestModule`: text extraction and chunk persistence
+5. `ControlKbModule`: frameworks/topics/controls/mappings APIs
+6. `DashboardModule`: KPI/risk/compliance aggregation
+7. `SettingsModule`: personal settings and team access
+8. `PrismaModule`: shared Prisma client service
+9. `HealthModule`: service health endpoint
+
+## API Summary
+
+### Public
+
+1. `GET /health`
+2. `POST /api/auth/login`
+3. `POST /api/auth/logout`
+
+### Authenticated (`AuthGuard`)
+
+1. Auth: `GET /api/auth/me`
+2. Chat: `/api/chat/*`
+3. Uploads: `/api/uploads/*`
+4. Ingest: `/api/ingest/:documentId`
+5. Dashboard: `GET /api/dashboard` (manager/admin only)
+6. Control KB:
+   - Manager/admin: topics, frameworks, controls, mutating routes
+   - Any authenticated user: `catalog` and `context` endpoints used in chat flow
+7. Settings: `/api/settings/*`
+
+For complete endpoint details, use [docs/api-reference.md](../docs/api-reference.md).
+
+## Upload and Ingestion Rules
+
+- Accepted extensions: `.pdf`, `.docx`, `.xlsx`
+- Max files per request: `10`
+- Max file size: `15 MB`
+- STANDARD uploads are disabled in current implementation.
+- Text extraction is performed by file type:
+  1. PDF: `pdf-parse`
+  2. DOCX: `mammoth`
+  3. XLSX: `xlsx`
+
+## AI Integration Behavior
+
+- Agent service uses OpenAI Responses API.
+- Chat guidance is customer-evidence-centric.
+- Control evaluation is a separate explicit endpoint.
+- Document-level matching is run during upload/reevaluate.
+
+## Database
+
+- Primary schema: `backend/prisma/schema.prisma`
+- DB URL default: `file:./prisma/dev.db`
+- The service normalizes SQLite file URLs for local runtime paths.
+
+Some settings tables are created at runtime through SQL in `SettingsService`:
+1. `UserSettings`
+2. `TeamInvite`
+
+## Seeding
+
+Default user seed is automatic via `AuthService` module init.
+
+Control knowledge base seed script:
+
+```bash
+npm run seed:control-kb
+```
+
+With full reset:
+
+```bash
+npm run seed:control-kb -- --reset
+```
+
+This script reads `backend/data/control-kb/tekronyx_GRC_kb_v6_mappings.xlsx`.
+
+## Testing
+
+```bash
+npm test
+npm run test:e2e
+```
+
+Current tests are baseline smoke tests. See docs for suggested coverage expansion.
+
+## Related Docs
+
+1. [Project README](../README.md)
+2. [Architecture](../docs/architecture.md)
+3. [Backend Guide](../docs/backend-guide.md)
+4. [API Reference](../docs/api-reference.md)
+5. [Data Model](../docs/data-model.md)
