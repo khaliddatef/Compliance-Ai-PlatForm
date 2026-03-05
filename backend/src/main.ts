@@ -30,9 +30,11 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter(logger));
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT') || process.env.PORT || 3000;
-  await app.listen(port);
-  logger.log(`Backend running on port ${port}`);
+  const resolvedPort = Number(configService.get<number>('PORT') || process.env.PORT || 3000);
+  const host = String(configService.get<string>('HOST') || process.env.HOST || '127.0.0.1').trim();
+  const port = Number.isFinite(resolvedPort) && resolvedPort > 0 ? resolvedPort : 3000;
+  await app.listen(port, host);
+  logger.log(`Backend running on http://${host}:${port}`);
 }
 
 bootstrap();

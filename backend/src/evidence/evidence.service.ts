@@ -1121,6 +1121,25 @@ export class EvidenceService implements OnModuleInit {
       CREATE INDEX IF NOT EXISTS "Evidence_validTo_idx"
       ON "Evidence"(validTo)
     `);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Evidence" ADD COLUMN "qualityScore" INTEGER
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Evidence" ADD COLUMN "qualityGrade" TEXT
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Evidence" ADD COLUMN "qualityFactors" JSON
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Evidence" ADD COLUMN "qualityComputedAt" DATETIME
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Evidence" ADD COLUMN "qualityVersion" INTEGER NOT NULL DEFAULT 1
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "Evidence_qualityGrade_idx"
+      ON "Evidence"(qualityGrade)
+    `).catch(() => undefined);
 
     await this.prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "EvidenceControlLink" (

@@ -36,7 +36,7 @@ describe('AuthGuard', () => {
   });
 
   it('accepts bearer token and attaches user to request', async () => {
-    const req = { headers: { authorization: 'Bearer test-token' } };
+    const req: any = { headers: { authorization: 'Bearer test-token' } };
     const context = createContext(req);
     auth.verifyToken.mockReturnValue({ sub: 'user-1' });
     auth.getUserById.mockResolvedValue({ id: 'user-1', email: 'u@example.com', role: 'USER' });
@@ -50,7 +50,7 @@ describe('AuthGuard', () => {
 
   it('uses cookie token when bearer header is absent', async () => {
     const encoded = encodeURIComponent('cookie-token');
-    const req = { headers: { cookie: `a=1; tekronyx_token=${encoded}; b=2` } };
+    const req: any = { headers: { cookie: `a=1; tekronyx_token=${encoded}; b=2` } };
     const context = createContext(req);
     auth.verifyToken.mockReturnValue({ sub: 'manager-1' });
     auth.getUserById.mockResolvedValue({ id: 'manager-1', role: 'MANAGER' });

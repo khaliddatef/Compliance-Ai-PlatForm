@@ -1,4 +1,4 @@
-import { ForbiddenException, GoneException, Injectable } from '@nestjs/common';
+import { ForbiddenException, GoneException, Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IngestService } from '../ingest/ingest.service';
 import { AgentService } from '../agent/agent.service';
@@ -25,7 +25,7 @@ type EvidenceEvalRow = {
 };
 
 @Injectable()
-export class UploadService {
+export class UploadService implements OnModuleInit {
   private readonly apiKey = process.env.OPENAI_API_KEY || '';
   private readonly disableOpenAiStorage =
     String(process.env.DISABLE_OPENAI_STORAGE || '').toLowerCase() === 'true';
@@ -37,6 +37,38 @@ export class UploadService {
     private readonly evidence: EvidenceService,
     private readonly documentInsights: DocumentInsightsService,
   ) {}
+
+  async onModuleInit() {
+    await this.ensureSchema();
+  }
+
+  private async ensureSchema() {
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Document" ADD COLUMN "checksumSha256" TEXT
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Document" ADD COLUMN "analysisJson" JSON
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Document" ADD COLUMN "analysisVersion" INTEGER NOT NULL DEFAULT 1
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      ALTER TABLE "Document" ADD COLUMN "analysisComputedAt" DATETIME
+    `).catch(() => undefined);
+
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "Document_checksumSha256_idx"
+      ON "Document"("checksumSha256")
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "Document_analysisComputedAt_idx"
+      ON "Document"("analysisComputedAt")
+    `).catch(() => undefined);
+    await this.prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "Document_conversationId_kind_checksumSha256_key"
+      ON "Document"("conversationId", "kind", "checksumSha256")
+    `).catch(() => undefined);
+  }
 
   private assertConfig() {
     if (!this.apiKey) throw new Error('OPENAI_API_KEY is missing');
